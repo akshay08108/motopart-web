@@ -191,13 +191,13 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(244, 81, 30,
 
 .checkout { padding: 24px; }
 .checkout-progress { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 25px; }
-.checkout-progress span { position: relative; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 800; }
-.checkout-progress span::after { content: ""; position: absolute; top: 14px; left: 38px; right: 8px; height: 1px; background: var(--line); }
-.checkout-progress span:last-child::after { display: none; }
-.checkout-progress b { width: 29px; height: 29px; display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 50%; background: #fff; font-size: 9px; }
-.checkout-progress span.active { color: var(--ink); }
-.checkout-progress span.active b { border-color: var(--orange); background: var(--orange); color: #fff; }
-.checkout-progress span.active::after { background: var(--orange); }
+.checkout-step { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 800; }
+.checkout-step::after { content: ""; flex: 1; min-width: 24px; height: 1px; margin: 0 12px 0 4px; background: var(--line); }
+.checkout-step:last-child::after { display: none; }
+.checkout-step b { flex: 0 0 29px; width: 29px; height: 29px; display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 50%; background: #fff; font-size: 9px; }
+.checkout-step.active { color: var(--ink); }
+.checkout-step.active b { border-color: var(--orange); background: var(--orange); color: #fff; }
+.checkout-step.active::after { background: var(--orange); }
 .checkout-panel { width: min(560px, 100%); margin: 0 auto; }
 .checkout-panel h3 { margin: 8px 0 16px; font-family: var(--display); font-size: 28px; }
 .choice { width: 100%; min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 5px; background: #fff; padding: 13px 15px; text-align: left; cursor: pointer; }
@@ -314,8 +314,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(244, 81, 30,
   .detail-copy h3 { font-size: 31px; }
   .detail-buy { align-items: stretch; flex-direction: column; }
   .checkout { padding: 18px 15px; }
-  .checkout-progress span { display: grid; justify-items: center; gap: 3px; font-size: 9px; }
-  .checkout-progress span::after { left: 58%; right: -42%; }
+  .checkout-step { position: relative; display: grid; justify-items: center; gap: 3px; font-size: 9px; }
+  .checkout-step::after { position: absolute; top: 14px; left: 58%; right: -42%; min-width: 0; margin: 0; }
   .checkout-panel h3 { font-size: 25px; }
   .toast { bottom: 78px; width: calc(100% - 30px); justify-content: center; text-align: center; }
 }
