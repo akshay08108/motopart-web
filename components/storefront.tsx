@@ -10,6 +10,12 @@ import { OrderCenter } from "@/components/order-center";
 
 const categories = ["All", "Brakes", "Filters", "Batteries", "Lighting", "Suspension", "Engine"];
 const stages = ["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"] as const;
+const availabilityUpdates = [
+  "MG Hector parts now available",
+  "BMW air filters available",
+  "Mahindra Thar brake pads back in stock",
+  "Same-day pickup on select Bosch parts",
+];
 
 function Icon({ name, size = 20 }: { name: "search" | "home" | "grid" | "car" | "orders" | "user" | "cart" | "check" | "truck" | "close" | "minus" | "plus" | "arrow" | "sun" | "moon"; size?: number }) {
   const paths = {
@@ -58,6 +64,24 @@ function Logo() {
       <span className="logo-mark"><span /></span>
       <span>Moto<span>Part</span></span>
     </div>
+  );
+}
+
+function AvailabilityTicker() {
+  return (
+    <section className="availability-ticker" aria-label="Latest parts availability">
+      <b className="ticker-label"><span aria-hidden="true" />Just in</b>
+      <div className="ticker-viewport">
+        <p className="sr-only">{availabilityUpdates.join(". ")}</p>
+        <div className="ticker-track" aria-hidden="true">
+          {[0, 1].map((copy) => (
+            <div className="ticker-copy" key={copy}>
+              {availabilityUpdates.map((update) => <span key={`${copy}-${update}`}>{update}<i>•</i></span>)}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -228,6 +252,7 @@ export function Storefront({ initialProducts, initialVehicles }: { initialProduc
             <button className="cart-button" onClick={() => setCartOpen(true)}><Icon name="cart"/><span>Cart</span>{cartCount > 0 ? <em>{cartCount}</em> : null}</button>
           </nav>
         </div>
+        <AvailabilityTicker />
       </header>
 
       <main>
