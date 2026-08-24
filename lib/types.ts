@@ -42,3 +42,66 @@ export type Order = {
   stage: OrderStage;
   total: number;
 };
+
+export type AppLocation = {
+  id: string;
+  label: string;
+  address: string;
+  placeId?: string;
+  latitude?: number;
+  longitude?: number;
+};
+
+export type Garage = {
+  id: string;
+  name: string;
+  phone: string;
+  services: string;
+  distanceKm: number;
+  location: AppLocation;
+};
+
+export type StoreListing = {
+  id: string;
+  productId: string;
+  productName: string;
+  partNumber: string;
+  category: string;
+  price: number;
+  mrp: number;
+  stock: number;
+};
+
+export type PartnerStore = {
+  id: string;
+  name: string;
+  owner: string;
+  phone: string;
+  gstin?: string;
+  businessHours: string;
+  deliveryRadiusKm: number;
+  rating: number;
+  distanceKm: number;
+  location: AppLocation;
+  listings: StoreListing[];
+};
+
+export type FulfilmentMode = "delivery" | "pickup" | "garage";
+export type PaymentMethod = "upi" | "card" | "cod";
+
+export type Offer = {
+  code: string;
+  title: string;
+  description: string;
+  discountPercent: number;
+  maxDiscount: number;
+  newUserOnly: boolean;
+};
+
+export type PaymentResult = {
+  id: string;
+  status: "approved" | "declined";
+  mode: "test";
+  amount: number;
+  message: string;
+};

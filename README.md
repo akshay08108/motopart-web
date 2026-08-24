@@ -1,10 +1,10 @@
 # MotoPart
 
-A responsive, vehicle-aware auto-parts storefront built from the supplied product requirements. The demo focuses on the MVP customer journey: select a vehicle, search by part or OEM number, verify fitment, browse inventory and ETA, add to cart, complete a three-step checkout, and track an order.
+A responsive, vehicle-aware auto-parts marketplace built from the supplied product requirements. It now supports the customer, seller, garage, fulfillment, offer, test-payment and order flows end to end. Demo-created stores, garages and locations persist in the browser; the typed service layer can be replaced with real providers later.
 
 ## Stack
 
-- Next.js 15 App Router, React 19, and TypeScript
+- Next.js 16 App Router, React 19, and TypeScript
 - Route Handlers for the demo REST API
 - Local, generated product imagery with no runtime image dependency
 - Plain design-token CSS for a small production bundle
@@ -39,6 +39,10 @@ The UI talks to a typed `CommerceApi` interface in `lib/api/client.ts`. The curr
 | `/api/checkout` | POST | Validated checkout and order creation |
 | `/api/orders` | GET | Order history |
 | `/api/tracking?orderId=` | GET | Delivery status |
+| `/api/stores` | GET, POST | Marketplace stores, prices and inventory |
+| `/api/garages` | GET, POST | Saved installation garages |
+| `/api/offers` | GET | New-user and promotional offers |
+| `/api/payments/mock` | POST | Safe test-payment approval/decline contract |
 
 To connect a real backend later, implement `CommerceApi` with the production base URL and authentication strategy, then replace the exported `demoApi`. UI components do not depend on the data source.
 
@@ -48,7 +52,9 @@ To connect a real backend later, implement `CommerceApi` with the production bas
 2. Import the repository in Vercel.
 3. Keep the detected framework as **Next.js** and deploy.
 
-No required secrets are needed for demo mode. Add real API and provider credentials as Vercel environment variables when integrating authentication, payments, maps, search, and notifications. Never expose server credentials with a `NEXT_PUBLIC_` prefix.
+No secrets are required for demo mode. To enable the same Google Places location picker pattern used by DiagHub, add `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` locally and in Vercel. Restrict that browser key in Google Cloud to your deployed domains and the Maps JavaScript/Places APIs. The UI provides a manual-address fallback when the key is absent.
+
+The fake payment screen never charges money. Use `4242 4242 4242 4242` for the approved card path; any other card number exercises the decline state. Replace only `processTestPayment` when integrating a real payment provider.
 
 ## Suggested production integration order
 
@@ -59,4 +65,4 @@ No required secrets are needed for demo mode. Add real API and provider credenti
 5. Maps, ETA, order tracking, and notifications
 6. Admin and seller role-based surfaces
 
-The reference visual concept is stored in `docs/design/storefront-concept.png`.
+Reference concepts are stored in `docs/design/`: the original storefront, expanded marketplace, store onboarding and checkout states.
