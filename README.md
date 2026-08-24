@@ -1,6 +1,6 @@
 # MotoPart
 
-A responsive, vehicle-aware auto-parts marketplace built from the supplied product requirements. It now supports the customer, seller, garage, fulfillment, offer, test-payment and order flows end to end. Demo-created stores, garages and locations persist in the browser; the typed service layer can be replaced with real providers later.
+A responsive, vehicle-aware auto-parts marketplace built from the supplied product requirements. It now supports the customer, seller, garage, fulfillment, offer, test-payment, order-history and customer-support flows end to end. Demo-created stores, garages, locations, orders and theme preference persist in the browser; the typed service layer can be replaced with real providers later.
 
 ## Stack
 
@@ -43,6 +43,7 @@ The UI talks to a typed `CommerceApi` interface in `lib/api/client.ts`. The curr
 | `/api/garages` | GET, POST | Saved installation garages |
 | `/api/offers` | GET | New-user and promotional offers |
 | `/api/payments/mock` | POST | Safe test-payment approval/decline contract |
+| `/api/support` | POST | Per-order support ticket creation contract |
 
 To connect a real backend later, implement `CommerceApi` with the production base URL and authentication strategy, then replace the exported `demoApi`. UI components do not depend on the data source.
 

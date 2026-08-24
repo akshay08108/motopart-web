@@ -1,4 +1,4 @@
-import type { Garage, Offer, Order, PartnerStore, PaymentResult, Product, Vehicle } from "@/lib/types";
+import type { Garage, Offer, Order, PartnerStore, PaymentResult, Product, SupportIssueType, SupportTicket, Vehicle } from "@/lib/types";
 
 type CheckoutInput = { address: string; delivery: string; payment: string; productIds: string[]; discountCode?: string; storeId?: string };
 
@@ -14,6 +14,7 @@ export interface CommerceApi {
   addGarage(garage: Omit<Garage, "id" | "distanceKm">): Promise<Garage>;
   getOffers(): Promise<Offer[]>;
   processTestPayment(input: { amount: number; method: string; cardNumber?: string }): Promise<PaymentResult>;
+  createSupportTicket(input: { orderId: string; issueType: SupportIssueType; message: string }): Promise<SupportTicket>;
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -37,4 +38,5 @@ export const demoApi: CommerceApi = {
   addGarage: (garage) => request<Garage>("/api/garages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(garage) }),
   getOffers: () => request<Offer[]>("/api/offers"),
   processTestPayment: (input) => request<PaymentResult>("/api/payments/mock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) }),
+  createSupportTicket: (input) => request<SupportTicket>("/api/support", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) }),
 };

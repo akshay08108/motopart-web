@@ -6,11 +6,12 @@ import { demoApi } from "@/lib/api/client";
 import { activeOrder } from "@/lib/demo-data";
 import type { CartLine, Order, Product, Vehicle } from "@/lib/types";
 import { MarketplaceFeatures, type MarketplaceView } from "@/components/marketplace-features";
+import { OrderCenter } from "@/components/order-center";
 
 const categories = ["All", "Brakes", "Filters", "Batteries", "Lighting", "Suspension", "Engine"];
 const stages = ["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"] as const;
 
-function Icon({ name, size = 20 }: { name: "search" | "home" | "grid" | "car" | "orders" | "user" | "cart" | "check" | "truck" | "close" | "minus" | "plus" | "arrow"; size?: number }) {
+function Icon({ name, size = 20 }: { name: "search" | "home" | "grid" | "car" | "orders" | "user" | "cart" | "check" | "truck" | "close" | "minus" | "plus" | "arrow" | "sun" | "moon"; size?: number }) {
   const paths = {
     search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
     home: <><path d="m3 11 9-8 9 8"/><path d="M5 10v11h14V10M9 21v-7h6v7"/></>,
@@ -25,6 +26,8 @@ function Icon({ name, size = 20 }: { name: "search" | "home" | "grid" | "car" | 
     minus: <path d="M5 12h14"/>,
     plus: <path d="M5 12h14M12 5v14"/>,
     arrow: <path d="M5 12h14m-5-5 5 5-5 5"/>,
+    sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></>,
+    moon: <path d="M20.5 15.2A8.4 8.4 0 0 1 8.8 3.5 8.5 8.5 0 1 0 20.5 15.2Z"/>,
   };
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
@@ -99,10 +102,20 @@ export function Storefront({ initialProducts, initialVehicles }: { initialProduc
   const [cart, setCart] = useState<CartLine[]>([]);
   const [vehicleOpen, setVehicleOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
+  const [ordersOpen, setOrdersOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [marketView, setMarketView] = useState<MarketplaceView>(null);
   const [comparisonProduct, setComparisonProduct] = useState<Product | null>(null);
   const [order, setOrder] = useState<Order>(activeOrder);
+  const [orders, setOrders] = useState<Order[]>(() => {
+    if (typeof window === "undefined") return [activeOrder];
+    try {
+      const saved = window.localStorage.getItem("motopart-orders-v1");
+      return saved ? JSON.parse(saved) as Order[] : [activeOrder];
+    } catch { return [activeOrder]; }
+  });
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [themeReady, setThemeReady] = useState(false);
   const [toast, setToast] = useState("");
   const [isFiltering, setIsFiltering] = useState(false);
   const [mobileNavVisible, setMobileNavVisible] = useState(false);
@@ -119,6 +132,23 @@ export function Storefront({ initialProducts, initialVehicles }: { initialProduc
     window.addEventListener("scroll", updateMobileNav, { passive: true });
     return () => window.removeEventListener("scroll", updateMobileNav);
   }, []);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("motopart-theme");
+    const preferred = saved === "dark" || saved === "light" ? saved : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    document.documentElement.dataset.theme = preferred;
+    Promise.resolve().then(() => { setTheme(preferred); setThemeReady(true); });
+  }, []);
+
+  useEffect(() => {
+    if (!themeReady) return;
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem("motopart-theme", theme);
+  }, [theme, themeReady]);
+
+  useEffect(() => {
+    window.localStorage.setItem("motopart-orders-v1", JSON.stringify(orders));
+  }, [orders]);
 
   async function filterCatalog(nextQuery = query, nextCategory = category) {
     setIsFiltering(true);
@@ -170,7 +200,12 @@ export function Storefront({ initialProducts, initialVehicles }: { initialProduc
 
   function finishOrder(created: Order) {
     setOrder(created);
+    setOrders((current) => [created, ...current.filter((item) => item.id !== created.id)]);
     setCart([]);
+  }
+
+  function toggleTheme() {
+    setTheme((current) => current === "light" ? "dark" : "light");
   }
 
   return (
@@ -184,10 +219,12 @@ export function Storefront({ initialProducts, initialVehicles }: { initialProduc
             <button type="submit">Search</button>
           </form>
           <button className="vehicle-control" onClick={() => setVehicleOpen(true)}><Icon name="car"/><span><small>Selected vehicle</small>{vehicle.year} {vehicle.make} {vehicle.model}</span><b>⌄</b></button>
+          <button className="mobile-theme-button" onClick={toggleTheme} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`} aria-pressed={theme === "dark"}><Icon name={theme === "light" ? "moon" : "sun"}/></button>
           <button className="mobile-cart-button" onClick={() => setCartOpen(true)} aria-label={`Open cart with ${cartCount} items`}><Icon name="cart"/>{cartCount > 0 ? <em>{cartCount}</em> : null}</button>
           <nav className="header-actions" aria-label="Account actions">
-            <button onClick={() => document.getElementById("tracking")?.scrollIntoView({ behavior: "smooth" })}><Icon name="orders"/><span>Orders</span></button>
+            <button onClick={() => setOrdersOpen(true)}><Icon name="orders"/><span>Orders</span></button>
             <button><Icon name="user"/><span>Account</span></button>
+            <button onClick={toggleTheme} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`} aria-pressed={theme === "dark"}><Icon name={theme === "light" ? "moon" : "sun"}/><span>{theme === "light" ? "Dark" : "Light"}</span></button>
             <button className="cart-button" onClick={() => setCartOpen(true)}><Icon name="cart"/><span>Cart</span>{cartCount > 0 ? <em>{cartCount}</em> : null}</button>
           </nav>
         </div>
@@ -236,7 +273,7 @@ export function Storefront({ initialProducts, initialVehicles }: { initialProduc
               return <div className={complete ? "complete" : ""} key={stage}><span>{complete ? <Icon name={index === 3 ? "truck" : "check"} size={15}/> : index + 1}</span><b>{stage}</b><small>{index === activeIndex ? "Current status" : index < activeIndex ? "Completed" : "Pending"}</small></div>;
             })}
           </div>
-          <button className="secondary-button">View order</button>
+          <button className="secondary-button" onClick={() => setOrdersOpen(true)}>View order</button>
         </section>
 
         <section className="trust page-shell"><span><Icon name="check"/><b>100% vehicle compatibility</b><small>Exact fit guarantee</small></span><span><Icon name="check"/><b>Genuine & quality parts</b><small>Trusted brands and sellers</small></span><span><Icon name="truck"/><b>Easy returns</b><small>7-day return policy</small></span><span><Icon name="orders"/><b>Secure payments</b><small>UPI, cards and COD</small></span></section>
@@ -245,7 +282,7 @@ export function Storefront({ initialProducts, initialVehicles }: { initialProduc
       <nav className={`mobile-nav ${mobileNavVisible ? "is-visible" : ""}`} aria-label="Mobile navigation">
         <button className="active" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><span className="nav-icon"><Icon name="home" size={21}/></span><span>Home</span></button>
         <button onClick={() => document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" })}><span className="nav-icon"><Icon name="grid" size={21}/></span><span>Shop</span></button>
-        <button onClick={() => document.getElementById("tracking")?.scrollIntoView({ behavior: "smooth" })}><span className="nav-icon"><Icon name="orders" size={21}/></span><span>Orders</span></button>
+        <button onClick={() => setOrdersOpen(true)}><span className="nav-icon"><Icon name="orders" size={21}/></span><span>Orders</span></button>
         <button onClick={() => setCartOpen(true)}><span className="nav-icon"><Icon name="cart" size={21}/>{cartCount > 0 ? <em>{cartCount}</em> : null}</span><span>Cart</span></button>
       </nav>
 
@@ -254,6 +291,8 @@ export function Storefront({ initialProducts, initialVehicles }: { initialProduc
       {selectedProduct ? <Modal title="Part details" onClose={() => setSelectedProduct(null)} wide><div className="product-detail"><div className="detail-image"><SpriteImage index={selectedProduct.imageIndex}/></div><div className="detail-copy"><span className="detail-brand">{selectedProduct.brand}</span><h3>{selectedProduct.name}</h3><p>{selectedProduct.kind} part supplied by {selectedProduct.seller}, covered by a {selectedProduct.warranty} warranty.</p><dl><div><dt>Part number</dt><dd>{selectedProduct.partNumber}</dd></div><div><dt>OEM reference</dt><dd>{selectedProduct.oemNumber}</dd></div><div><dt>Availability</dt><dd>{selectedProduct.stock} in stock</dd></div><div><dt>Delivery</dt><dd>{selectedProduct.deliveryLabel}</dd></div></dl><div className="detail-fit"><Icon name="check"/><span><b>Fits your {vehicle.make} {vehicle.model}</b><small>Verified for {vehicle.year} · {vehicle.variant} · {vehicle.transmission}</small></span></div><div className="detail-buy"><strong>{formatPrice(selectedProduct.price)}</strong><button className="primary-button" onClick={() => { addToCart(selectedProduct); setSelectedProduct(null); }}>Add to cart</button></div></div></div></Modal> : null}
 
       {cartOpen ? <div className="drawer-backdrop" onMouseDown={() => setCartOpen(false)}><aside className="cart-drawer" onMouseDown={(event) => event.stopPropagation()}><header><button className="back-button" onClick={() => setCartOpen(false)}><Icon name="arrow"/>Back</button><div><h2>Your cart</h2><p>{cartCount} {cartCount === 1 ? "item" : "items"} · checked for {vehicle.model}</p></div><button className="icon-button" onClick={() => setCartOpen(false)} aria-label="Close cart"><Icon name="close"/></button></header><div className="cart-lines">{cart.length ? cart.map((line) => <div className="cart-line" key={line.product.id}><SpriteImage index={line.product.imageIndex}/><div><b>{line.product.name}</b><small><Icon name="check" size={14}/>Fits your vehicle</small><span>{formatPrice(line.product.price)}</span></div><div className="quantity"><button onClick={() => updateQuantity(line.product.id, -1)}><Icon name="minus" size={15}/></button><b>{line.quantity}</b><button onClick={() => updateQuantity(line.product.id, 1)}><Icon name="plus" size={15}/></button></div></div>) : <div className="cart-empty"><Icon name="cart" size={34}/><h3>Your cart is empty</h3><p>Add a compatible part to start your order.</p></div>}</div>{cart.length ? <footer><div><span>Subtotal</span><b>{formatPrice(subtotal)}</b></div><small>Taxes included · Delivery calculated next</small><button className="primary-button" onClick={() => { setCartOpen(false); setMarketView("checkout"); }}>Checkout securely <Icon name="arrow"/></button></footer> : null}</aside></div> : null}
+
+      {ordersOpen ? <OrderCenter orders={orders} onClose={() => setOrdersOpen(false)} onTrack={(selectedOrder) => { setOrder(selectedOrder); setOrdersOpen(false); window.setTimeout(() => document.getElementById("tracking")?.scrollIntoView({ behavior: "smooth" }), 50); }}/> : null}
 
       {toast ? <div className="toast" role="status"><Icon name="check" size={17}/>{toast}</div> : null}
     </>

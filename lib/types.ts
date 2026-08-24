@@ -105,3 +105,14 @@ export type PaymentResult = {
   amount: number;
   message: string;
 };
+
+export type SupportIssueType = "delivery" | "wrong-part" | "fitment" | "payment" | "return" | "other";
+
+export type SupportTicket = {
+  id: string;
+  orderId: string;
+  issueType: SupportIssueType;
+  message: string;
+  status: "open";
+  createdAt: string;
+};
