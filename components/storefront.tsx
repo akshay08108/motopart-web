@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, startTransition, useMemo, useState } from "react";
+import { FormEvent, startTransition, useEffect, useMemo, useState } from "react";
 import { demoApi } from "@/lib/api/client";
 import { activeOrder } from "@/lib/demo-data";
 import type { CartLine, Order, Product, Vehicle } from "@/lib/types";
@@ -9,9 +9,11 @@ import type { CartLine, Order, Product, Vehicle } from "@/lib/types";
 const categories = ["All", "Brakes", "Filters", "Batteries", "Lighting", "Suspension", "Engine"];
 const stages = ["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"] as const;
 
-function Icon({ name, size = 20 }: { name: "search" | "car" | "orders" | "user" | "cart" | "check" | "truck" | "close" | "minus" | "plus" | "arrow"; size?: number }) {
+function Icon({ name, size = 20 }: { name: "search" | "home" | "grid" | "car" | "orders" | "user" | "cart" | "check" | "truck" | "close" | "minus" | "plus" | "arrow"; size?: number }) {
   const paths = {
     search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
+    home: <><path d="m3 11 9-8 9 8"/><path d="M5 10v11h14V10M9 21v-7h6v7"/></>,
+    grid: <><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></>,
     car: <><path d="M5 17h14l-1-7-2-3H8L6 10l-1 7Z"/><path d="M7 10h10M7 17v2m10-2v2"/><circle cx="8" cy="15" r="1"/><circle cx="16" cy="15" r="1"/></>,
     orders: <><path d="M7 3h10l2 3v15H5V6l2-3Z"/><path d="M5 7h14M9 11h6m-6 4h6"/></>,
     user: <><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>,
@@ -27,11 +29,19 @@ function Icon({ name, size = 20 }: { name: "search" | "car" | "orders" | "user" 
 }
 
 function SpriteImage({ index, className = "" }: { index: number; className?: string }) {
-  return <div className={`sprite-image sprite-${index} ${className}`} role="img" aria-label="Auto part product" />;
+  return (
+    <div className={`sprite-image ${className}`}>
+      <Image src={`/parts/${index}-v2.png`} alt="" fill sizes="(max-width: 640px) 50vw, 260px" />
+    </div>
+  );
 }
 
 function CategoryImage({ index }: { index: number }) {
-  return <div className={`category-sprite category-sprite-${index} category-image`} role="img" aria-label="Auto part category" />;
+  return (
+    <div className="category-image">
+      <Image src={`/categories/${index}-v2.png`} alt="" fill sizes="(max-width: 640px) 33vw, 240px" />
+    </div>
+  );
 }
 
 function formatPrice(value: number) {
@@ -92,12 +102,20 @@ export function Storefront({ initialProducts, initialVehicles }: { initialProduc
   const [order, setOrder] = useState<Order>(activeOrder);
   const [toast, setToast] = useState("");
   const [isFiltering, setIsFiltering] = useState(false);
+  const [mobileNavVisible, setMobileNavVisible] = useState(false);
 
   const vehicle = vehicles.find((item) => item.id === activeVehicleId) ?? vehicles[0];
   const cartCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const subtotal = cart.reduce((sum, line) => sum + line.product.price * line.quantity, 0);
 
   const allowedProducts = useMemo(() => products.map((product) => ({ product, compatible: product.compatibleVehicleIds.includes(activeVehicleId) })), [products, activeVehicleId]);
+
+  useEffect(() => {
+    const updateMobileNav = () => setMobileNavVisible(window.scrollY > 240);
+    updateMobileNav();
+    window.addEventListener("scroll", updateMobileNav, { passive: true });
+    return () => window.removeEventListener("scroll", updateMobileNav);
+  }, []);
 
   async function filterCatalog(nextQuery = query, nextCategory = category) {
     setIsFiltering(true);
@@ -160,6 +178,7 @@ export function Storefront({ initialProducts, initialVehicles }: { initialProduc
             <button type="submit">Search</button>
           </form>
           <button className="vehicle-control" onClick={() => setVehicleOpen(true)}><Icon name="car"/><span><small>Selected vehicle</small>{vehicle.year} {vehicle.make} {vehicle.model}</span><b>⌄</b></button>
+          <button className="mobile-cart-button" onClick={() => setCartOpen(true)} aria-label={`Open cart with ${cartCount} items`}><Icon name="cart"/>{cartCount > 0 ? <em>{cartCount}</em> : null}</button>
           <nav className="header-actions" aria-label="Account actions">
             <button onClick={() => document.getElementById("tracking")?.scrollIntoView({ behavior: "smooth" })}><Icon name="orders"/><span>Orders</span></button>
             <button><Icon name="user"/><span>Account</span></button>
@@ -216,13 +235,18 @@ export function Storefront({ initialProducts, initialVehicles }: { initialProduc
         <section className="trust page-shell"><span><Icon name="check"/><b>100% vehicle compatibility</b><small>Exact fit guarantee</small></span><span><Icon name="check"/><b>Genuine & quality parts</b><small>Trusted brands and sellers</small></span><span><Icon name="truck"/><b>Easy returns</b><small>7-day return policy</small></span><span><Icon name="orders"/><b>Secure payments</b><small>UPI, cards and COD</small></span></section>
       </main>
 
-      <nav className="mobile-nav" aria-label="Mobile navigation"><button className="active"><span>⌂</span>Home</button><button onClick={() => document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" })}><span>▦</span>Categories</button><button onClick={() => setVehicleOpen(true)}><span>⌾</span>Garage</button><button onClick={() => document.getElementById("tracking")?.scrollIntoView({ behavior: "smooth" })}><span>□</span>Orders</button><button><span>○</span>Account</button></nav>
+      <nav className={`mobile-nav ${mobileNavVisible ? "is-visible" : ""}`} aria-label="Mobile navigation">
+        <button className="active" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><span className="nav-icon"><Icon name="home" size={21}/></span><span>Home</span></button>
+        <button onClick={() => document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" })}><span className="nav-icon"><Icon name="grid" size={21}/></span><span>Shop</span></button>
+        <button onClick={() => document.getElementById("tracking")?.scrollIntoView({ behavior: "smooth" })}><span className="nav-icon"><Icon name="orders" size={21}/></span><span>Orders</span></button>
+        <button onClick={() => setCartOpen(true)}><span className="nav-icon"><Icon name="cart" size={21}/>{cartCount > 0 ? <em>{cartCount}</em> : null}</span><span>Cart</span></button>
+      </nav>
 
       {vehicleOpen ? <Modal title="Choose your vehicle" onClose={() => setVehicleOpen(false)}><div className="vehicle-list">{vehicles.map((item) => <button key={item.id} className={item.id === activeVehicleId ? "selected" : ""} onClick={() => { setActiveVehicleId(item.id); setVehicleOpen(false); showToast(`${item.make} ${item.model} selected`); }}><Icon name="car"/><span><b>{item.year} {item.make} {item.model}</b><small>{item.variant} · {item.fuel} · {item.transmission}</small></span>{item.id === activeVehicleId ? <Icon name="check"/> : null}</button>)}<button className="add-vehicle"><Icon name="plus"/>Add another vehicle</button></div></Modal> : null}
 
       {selectedProduct ? <Modal title="Part details" onClose={() => setSelectedProduct(null)} wide><div className="product-detail"><div className="detail-image"><SpriteImage index={selectedProduct.imageIndex}/></div><div className="detail-copy"><span className="detail-brand">{selectedProduct.brand}</span><h3>{selectedProduct.name}</h3><p>{selectedProduct.kind} part supplied by {selectedProduct.seller}, covered by a {selectedProduct.warranty} warranty.</p><dl><div><dt>Part number</dt><dd>{selectedProduct.partNumber}</dd></div><div><dt>OEM reference</dt><dd>{selectedProduct.oemNumber}</dd></div><div><dt>Availability</dt><dd>{selectedProduct.stock} in stock</dd></div><div><dt>Delivery</dt><dd>{selectedProduct.deliveryLabel}</dd></div></dl><div className="detail-fit"><Icon name="check"/><span><b>Fits your {vehicle.make} {vehicle.model}</b><small>Verified for {vehicle.year} · {vehicle.variant} · {vehicle.transmission}</small></span></div><div className="detail-buy"><strong>{formatPrice(selectedProduct.price)}</strong><button className="primary-button" onClick={() => { addToCart(selectedProduct); setSelectedProduct(null); }}>Add to cart</button></div></div></div></Modal> : null}
 
-      {cartOpen ? <div className="drawer-backdrop" onMouseDown={() => setCartOpen(false)}><aside className="cart-drawer" onMouseDown={(event) => event.stopPropagation()}><header><div><h2>Your cart</h2><p>{cartCount} {cartCount === 1 ? "item" : "items"} · checked for {vehicle.model}</p></div><button className="icon-button" onClick={() => setCartOpen(false)}><Icon name="close"/></button></header><div className="cart-lines">{cart.length ? cart.map((line) => <div className="cart-line" key={line.product.id}><SpriteImage index={line.product.imageIndex}/><div><b>{line.product.name}</b><small><Icon name="check" size={14}/>Fits your vehicle</small><span>{formatPrice(line.product.price)}</span></div><div className="quantity"><button onClick={() => updateQuantity(line.product.id, -1)}><Icon name="minus" size={15}/></button><b>{line.quantity}</b><button onClick={() => updateQuantity(line.product.id, 1)}><Icon name="plus" size={15}/></button></div></div>) : <div className="cart-empty"><Icon name="cart" size={34}/><h3>Your cart is empty</h3><p>Add a compatible part to start your order.</p></div>}</div>{cart.length ? <footer><div><span>Subtotal</span><b>{formatPrice(subtotal)}</b></div><small>Taxes included · Delivery calculated next</small><button className="primary-button" onClick={() => { setCartOpen(false); setCheckoutStep(1); }}>Checkout securely <Icon name="arrow"/></button></footer> : null}</aside></div> : null}
+      {cartOpen ? <div className="drawer-backdrop" onMouseDown={() => setCartOpen(false)}><aside className="cart-drawer" onMouseDown={(event) => event.stopPropagation()}><header><div><h2>Your cart</h2><p>{cartCount} {cartCount === 1 ? "item" : "items"} · checked for {vehicle.model}</p></div><button className="icon-button" onClick={() => setCartOpen(false)} aria-label="Close cart"><Icon name="close"/></button></header><div className="cart-lines">{cart.length ? cart.map((line) => <div className="cart-line" key={line.product.id}><SpriteImage index={line.product.imageIndex}/><div><b>{line.product.name}</b><small><Icon name="check" size={14}/>Fits your vehicle</small><span>{formatPrice(line.product.price)}</span></div><div className="quantity"><button onClick={() => updateQuantity(line.product.id, -1)}><Icon name="minus" size={15}/></button><b>{line.quantity}</b><button onClick={() => updateQuantity(line.product.id, 1)}><Icon name="plus" size={15}/></button></div></div>) : <div className="cart-empty"><Icon name="cart" size={34}/><h3>Your cart is empty</h3><p>Add a compatible part to start your order.</p></div>}</div>{cart.length ? <footer><div><span>Subtotal</span><b>{formatPrice(subtotal)}</b></div><small>Taxes included · Delivery calculated next</small><button className="primary-button" onClick={() => { setCartOpen(false); setCheckoutStep(1); }}>Checkout securely <Icon name="arrow"/></button></footer> : null}</aside></div> : null}
 
       {checkoutStep > 0 ? <Modal title={checkoutStep === 4 ? "Order confirmed" : "Secure checkout"} onClose={() => setCheckoutStep(0)} wide><div className="checkout"><div className="checkout-progress">{["Address", "Delivery", "Payment"].map((label, index) => <span key={label} className={checkoutStep > index ? "active" : ""}><b>{checkoutStep > index + 1 || checkoutStep === 4 ? <Icon name="check" size={14}/> : index + 1}</b>{label}</span>)}</div>{checkoutStep === 1 ? <div className="checkout-panel"><h3>Where should we deliver?</h3><button className="choice selected"><span><b>Home</b><small>24 Hill Road, Bandra West, Mumbai 400050</small></span><Icon name="check"/></button><button className="choice"><span><b>Garage delivery</b><small>Send directly to your trusted mechanic</small></span></button><button className="primary-button" onClick={() => setCheckoutStep(2)}>Continue to delivery <Icon name="arrow"/></button></div> : null}{checkoutStep === 2 ? <div className="checkout-panel"><h3>Choose delivery speed</h3><button className="choice selected"><span><b>Standard · Tomorrow</b><small>By 11 AM · Free</small></span><Icon name="check"/></button><button className="choice"><span><b>Express · Today</b><small>Within 90 minutes · ₹149</small></span></button><button className="primary-button" onClick={() => setCheckoutStep(3)}>Continue to payment <Icon name="arrow"/></button></div> : null}{checkoutStep === 3 ? <div className="checkout-panel"><h3>Select payment method</h3><button className="choice selected"><span><b>UPI</b><small>Pay securely with any UPI app</small></span><Icon name="check"/></button><button className="choice"><span><b>Credit or debit card</b><small>Visa, Mastercard and RuPay</small></span></button><button className="primary-button" onClick={() => void placeOrder()}>Pay {formatPrice(subtotal)} <Icon name="arrow"/></button></div> : null}{checkoutStep === 4 ? <div className="order-success"><span><Icon name="check" size={30}/></span><h3>Your parts are booked.</h3><p>Order #{order.id} is confirmed. We’ll keep you updated through every delivery step.</p><button className="primary-button" onClick={() => setCheckoutStep(0)}>Track order</button></div> : null}</div></Modal> : null}
 
