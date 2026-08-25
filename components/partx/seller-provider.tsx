@@ -2,10 +2,10 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { collection, doc, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
-import { deleteObject, getDownloadURL, ref, uploadBytesResumable, type StorageReference } from "firebase/storage";
 import type { NewSellerProduct, SellerOrder, SellerOrderStatus, SellerProduct, SellerTicket, StoreRating } from "@/lib/types";
 import { createPartXId, sellerTicketsSeed, storeRatingsSeed } from "@/lib/seller-data";
-import { firebaseStorage, firestore } from "@/lib/firebase";
+import { deleteCloudinaryProductImage, uploadProductImageToCloudinary } from "@/lib/cloudinary-client";
+import { firestore } from "@/lib/firebase";
 import { usePartX } from "./app-provider";
 
 type NewTicket = Pick<SellerTicket, "orderId" | "issue" | "message"> & { customer?: SellerTicket["customer"] };
@@ -217,17 +217,15 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     addProduct: async (product, image) => {
       if (!user || user.sellerStatus !== "approved" || !user.storeIds?.[0]) throw new Error("Only approved sellers can add products.");
       const productRef = doc(collection(firestore, "products"));
-      const imageRef = image ? ref(firebaseStorage, productImagePath(user.id, productRef.id, image)) : null;
-      let imageUrl: string | undefined;
-      if (image && imageRef) {
+      let uploadedImage: Awaited<ReturnType<typeof uploadProductImageToCloudinary>> | undefined;
+      if (image) {
         validateProductImage(image);
-        await uploadImageFile(imageRef, image);
-        imageUrl = await getDownloadURL(imageRef);
+        uploadedImage = await uploadProductImageToCloudinary(productRef.id, image);
       }
       try {
         await setDoc(productRef, {
           ...product,
-          ...(imageUrl ? { imageUrl } : {}),
+          ...(uploadedImage ?? {}),
           sellerId: user.id,
           storeId: user.storeIds[0],
           status: product.stock > 0 ? "published" : "out-of-stock",
@@ -235,7 +233,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
           updatedAt: serverTimestamp(),
         });
       } catch (reason) {
-        if (imageRef) await deleteObject(imageRef).catch(() => undefined);
+        if (uploadedImage) await deleteCloudinaryProductImage(uploadedImage.imagePublicId).catch(() => undefined);
         throw reason;
       }
     },
@@ -268,9 +266,14 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       const product = sellerProducts.find((item) => item.id === productId);
       if (!product || product.sellerId !== user.id) throw new Error("You can only update products owned by your store.");
       validateProductImage(image);
-      const imageRef = ref(firebaseStorage, productImagePath(user.id, productId, image));
-      await uploadImageFile(imageRef, image, onProgress);
-      await updateDoc(doc(firestore, "products", productId), { imageUrl: await getDownloadURL(imageRef), updatedAt: serverTimestamp() });
+      const uploadedImage = await uploadProductImageToCloudinary(productId, image, onProgress);
+      try {
+        await updateDoc(doc(firestore, "products", productId), { ...uploadedImage, updatedAt: serverTimestamp() });
+      } catch (reason) {
+        await deleteCloudinaryProductImage(uploadedImage.imagePublicId).catch(() => undefined);
+        throw reason;
+      }
+      if (product.imagePublicId) await deleteCloudinaryProductImage(product.imagePublicId).catch(() => undefined);
     },
   }), [sellerOrders, tickets, ratings, alertsEnabled, activeAlert, productOverrides, sellerProducts, updateOrderStage, user]);
 
@@ -286,67 +289,6 @@ export function useSeller() {
 function validateProductImage(image: File) {
   if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(image.type)) throw new Error("Choose a JPG, PNG or WebP image.");
   if (image.size > 5 * 1024 * 1024) throw new Error("Product images must be 5 MB or smaller.");
-}
-
-function productImagePath(sellerId: string, productId: string, image: File) {
-  const extension = image.type === "image/png" ? "png" : image.type === "image/webp" ? "webp" : "jpg";
-  return `products/${sellerId}/${productId}/primary-${Date.now()}.${extension}`;
-}
-
-const storageSetupMessage = "Product image storage is not active. Upgrade Firebase to the Blaze plan, open Databases & Storage → Storage, create the default bucket, then publish storage.rules.";
-
-async function uploadImageFile(imageRef: StorageReference, image: File, onProgress?: (progress: number) => void) {
-  await verifyStorageBucket(imageRef.bucket);
-  return new Promise<void>((resolve, reject) => {
-    const task = uploadBytesResumable(imageRef, image, { contentType: image.type });
-    let settled = false;
-    let stalledTimer: ReturnType<typeof setTimeout>;
-    const stopTimer = () => clearTimeout(stalledTimer);
-    const failForStall = () => {
-      if (settled) return;
-      settled = true;
-      void task.cancel();
-      reject(new Error(storageSetupMessage));
-    };
-    const restartTimer = () => {
-      stopTimer();
-      stalledTimer = setTimeout(failForStall, 20_000);
-    };
-    restartTimer();
-    task.on("state_changed", (snapshot) => {
-      restartTimer();
-      onProgress?.(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100));
-    }, (reason) => {
-      stopTimer();
-      if (settled) return;
-      settled = true;
-      reject(new Error(storageErrorMessage(reason)));
-    }, () => {
-      stopTimer();
-      if (settled) return;
-      settled = true;
-      onProgress?.(100);
-      resolve();
-    });
-  });
-}
-
-async function verifyStorageBucket(bucket: string) {
-  let response: Response;
-  try {
-    response = await fetch(`https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?maxResults=1`);
-  } catch {
-    return;
-  }
-  if (response.status === 402 || response.status === 404) throw new Error(storageSetupMessage);
-}
-
-function storageErrorMessage(reason: unknown) {
-  const code = typeof reason === "object" && reason && "code" in reason ? String(reason.code) : "";
-  if (code.includes("bucket-not-found") || code.includes("project-not-found") || code.includes("quota-exceeded")) return storageSetupMessage;
-  if (code.includes("unauthorized")) return "Firebase Storage denied this upload. Confirm you are signed in as the product owner and publish the repository's storage.rules file.";
-  if (code.includes("canceled")) return "The image upload was cancelled. Please try again.";
-  return reason instanceof Error ? reason.message : "Image upload failed. Check Firebase Storage and try again.";
 }
 
 type FirestoreSellerOrder = SellerOrder & { createdAt?: unknown };

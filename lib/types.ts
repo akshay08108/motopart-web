@@ -52,6 +52,7 @@ export type SellerProduct = {
   description: string;
   compatibility: string;
   imageUrl?: string;
+  imagePublicId?: string;
   status: "published" | "out-of-stock";
 };
 
