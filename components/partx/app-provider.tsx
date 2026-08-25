@@ -2,9 +2,9 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createUserWithEmailAndPassword, deleteUser, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut as firebaseSignOut, updateProfile } from "firebase/auth";
-import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc, writeBatch } from "firebase/firestore";
-import type { AppLocation, CartLine, CustomerUser, Garage, Order, OrderStage, PartnerStore, UserRole, Vehicle } from "@/lib/types";
-import { activeOrder, vehicles as initialVehicles } from "@/lib/demo-data";
+import { collection, doc, getDoc, onSnapshot, serverTimestamp, updateDoc, writeBatch } from "firebase/firestore";
+import type { AppLocation, CartLine, CustomerUser, Garage, Order, OrderStage, PartnerStore, Product, SellerProduct, UserRole, Vehicle } from "@/lib/types";
+import { activeOrder, getDemoCatalog, vehicles as initialVehicles } from "@/lib/demo-data";
 import { firebaseAuth, firestore } from "@/lib/firebase";
 import { demoGarages, demoLocation, demoStores } from "@/lib/marketplace-data";
 import { createPartXId } from "@/lib/seller-data";
@@ -40,6 +40,7 @@ type AppContextValue = {
   garages: Garage[];
   addGarage: (garage: Garage) => void;
   stores: PartnerStore[];
+  catalog: Product[];
   addStore: (store: PartnerStore) => void;
   submitStoreRating: (storeId: string, stars: number) => void;
   orders: PartXOrder[];
@@ -64,6 +65,8 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useState<AppLocation>(demoLocation);
   const [garages, setGarages] = useState<Garage[]>(demoGarages);
   const [stores, setStores] = useState<PartnerStore[]>(demoStores);
+  const [firebaseStores, setFirebaseStores] = useState<FirebaseStoreRecord[]>([]);
+  const [firebaseProducts, setFirebaseProducts] = useState<SellerProduct[]>([]);
   const [orders, setOrders] = useState<PartXOrder[]>([activeOrder, deliveredOrder]);
   const [liveOrderUpdate, setLiveOrderUpdate] = useState<{ orderId: string; stage: OrderStage } | null>(null);
   const [user, setUser] = useState<CustomerUser | null>(null);
@@ -74,6 +77,16 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     ordersRef.current = orders;
   }, [orders]);
+
+  useEffect(() => {
+    const stopStores = onSnapshot(collection(firestore, "stores"), (snapshot) => {
+      setFirebaseStores(snapshot.docs.map((storeDoc) => ({ id: storeDoc.id, ...storeDoc.data() } as FirebaseStoreRecord)).filter((store) => store.status === "approved"));
+    }, () => setFirebaseStores([]));
+    const stopProducts = onSnapshot(collection(firestore, "products"), (snapshot) => {
+      setFirebaseProducts(snapshot.docs.map((productDoc) => ({ id: productDoc.id, ...productDoc.data() } as SellerProduct)).filter((product) => product.status === "published" || product.status === "out-of-stock"));
+    }, () => setFirebaseProducts([]));
+    return () => { stopStores(); stopProducts(); };
+  }, []);
 
   useEffect(() => {
     const hydrate = () => {
@@ -162,6 +175,23 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("partx-profile-v1", JSON.stringify({ vehicles, activeVehicleId, location, garages, stores }));
   }, [cart, orders, vehicles, activeVehicleId, location, garages, stores, hydrated]);
 
+  const catalog = useMemo(() => {
+    const storeNames = new Map(firebaseStores.map((store) => [store.id, store.name]));
+    const combined = new Map(getDemoCatalog().map((product) => [product.id, product]));
+    for (const product of firebaseProducts) combined.set(product.id, toCatalogProduct(product, storeNames.get(product.storeId) ?? "PartX verified seller", vehicles));
+    return [...combined.values()];
+  }, [firebaseProducts, firebaseStores, vehicles]);
+
+  const marketplaceStores = useMemo(() => {
+    const combined = new Map(stores.map((store) => [store.id, store]));
+    for (const store of firebaseStores) {
+      const existing = combined.get(store.id);
+      const sellerProducts = firebaseProducts.filter((product) => product.storeId === store.id);
+      combined.set(store.id, toPartnerStore(store, sellerProducts, existing));
+    }
+    return [...combined.values()];
+  }, [firebaseProducts, firebaseStores, stores]);
+
   const value = useMemo<AppContextValue>(() => ({
     theme,
     toggleTheme: () => setTheme((current) => current === "light" ? "dark" : "light"),
@@ -170,8 +200,8 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     cartTotal: cart.reduce((sum, line) => sum + (line.unitPrice ?? line.product.price) * line.quantity, 0),
     addToCart: (product, quantity = 1, seller) => setCart((current) => {
       const found = current.find((line) => line.product.id === product.id);
-      const defaultStore = stores.find((store) => store.listings.some((listing) => listing.productId === product.id));
-      const defaultListing = defaultStore?.listings.find((listing) => listing.productId === product.id);
+      const defaultStore = marketplaceStores.find((store) => store.listings.some((listing) => listing.productId === product.id || listing.partNumber === product.partNumber));
+      const defaultListing = defaultStore?.listings.find((listing) => listing.productId === product.id || listing.partNumber === product.partNumber);
       const selection = seller ?? { storeId: defaultStore?.id ?? "autohub-mumbai", storeName: defaultStore?.name ?? product.seller, price: defaultListing?.price ?? product.price };
       if (!found) return [...current, { product, quantity, storeId: selection.storeId, storeName: selection.storeName, unitPrice: selection.price }];
       if (found.storeId !== selection.storeId) return current.map((line) => line.product.id === product.id ? { ...line, storeId: selection.storeId, storeName: selection.storeName, unitPrice: selection.price } : line);
@@ -187,7 +217,8 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     setLocation,
     garages,
     addGarage: (garage) => setGarages((current) => [...current, garage]),
-    stores,
+    stores: marketplaceStores,
+    catalog,
     addStore: (store) => setStores((current) => [...current, store]),
     submitStoreRating: (storeId, stars) => setStores((current) => current.map((store) => {
       if (store.id !== storeId) return store;
@@ -278,9 +309,77 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       try { await sendPasswordResetEmail(firebaseAuth, email.trim()); return true; } catch { return false; }
     },
     signOut: async () => { setUser(null); await firebaseSignOut(firebaseAuth); },
-  }), [theme, cart, vehicles, activeVehicleId, location, garages, stores, orders, liveOrderUpdate, user, hydrated, firebaseHydrated]);
+  }), [theme, cart, vehicles, activeVehicleId, location, garages, marketplaceStores, catalog, orders, liveOrderUpdate, user, hydrated, firebaseHydrated]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+}
+
+type FirebaseStoreRecord = {
+  id: string;
+  ownerId: string;
+  name: string;
+  status: "pending" | "approved";
+  rating?: number;
+  ratingCount?: number;
+  owner?: string;
+  phone?: string;
+  businessHours?: string;
+  deliveryRadiusKm?: number;
+  address?: string;
+};
+
+function toPartnerStore(store: FirebaseStoreRecord, products: SellerProduct[], existing?: PartnerStore): PartnerStore {
+  return {
+    id: store.id,
+    name: store.name,
+    owner: store.owner ?? existing?.owner ?? "Verified PartX seller",
+    phone: store.phone ?? existing?.phone ?? "Contact through PartX",
+    businessHours: store.businessHours ?? existing?.businessHours ?? "Store hours not added",
+    deliveryRadiusKm: store.deliveryRadiusKm ?? existing?.deliveryRadiusKm ?? 0,
+    rating: store.rating ?? existing?.rating ?? 0,
+    ratingCount: store.ratingCount ?? existing?.ratingCount ?? 0,
+    distanceKm: existing?.distanceKm ?? 0,
+    location: existing?.location ?? { id: `${store.id}-location`, label: "Store", address: store.address ?? "Location will be confirmed at checkout" },
+    listings: products.map((product) => ({
+      id: product.id,
+      productId: product.id,
+      productName: product.name,
+      partNumber: product.partNumber,
+      category: product.category,
+      price: product.sellingPrice,
+      mrp: product.mrp,
+      stock: product.stock,
+    })),
+  };
+}
+
+function toCatalogProduct(product: SellerProduct, storeName: string, vehicles: Vehicle[]): Product {
+  const compatibility = product.compatibility.toLowerCase();
+  return {
+    id: product.id,
+    brand: product.brand.toUpperCase(),
+    name: product.name,
+    partNumber: product.partNumber,
+    oemNumber: product.partNumber,
+    kind: product.condition === "New" ? "Premium aftermarket" : "Budget aftermarket",
+    price: product.sellingPrice,
+    listPrice: Math.max(product.mrp, product.sellingPrice),
+    rating: 0,
+    reviews: 0,
+    category: product.category,
+    imageIndex: stableImageIndex(product.id),
+    compatibleVehicleIds: vehicles.filter((vehicle) => compatibility.includes(vehicle.make.toLowerCase()) && compatibility.includes(vehicle.model.toLowerCase())).map((vehicle) => vehicle.id),
+    stock: product.stock,
+    deliveryLabel: "Delivery estimate at checkout",
+    warranty: product.warranty,
+    seller: storeName,
+  };
+}
+
+function stableImageIndex(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  return Math.abs(hash) % 6;
 }
 
 function parseFirebaseUser(uid: string, authEmail: string, data: Record<string, unknown>): CustomerUser | null {
