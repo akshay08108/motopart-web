@@ -1,8 +1,10 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import type { SellerOrder, SellerOrderStatus, SellerTicket, StoreRating } from "@/lib/types";
+import { addDoc, collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where } from "firebase/firestore";
+import type { NewSellerProduct, SellerOrder, SellerOrderStatus, SellerProduct, SellerTicket, StoreRating } from "@/lib/types";
 import { createPartXId, sellerOrdersSeed, sellerTicketsSeed, storeRatingsSeed } from "@/lib/seller-data";
+import { firestore } from "@/lib/firebase";
 import { usePartX } from "./app-provider";
 
 type NewTicket = Pick<SellerTicket, "orderId" | "issue" | "message"> & { customer?: SellerTicket["customer"] };
@@ -23,6 +25,9 @@ type SellerContextValue = {
   addRating: (rating: Omit<StoreRating, "id" | "createdAt" | "verified">) => StoreRating;
   updateProduct: (partNumber: string, price: number, stock: number) => void;
   productOverrides: Record<string, { price: number; stock: number }>;
+  sellerProducts: SellerProduct[];
+  addProduct: (product: NewSellerProduct) => Promise<void>;
+  updateSellerProduct: (productId: string, sellingPrice: number, stock: number) => Promise<void>;
 };
 
 const SellerContext = createContext<SellerContextValue | null>(null);
@@ -55,7 +60,7 @@ function playFiveSecondAlert() {
 }
 
 export function SellerProvider({ children }: { children: React.ReactNode }) {
-  const { updateOrderStage } = usePartX();
+  const { updateOrderStage, user } = usePartX();
   const [sellerOrders, setSellerOrders] = useState<SellerOrder[]>(sellerOrdersSeed);
   const [tickets, setTickets] = useState<SellerTicket[]>(sellerTicketsSeed);
   const [ratings, setRatings] = useState<StoreRating[]>(storeRatingsSeed);
@@ -64,6 +69,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   const [productOverrides, setProductOverrides] = useState<Record<string, { price: number; stock: number }>>({
     "BP-0986-424-384": { price: 1299, stock: 3 }, "LX-3541": { price: 649, stock: 12 }, MTRED60L: { price: 4999, stock: 2 }, "3397011417": { price: 799, stock: 4 }, "OC-523": { price: 259, stock: 0 },
   });
+  const [sellerProducts, setSellerProducts] = useState<SellerProduct[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const alertsEnabledRef = useRef(false);
   const sellerOrdersRef = useRef(sellerOrdersSeed);
@@ -71,6 +77,15 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     alertsEnabledRef.current = alertsEnabled;
   }, [alertsEnabled]);
+
+  useEffect(() => {
+    if (!user?.id || user.activeRole !== "seller") return;
+    return onSnapshot(
+      query(collection(firestore, "products"), where("sellerId", "==", user.id)),
+      (snapshot) => setSellerProducts(snapshot.docs.map((productDoc) => ({ id: productDoc.id, ...productDoc.data() } as SellerProduct))),
+      () => setSellerProducts([]),
+    );
+  }, [user?.activeRole, user?.id]);
 
   useEffect(() => {
     sellerOrdersRef.current = sellerOrders;
@@ -178,7 +193,27 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     },
     updateProduct: (partNumber, price, stock) => setProductOverrides((current) => ({ ...current, [partNumber]: { price, stock } })),
     productOverrides,
-  }), [sellerOrders, tickets, ratings, alertsEnabled, activeAlert, productOverrides, updateOrderStage]);
+    sellerProducts,
+    addProduct: async (product) => {
+      if (!user || user.sellerStatus !== "approved" || !user.storeIds?.[0]) throw new Error("Only approved sellers can add products.");
+      await addDoc(collection(firestore, "products"), {
+        ...product,
+        sellerId: user.id,
+        storeId: user.storeIds[0],
+        status: product.stock > 0 ? "published" : "out-of-stock",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    },
+    updateSellerProduct: async (productId, sellingPrice, stock) => {
+      await updateDoc(doc(firestore, "products", productId), {
+        sellingPrice,
+        stock,
+        status: stock > 0 ? "published" : "out-of-stock",
+        updatedAt: serverTimestamp(),
+      });
+    },
+  }), [sellerOrders, tickets, ratings, alertsEnabled, activeAlert, productOverrides, sellerProducts, updateOrderStage, user]);
 
   return <SellerContext.Provider value={value}>{children}</SellerContext.Provider>;
 }

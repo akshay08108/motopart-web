@@ -31,6 +31,28 @@ export type Product = {
   seller: string;
 };
 
+export type SellerProduct = {
+  id: string;
+  sellerId: string;
+  storeId: string;
+  name: string;
+  brand: string;
+  category: string;
+  partNumber: string;
+  sku: string;
+  condition: "New" | "Refurbished" | "Used";
+  mrp: number;
+  sellingPrice: number;
+  gstRate: number;
+  stock: number;
+  warranty: string;
+  description: string;
+  compatibility: string;
+  status: "published" | "out-of-stock";
+};
+
+export type NewSellerProduct = Omit<SellerProduct, "id" | "sellerId" | "storeId" | "status">;
+
 export type CartLine = {
   product: Product;
   quantity: number;

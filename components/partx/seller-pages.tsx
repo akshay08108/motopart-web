@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
-import type { SellerOrder, SellerOrderStatus } from "@/lib/types";
+import { useState, type FormEvent } from "react";
+import type { NewSellerProduct, SellerOrder, SellerOrderStatus, SellerProduct } from "@/lib/types";
 import { getDemoCatalog } from "@/lib/demo-data";
 import { Icon } from "./icons";
 import { useSeller } from "./seller-provider";
@@ -62,8 +62,26 @@ export function SellerTicketsPage() {
 }
 
 export function SellerProductsPage() {
-  const { productOverrides, updateProduct } = useSeller(); const products = getDemoCatalog();
-  return <><SellerTitle title="Products & prices" subtitle="Manage what your store sells, its price and live stock"/><section className="sx-panel"><div className="sx-product-table"><div className="sx-product-table-head"><span>Product</span><span>Part number</span><span>Your price</span><span>Stock</span><span>Status</span><span>Action</span></div>{products.map((product) => <ProductEditor key={product.id} product={product} current={productOverrides[product.partNumber] ?? {price:product.price,stock:product.stock}} save={updateProduct}/>)}</div></section></>;
+  const { productOverrides, updateProduct, sellerProducts, addProduct, updateSellerProduct } = useSeller();
+  const products = getDemoCatalog();
+  const [adding, setAdding] = useState(false);
+  const [message, setMessage] = useState("");
+  return <>
+    <div className="sx-product-page-head">
+      <SellerTitle title="Products & prices" subtitle="Manage what your store sells, its price and live stock"/>
+      <button className="sx-primary sx-add-product" onClick={() => setAdding(true)}><Icon name="plus"/>Add product</button>
+    </div>
+    {message ? <div className="sx-product-success" role="status"><Icon name="check"/>{message}</div> : null}
+    <section className="sx-panel">
+      <PanelHead title={`Your Firebase products (${sellerProducts.length})`}/>
+      {sellerProducts.length ? <div className="sx-product-table"><div className="sx-product-table-head"><span>Product</span><span>Part number</span><span>Your price</span><span>Stock</span><span>Status</span><span>Action</span></div>{sellerProducts.map((product) => <SellerProductEditor key={product.id} product={product} save={updateSellerProduct}/>)}</div> : <div className="sx-product-empty"><span><Icon name="box"/></span><h2>No products added yet</h2><p>Add your first part with its price, stock and vehicle compatibility.</p><button className="sx-primary" onClick={() => setAdding(true)}>Add your first product</button></div>}
+    </section>
+    <section className="sx-panel sx-demo-products">
+      <PanelHead title="Demo catalogue pricing"/>
+      <div className="sx-product-table"><div className="sx-product-table-head"><span>Product</span><span>Part number</span><span>Your price</span><span>Stock</span><span>Status</span><span>Action</span></div>{products.map((product) => <ProductEditor key={product.id} product={product} current={productOverrides[product.partNumber] ?? {price:product.price,stock:product.stock}} save={updateProduct}/>)}</div>
+    </section>
+    {adding ? <AddProductDialog existingProducts={sellerProducts} close={() => setAdding(false)} submit={async (product) => { await addProduct(product); setAdding(false); setMessage(`${product.name} was published to your store.`); }}/> : null}
+  </>;
 }
 
 export function SellerReviewsPage() {
@@ -83,6 +101,47 @@ function SellerOrderTable({ orders, all=false }: { orders: SellerOrder[]; all?: 
 function ProductEditor({ product,current,save }: { product: ReturnType<typeof getDemoCatalog>[number]; current:{price:number;stock:number}; save:(partNumber:string,price:number,stock:number)=>void }) {
   const [price,setPrice]=useState(current.price); const [stock,setStock]=useState(current.stock); const [saved,setSaved]=useState(false);
   return <div className="sx-product-row"><span><Image src={`/parts/${product.imageIndex}-v2.png`} alt="" width={74} height={58}/><b>{product.name}</b></span><span>{product.partNumber}</span><label>₹<input type="number" value={price} onChange={(event)=>setPrice(Number(event.target.value))}/></label><input type="number" value={stock} onChange={(event)=>setStock(Number(event.target.value))}/><Status status={stock===0?"Out of stock":stock<5?"Low stock":"Active"}/><button onClick={()=>{save(product.partNumber,price,stock);setSaved(true);}}>{saved?"Saved":"Save"}</button></div>;
+}
+
+function SellerProductEditor({ product, save }: { product: SellerProduct; save: (productId: string, sellingPrice: number, stock: number) => Promise<void> }) {
+  const [price, setPrice] = useState(product.sellingPrice);
+  const [stock, setStock] = useState(product.stock);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const submit = async () => {
+    setSaving(true); setSaved(false);
+    try { await save(product.id, price, stock); setSaved(true); } finally { setSaving(false); }
+  };
+  return <div className="sx-product-row"><span><span className="sx-product-placeholder"><Icon name="box"/></span><b>{product.name}<small>{product.brand} · {product.sku}</small></b></span><span>{product.partNumber}</span><label>₹<input type="number" min="0" value={price} onChange={(event) => setPrice(Number(event.target.value))}/></label><input type="number" min="0" value={stock} onChange={(event) => setStock(Number(event.target.value))}/><Status status={stock===0?"Out of stock":stock<5?"Low stock":"Active"}/><button disabled={saving} onClick={() => void submit()}>{saving?"Saving…":saved?"Saved":"Save"}</button></div>;
+}
+
+function AddProductDialog({ existingProducts, close, submit }: { existingProducts: SellerProduct[]; close: () => void; submit: (product: NewSellerProduct) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setError("");
+    const data = new FormData(event.currentTarget);
+    const product: NewSellerProduct = {
+      name: String(data.get("name") ?? "").trim(),
+      brand: String(data.get("brand") ?? "").trim(),
+      category: String(data.get("category") ?? "").trim(),
+      partNumber: String(data.get("partNumber") ?? "").trim().toUpperCase(),
+      sku: String(data.get("sku") ?? "").trim().toUpperCase(),
+      condition: String(data.get("condition")) as NewSellerProduct["condition"],
+      mrp: Number(data.get("mrp")),
+      sellingPrice: Number(data.get("sellingPrice")),
+      gstRate: Number(data.get("gstRate")),
+      stock: Number(data.get("stock")),
+      warranty: String(data.get("warranty") ?? "").trim(),
+      description: String(data.get("description") ?? "").trim(),
+      compatibility: String(data.get("compatibility") ?? "").trim(),
+    };
+    if (product.sellingPrice > product.mrp) { setError("Selling price cannot be higher than MRP."); return; }
+    if (existingProducts.some((item) => item.sku.toLowerCase() === product.sku.toLowerCase())) { setError("This SKU already exists in your store."); return; }
+    setSaving(true);
+    try { await submit(product); } catch (reason) { setError(reason instanceof Error ? reason.message : "Product could not be saved. Check Firebase access and try again."); setSaving(false); }
+  };
+  return <div className="sx-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><div className="sx-product-dialog" role="dialog" aria-modal="true" aria-labelledby="add-product-title"><header><div><span>SELLER INVENTORY</span><h2 id="add-product-title">Add a product</h2><p>Publish a part with its price, stock and fitment details.</p></div><button type="button" onClick={close} aria-label="Close add product form"><Icon name="close"/></button></header><form onSubmit={save}><div className="sx-product-form-grid"><label>Product name<input name="name" required placeholder="e.g. BMW Air Filter"/></label><label>Brand<input name="brand" required placeholder="e.g. Bosch"/></label><label>Category<select name="category" required defaultValue=""><option value="" disabled>Select category</option><option>Filters</option><option>Brakes</option><option>Batteries</option><option>Engine</option><option>Electrical</option><option>Suspension</option><option>Accessories</option><option>Other</option></select></label><label>Condition<select name="condition" defaultValue="New"><option>New</option><option>Refurbished</option><option>Used</option></select></label><label>Manufacturer part number<input name="partNumber" required placeholder="e.g. F026400492"/></label><label>Your SKU<input name="sku" required placeholder="e.g. ARR-BMW-AF-001"/></label><label>MRP (₹)<input name="mrp" type="number" min="0" required/></label><label>Selling price (₹)<input name="sellingPrice" type="number" min="0" required/></label><label>GST rate<select name="gstRate" defaultValue="18"><option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option><option value="28">28%</option></select></label><label>Available stock<input name="stock" type="number" min="0" required/></label><label>Warranty<input name="warranty" required placeholder="e.g. 6 months"/></label><label>Vehicle compatibility<input name="compatibility" required placeholder="e.g. BMW X1 2020–2024 Diesel"/></label></div><label className="sx-product-description">Description<textarea name="description" required placeholder="Part specifications, fitment notes and box contents"/></label>{error ? <p className="sx-form-error" role="alert">{error}</p> : null}<footer><button type="button" className="sx-secondary" onClick={close}>Cancel</button><button type="submit" className="sx-primary" disabled={saving}>{saving?"Publishing…":"Publish product"}</button></footer></form></div></div>;
 }
 
 function SellerTitle({ title,subtitle }: { title:string;subtitle:string }) { return <div className="sx-page-title"><h1>{title}</h1><p>{subtitle}</p></div>; }
