@@ -31,7 +31,20 @@ export type Product = {
   seller: string;
 };
 
-export type CartLine = { product: Product; quantity: number };
+export type CartLine = {
+  product: Product;
+  quantity: number;
+  storeId?: string;
+  storeName?: string;
+  unitPrice?: number;
+};
+
+export type CustomerUser = {
+  id: string;
+  name: string;
+  email: string;
+  mobile: string;
+};
 
 export type OrderStage = "Confirmed" | "Preparing" | "Picked up" | "On the way" | "Delivered";
 
@@ -98,6 +111,8 @@ export type SellerCustomer = {
 export type SellerOrder = {
   id: string;
   trackingId: string;
+  storeId?: string;
+  storeName?: string;
   customer: SellerCustomer;
   placedAt: string;
   productName: string;

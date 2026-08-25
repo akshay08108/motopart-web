@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import { SellerShell } from "./seller-shell";
@@ -15,7 +15,7 @@ const nav = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { theme, toggleTheme, cartCount } = usePartX();
+  const { theme, toggleTheme, cartCount, user, authHydrated } = usePartX();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const submit = (event: FormEvent) => {
@@ -23,8 +23,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.push(`/shop${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ""}`);
   };
   const active = (href: string) => href === "/" ? pathname === "/" : pathname.startsWith(href);
+  const protectedRoute = ["/account", "/orders", "/garage", "/checkout", "/support"].some((route) => pathname === route || pathname.startsWith(`${route}/`));
+
+  useEffect(() => {
+    if (authHydrated && protectedRoute && !user) router.replace("/login");
+  }, [authHydrated, protectedRoute, router, user]);
 
   if (pathname.startsWith("/seller")) return <SellerShell>{children}</SellerShell>;
+  if (pathname === "/login") return children;
+  if (protectedRoute && (!authHydrated || !user)) return <div className="px-auth-loading"><Image src="/brand/partx-light.png" alt="PartX" width={62} height={62}/><span>Opening your account…</span></div>;
 
   return <div className="px-app">
     <header className="px-header">
@@ -43,7 +50,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </form>
         <div className="px-header-actions">
           <button className="px-icon-button" onClick={toggleTheme} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><Icon name={theme === "light" ? "moon" : "sun"}/></button>
-          <Link href="/account" className="px-icon-button" aria-label="Account"><Icon name="user"/></Link>
+          <Link href={user ? "/account" : "/login"} className="px-icon-button" aria-label={user ? "Account" : "Sign in"}><Icon name="user"/></Link>
           <Link href="/cart" className="px-icon-button px-cart-button" aria-label={`Cart with ${cartCount} items`}><Icon name="cart"/>{cartCount > 0 && <span>{cartCount}</span>}</Link>
           <button className="px-menu-button" onClick={() => setOpen((value) => !value)} aria-label="Toggle menu"><Icon name={open ? "close" : "menu"}/></button>
         </div>
@@ -61,7 +68,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="px-container px-footer-bottom">© 2026 PartX · Demo commerce environment · Built for real API integration</div>
     </footer>
     <nav className="px-mobile-nav" aria-label="Mobile navigation">
-      {[["/", "home", "Home"], ["/shop", "grid", "Shop"], ["/cart", "cart", "Cart"], ["/orders", "orders", "Orders"], ["/account", "user", "Account"]].map(([href, icon, label]) => <Link key={href} className={active(href) ? "active" : ""} href={href}><span><Icon name={icon}/>{href === "/cart" && cartCount > 0 && <em>{cartCount}</em>}</span>{label}</Link>)}
+      {[["/", "home", "Home"], ["/shop", "grid", "Shop"], ["/cart", "cart", "Cart"], ["/orders", "orders", "Orders"], [user ? "/account" : "/login", "user", user ? "Account" : "Sign in"]].map(([href, icon, label]) => <Link key={href} className={active(href) ? "active" : ""} href={href}><span><Icon name={icon}/>{href === "/cart" && cartCount > 0 && <em>{cartCount}</em>}</span>{label}</Link>)}
     </nav>
   </div>;
 }
