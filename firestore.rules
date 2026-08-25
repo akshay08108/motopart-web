@@ -20,6 +20,10 @@ service cloud.firestore {
         && currentUser().sellerStatus == 'approved';
     }
 
+    function isCustomer() {
+      return signedIn() && 'customer' in currentUser().roles;
+    }
+
     match /users/{uid} {
       allow create: if ownsUser(uid)
         && request.resource.data.roles.size() == 1
@@ -53,7 +57,26 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isApprovedSeller()
         && request.resource.data.sellerId == request.auth.uid;
-      allow update, delete: if isApprovedSeller()
+      allow update: if (
+          isApprovedSeller()
+          && resource.data.sellerId == request.auth.uid
+        ) || (
+          isCustomer()
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['stock', 'status', 'lastOrderId', 'updatedAt'])
+          && request.resource.data.lastOrderId is string
+          && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.lastOrderId)).data.customerId == request.auth.uid
+          && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.lastOrderId)).data.storeId == resource.data.storeId
+          && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.lastOrderId)).data.itemQuantities[productId] is int
+          && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.lastOrderId)).data.itemQuantities[productId] > 0
+          && request.resource.data.stock == resource.data.stock - getAfter(/databases/$(database)/documents/orders/$(request.resource.data.lastOrderId)).data.itemQuantities[productId]
+          && request.resource.data.stock >= 0
+          && (
+            (request.resource.data.stock == 0 && request.resource.data.status == 'out-of-stock')
+            || (request.resource.data.stock > 0 && request.resource.data.status == 'published')
+          )
+        );
+      allow delete: if isApprovedSeller()
         && resource.data.sellerId == request.auth.uid;
     }
 

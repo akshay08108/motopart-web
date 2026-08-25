@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createUserWithEmailAndPassword, deleteUser, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut as firebaseSignOut, updateProfile } from "firebase/auth";
-import { collection, doc, getDoc, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, query, runTransaction, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore";
 import type { AppLocation, CartLine, CustomerUser, Garage, Order, OrderStage, PartnerStore, PaymentMethod, Product, SellerProduct, UserRole, Vehicle } from "@/lib/types";
 import { activeOrder, getDemoCatalog, vehicles as initialVehicles } from "@/lib/demo-data";
 import { firebaseAuth, firestore } from "@/lib/firebase";
@@ -250,6 +250,9 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     orders,
     placeOrder: async (fulfilment, total, payment) => {
       if (!user) throw new Error("Sign in as a customer before placing an order.");
+      if (!cart.length) throw new Error("Your cart is empty.");
+      const orderStoreIds = new Set(cart.map((item) => item.storeId ?? "autohub-mumbai"));
+      if (orderStoreIds.size > 1) throw new Error("Products from different stores must be checked out separately so each seller receives the correct order.");
       const order: PartXOrder = {
         id: createPartXId("ORD"),
         trackingId: createPartXId("TRK"),
@@ -264,7 +267,8 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       };
       const primaryItem = cart[0];
       const paymentReference = payment === "cod" ? undefined : createPartXId("PAY");
-      await setDoc(doc(firestore, "orders", order.id), {
+      const itemQuantities = Object.fromEntries(cart.map((item) => [item.product.id, item.quantity]));
+      const orderData = {
         customerId: user.id,
         customer: { name: user.name, phone: user.mobile, email: user.email },
         trackingId: order.trackingId,
@@ -293,8 +297,29 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
           storeId: item.storeId ?? order.storeId,
           storeName: item.storeName ?? order.storeName,
         })),
+        itemQuantities,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+      };
+      await runTransaction(firestore, async (transaction) => {
+        const productRefs = cart.map((item) => doc(firestore, "products", item.product.id));
+        const productSnapshots = await Promise.all(productRefs.map((productRef) => transaction.get(productRef)));
+        productSnapshots.forEach((productSnapshot, index) => {
+          if (!productSnapshot.exists()) return;
+          const line = cart[index];
+          const productData = productSnapshot.data();
+          if (productData.storeId !== order.storeId) throw new Error(`${line.product.name} is no longer assigned to the selected store.`);
+          const currentStock = Number(productData.stock ?? 0);
+          if (currentStock < line.quantity) throw new Error(`Only ${currentStock} unit${currentStock === 1 ? " is" : "s are"} left for ${line.product.name}. Update your cart and try again.`);
+          const nextStock = currentStock - line.quantity;
+          transaction.update(productRefs[index], {
+            stock: nextStock,
+            status: nextStock > 0 ? "published" : "out-of-stock",
+            lastOrderId: order.id,
+            updatedAt: serverTimestamp(),
+          });
+        });
+        transaction.set(doc(firestore, "orders", order.id), orderData);
       });
       setOrders((current) => [order, ...current.filter((item) => item.id !== order.id)]);
       setCart([]);

@@ -96,7 +96,7 @@ export function SellerProductsPage() {
     {message ? <div className="sx-product-success" role="status"><Icon name="check"/>{message}</div> : null}
     <section className="sx-panel">
       <PanelHead title={`Your Firebase products (${sellerProducts.length})`}/>
-      {sellerProducts.length ? <div className="sx-product-table"><div className="sx-product-table-head"><span>Product</span><span>Part number</span><span>Your price</span><span>Stock</span><span>Status</span><span>Action</span></div>{sellerProducts.map((product) => <SellerProductEditor key={product.id} product={product} save={updateSellerProduct} uploadImage={uploadProductImage}/>)}</div> : <div className="sx-product-empty"><span><Icon name="box"/></span><h2>No products added yet</h2><p>Add your first part with its price, stock and vehicle compatibility.</p><button className="sx-primary" onClick={() => setAdding(true)}>Add your first product</button></div>}
+      {sellerProducts.length ? <div className="sx-product-table"><div className="sx-product-table-head"><span>Product</span><span>Part number</span><span>Your price</span><span>Stock</span><span>Status</span><span>Action</span></div>{sellerProducts.map((product) => <SellerProductEditor key={`${product.id}-${product.sellingPrice}-${product.stock}`} product={product} save={updateSellerProduct} uploadImage={uploadProductImage}/>)}</div> : <div className="sx-product-empty"><span><Icon name="box"/></span><h2>No products added yet</h2><p>Add your first part with its price, stock and vehicle compatibility.</p><button className="sx-primary" onClick={() => setAdding(true)}>Add your first product</button></div>}
     </section>
     <section className="sx-panel sx-demo-products">
       <PanelHead title="Demo catalogue pricing"/>
