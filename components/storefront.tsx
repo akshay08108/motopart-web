@@ -60,7 +60,7 @@ function formatPrice(value: number) {
 
 function Logo() {
   return (
-    <div className="logo" aria-label="MotoPart home">
+    <div className="logo" aria-label="PartX home">
       <span className="logo-mark"><span /></span>
       <span>Moto<span>Part</span></span>
     </div>

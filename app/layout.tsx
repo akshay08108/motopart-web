@@ -1,17 +1,20 @@
 import "@fontsource-variable/manrope";
 import "@fontsource-variable/roboto-condensed";
 import "./globals.css";
+import "./partx.css";
 import type { Metadata } from "next";
+import { AppShell } from "@/components/partx/app-shell";
+import { PartXProvider } from "@/components/partx/app-provider";
 
 export const metadata: Metadata = {
-  title: "MotoPart — Exact parts. Delivered fast.",
-  description: "Vehicle-compatible auto parts with fast delivery and live tracking.",
+  title: { default: "PartX — The right part. The first time.", template: "%s · PartX" },
+  description: "Vehicle-verified auto parts from trusted stores, ready for pickup or delivery.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth">
+      <body><PartXProvider><AppShell>{children}</AppShell></PartXProvider></body>
     </html>
   );
 }

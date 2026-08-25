@@ -1,4 +1,4 @@
-# MotoPart
+# PartX
 
 A responsive, vehicle-aware auto-parts marketplace built from the supplied product requirements. It now supports the customer, seller, garage, fulfillment, offer, test-payment, order-history and customer-support flows end to end. Demo-created stores, garages, locations, orders and theme preference persist in the browser; the typed service layer can be replaced with real providers later.
 

@@ -39,7 +39,7 @@ export const demoStores: PartnerStore[] = [
 export const demoOffers: Offer[] = [{
   code: "WELCOME10",
   title: "10% off your first order",
-  description: "New customers save up to ₹500 on their first MotoPart order.",
+  description: "New customers save up to ₹500 on their first PartX order.",
   discountPercent: 10,
   maxDiscount: 500,
   newUserOnly: true,

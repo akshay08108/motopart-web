@@ -1,6 +1,5 @@
-import { Storefront } from "@/components/storefront";
-import { getDemoCatalog, vehicles } from "@/lib/demo-data";
+import { HomePage } from "@/components/partx/home-page";
 
-export default function HomePage() {
-  return <Storefront initialProducts={getDemoCatalog()} initialVehicles={vehicles} />;
+export default function Page() {
+  return <HomePage />;
 }
