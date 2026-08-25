@@ -1,8 +1,11 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createUserWithEmailAndPassword, deleteUser, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut as firebaseSignOut, updateProfile } from "firebase/auth";
+import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc, writeBatch } from "firebase/firestore";
 import type { AppLocation, CartLine, CustomerUser, Garage, Order, OrderStage, PartnerStore, UserRole, Vehicle } from "@/lib/types";
 import { activeOrder, vehicles as initialVehicles } from "@/lib/demo-data";
+import { firebaseAuth, firestore } from "@/lib/firebase";
 import { demoGarages, demoLocation, demoStores } from "@/lib/marketplace-data";
 import { createPartXId } from "@/lib/seller-data";
 
@@ -47,7 +50,8 @@ type AppContextValue = {
   authHydrated: boolean;
   signIn: (identifier: string, password: string, role: UserRole) => Promise<boolean>;
   register: (input: RegisterInput) => Promise<boolean>;
-  signOut: () => void;
+  resetPassword: (email: string) => Promise<boolean>;
+  signOut: () => Promise<void>;
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -64,6 +68,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   const [liveOrderUpdate, setLiveOrderUpdate] = useState<{ orderId: string; stage: OrderStage } | null>(null);
   const [user, setUser] = useState<CustomerUser | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [firebaseHydrated, setFirebaseHydrated] = useState(false);
   const ordersRef = useRef<PartXOrder[]>([activeOrder, deliveredOrder]);
 
   useEffect(() => {
@@ -77,7 +82,6 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       const savedCart = localStorage.getItem("partx-cart-v1");
       const savedOrders = localStorage.getItem("partx-orders-v1") ?? localStorage.getItem("motopart-orders-v1");
       const savedProfile = localStorage.getItem("partx-profile-v1");
-      const savedAuth = localStorage.getItem("partx-auth-v1");
       try { if (savedCart) setCart(JSON.parse(savedCart)); } catch {}
       try {
         if (savedOrders) {
@@ -99,15 +103,33 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
           }));
         }
       } catch {}
-      try {
-        if (savedAuth) {
-          const savedUser = JSON.parse(savedAuth) as Partial<CustomerUser> & Pick<CustomerUser, "id" | "name" | "email" | "mobile">;
-          setUser({ ...savedUser, roles: savedUser.roles ?? ["customer"], activeRole: savedUser.activeRole ?? "customer" });
-        }
-      } catch {}
+      localStorage.removeItem("partx-auth-v1");
       setHydrated(true);
     };
     queueMicrotask(hydrate);
+  }, []);
+
+  useEffect(() => {
+    let stopProfile = () => {};
+    const stopAuth = onAuthStateChanged(firebaseAuth, (authUser) => {
+      stopProfile();
+      if (!authUser) {
+        setUser(null);
+        setFirebaseHydrated(true);
+        return;
+      }
+      stopProfile = onSnapshot(doc(firestore, "users", authUser.uid), (snapshot) => {
+        setUser(snapshot.exists() ? parseFirebaseUser(authUser.uid, authUser.email ?? "", snapshot.data()) : null);
+        setFirebaseHydrated(true);
+      }, () => {
+        setUser(null);
+        setFirebaseHydrated(true);
+      });
+    }, () => {
+      setUser(null);
+      setFirebaseHydrated(true);
+    });
+    return () => { stopProfile(); stopAuth(); };
   }, []);
 
   useEffect(() => {
@@ -139,12 +161,6 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("partx-orders-v1", JSON.stringify(orders));
     localStorage.setItem("partx-profile-v1", JSON.stringify({ vehicles, activeVehicleId, location, garages, stores }));
   }, [cart, orders, vehicles, activeVehicleId, location, garages, stores, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    if (user) localStorage.setItem("partx-auth-v1", JSON.stringify(user));
-    else localStorage.removeItem("partx-auth-v1");
-  }, [user, hydrated]);
 
   const value = useMemo<AppContextValue>(() => ({
     theme,
@@ -202,27 +218,87 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     },
     liveOrderUpdate,
     user,
-    authHydrated: hydrated,
+    authHydrated: hydrated && firebaseHydrated,
     signIn: async (identifier, password, role) => {
-      await new Promise((resolve) => setTimeout(resolve, 650));
-      if (!identifier.trim() || password.trim().length < 4) return false;
-      setUser(role === "seller"
-        ? { id: "seller-rohan", name: "Rohan Mehta", email: identifier.includes("@") ? identifier : "seller@partx.demo", mobile: identifier.includes("@") ? "+91 98190 11022" : identifier, roles: ["seller"], activeRole: "seller", sellerStatus: "approved", storeIds: ["autohub-mumbai"], storeName: "AutoHub Mumbai" }
-        : { id: "customer-akshay", name: "Akshay Singh", email: identifier.includes("@") ? identifier : "akshay@partx.demo", mobile: identifier.includes("@") ? "+91 98765 43210" : identifier, roles: ["customer"], activeRole: "customer" });
-      return true;
+      if (!identifier.trim() || password.length < 6) return false;
+      try {
+        const credential = await signInWithEmailAndPassword(firebaseAuth, identifier.trim(), password);
+        const profileSnapshot = await getDoc(doc(firestore, "users", credential.user.uid));
+        const profile = profileSnapshot.exists() ? parseFirebaseUser(credential.user.uid, credential.user.email ?? identifier, profileSnapshot.data()) : null;
+        if (!profile?.roles.includes(role)) {
+          await firebaseSignOut(firebaseAuth);
+          return false;
+        }
+        await updateDoc(doc(firestore, "users", credential.user.uid), { activeRole: role, updatedAt: serverTimestamp() });
+        setUser({ ...profile, activeRole: role });
+        return true;
+      } catch {
+        return false;
+      }
     },
     register: async (input) => {
-      await new Promise((resolve) => setTimeout(resolve, 650));
-      if (!input.name.trim() || !input.email.trim() || !input.mobile.trim() || input.password.length < 4) return false;
-      setUser(input.role === "seller"
-        ? { id: `seller-${Date.now()}`, name: input.name, email: input.email, mobile: input.mobile, roles: ["seller"], activeRole: "seller", sellerStatus: "pending", storeIds: [], storeName: input.storeName }
-        : { id: `customer-${Date.now()}`, name: input.name, email: input.email, mobile: input.mobile, roles: ["customer"], activeRole: "customer" });
-      return true;
+      if (!input.name.trim() || !input.email.trim() || !input.mobile.trim() || input.password.length < 6) return false;
+      let credential;
+      try {
+        credential = await createUserWithEmailAndPassword(firebaseAuth, input.email.trim(), input.password);
+        await updateProfile(credential.user, { displayName: input.name.trim() });
+        const storeId = input.role === "seller" ? `store-${credential.user.uid}` : undefined;
+        const profile: CustomerUser = {
+          id: credential.user.uid,
+          name: input.name.trim(),
+          email: input.email.trim(),
+          mobile: input.mobile.trim(),
+          roles: [input.role],
+          activeRole: input.role,
+          ...(input.role === "seller" ? { sellerStatus: "pending" as const, storeIds: [storeId!], storeName: input.storeName?.trim() } : {}),
+        };
+        const profileData = {
+          name: profile.name,
+          email: profile.email,
+          mobile: profile.mobile,
+          roles: profile.roles,
+          activeRole: profile.activeRole,
+          ...(profile.sellerStatus ? { sellerStatus: profile.sellerStatus } : {}),
+          ...(profile.storeIds ? { storeIds: profile.storeIds } : {}),
+          ...(profile.storeName ? { storeName: profile.storeName } : {}),
+        };
+        const batch = writeBatch(firestore);
+        batch.set(doc(firestore, "users", credential.user.uid), { ...profileData, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        if (storeId) batch.set(doc(firestore, "stores", storeId), { ownerId: credential.user.uid, name: input.storeName?.trim(), status: "pending", rating: 0, ratingCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        await batch.commit();
+        setUser(profile);
+        return true;
+      } catch {
+        if (credential?.user) await deleteUser(credential.user).catch(() => undefined);
+        return false;
+      }
     },
-    signOut: () => setUser(null),
-  }), [theme, cart, vehicles, activeVehicleId, location, garages, stores, orders, liveOrderUpdate, user, hydrated]);
+    resetPassword: async (email) => {
+      if (!email.includes("@")) return false;
+      try { await sendPasswordResetEmail(firebaseAuth, email.trim()); return true; } catch { return false; }
+    },
+    signOut: async () => { setUser(null); await firebaseSignOut(firebaseAuth); },
+  }), [theme, cart, vehicles, activeVehicleId, location, garages, stores, orders, liveOrderUpdate, user, hydrated, firebaseHydrated]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+}
+
+function parseFirebaseUser(uid: string, authEmail: string, data: Record<string, unknown>): CustomerUser | null {
+  const roles = Array.isArray(data.roles) ? data.roles.filter((role): role is UserRole => role === "customer" || role === "seller") : [];
+  if (!roles.length) return null;
+  const requestedRole = data.activeRole === "seller" ? "seller" : "customer";
+  const activeRole = roles.includes(requestedRole) ? requestedRole : roles[0];
+  return {
+    id: uid,
+    name: typeof data.name === "string" ? data.name : "PartX user",
+    email: typeof data.email === "string" ? data.email : authEmail,
+    mobile: typeof data.mobile === "string" ? data.mobile : "",
+    roles,
+    activeRole,
+    sellerStatus: data.sellerStatus === "approved" ? "approved" : data.sellerStatus === "pending" ? "pending" : undefined,
+    storeIds: Array.isArray(data.storeIds) ? data.storeIds.filter((id): id is string => typeof id === "string") : undefined,
+    storeName: typeof data.storeName === "string" ? data.storeName : undefined,
+  };
 }
 
 export function usePartX() {

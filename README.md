@@ -1,10 +1,11 @@
 # PartX
 
-A responsive, vehicle-aware auto-parts marketplace built from the supplied product requirements. It now supports the customer, seller, garage, fulfillment, offer, test-payment, order-history and customer-support flows end to end. Demo-created stores, garages, locations, orders and theme preference persist in the browser; the typed service layer can be replaced with real providers later.
+A responsive, vehicle-aware auto-parts marketplace built from the supplied product requirements. It supports customer and seller accounts through Firebase Authentication and Firestore role profiles. Catalogue, garage, fulfillment, offer, test-payment, order-history and customer-support data remain demo-backed while those collections are migrated.
 
 ## Stack
 
 - Next.js 16 App Router, React 19, and TypeScript
+- Firebase Authentication and Cloud Firestore role profiles
 - Route Handlers for the demo REST API
 - Local, generated product imagery with no runtime image dependency
 - Plain design-token CSS for a small production bundle
@@ -17,6 +18,20 @@ pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+## Firebase setup
+
+The web app is registered with the `partx-production` Firebase project. Complete these console steps before testing account creation:
+
+1. Go to **Security → Authentication → Sign-in method** and enable **Email/Password**.
+2. Go to **Databases & Storage → Firestore**, create the default database in production mode, and choose the closest permanent region.
+3. Publish [`firestore.rules`](firestore.rules) in the Firestore Rules editor, or deploy it with the Firebase CLI:
+
+```bash
+pnpm dlx firebase-tools deploy --only firestore:rules --project partx-production
+```
+
+Customer registrations are active immediately. Seller registrations create a pending user and store. To approve a seller from the Firebase console, change `users/{uid}.sellerStatus` and the related `stores/{storeId}.status` from `pending` to `approved`. The user profile listener applies the approval without creating a new account.
 
 ## Quality checks
 
@@ -53,17 +68,16 @@ To connect a real backend later, implement `CommerceApi` with the production bas
 2. Import the repository in Vercel.
 3. Keep the detected framework as **Next.js** and deploy.
 
-No secrets are required for demo mode. To enable the same Google Places location picker pattern used by DiagHub, add `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` locally and in Vercel. Restrict that browser key in Google Cloud to your deployed domains and the Maps JavaScript/Places APIs. The UI provides a manual-address fallback when the key is absent.
+The Firebase web configuration identifies the public web app; access is enforced by Authentication and Firestore Rules. Never add a Firebase Admin service-account key to client code. To enable the same Google Places location picker pattern used by DiagHub, add `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` locally and in Vercel. Restrict that browser key in Google Cloud to your deployed domains and the Maps JavaScript/Places APIs. The UI provides a manual-address fallback when the key is absent.
 
 The fake payment screen never charges money. Use `4242 4242 4242 4242` for the approved card path; any other card number exercises the decline state. Replace only `processTestPayment` when integrating a real payment provider.
 
 ## Suggested production integration order
 
-1. PostgreSQL catalogue and vehicle fitment service
-2. Auth and saved garage
-3. Search provider and seller inventory
-4. Razorpay payment intents and webhook verification
-5. Maps, ETA, order tracking, and notifications
-6. Admin and seller role-based surfaces
+1. Firestore catalogue, saved garage and order collections
+2. Search provider and seller inventory
+3. Razorpay payment intents and webhook verification
+4. Maps, ETA, order tracking, and notifications
+5. Admin approval and moderation surfaces
 
 Reference concepts are stored in `docs/design/`: the original storefront, expanded marketplace, store onboarding and checkout states.

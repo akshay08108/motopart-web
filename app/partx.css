@@ -377,6 +377,7 @@ body:has(.px-auth), body:has(.px-seller-pending) { padding-bottom: 0; }
 .px-auth-submit { width: 100%; min-height: 55px; margin-top: 2px; }
 .px-auth-otp { justify-self: center; }
 .px-auth-error { margin: -3px 0 0; padding: 10px 12px; border-left: 3px solid var(--px-red); background: #fff2f3; color: #a50e17; font-size: 11px; }
+.px-auth-notice { margin: -3px 0 0; padding: 10px 12px; border-left: 3px solid #16834a; background: #edf9f2; color: #126d3e; font-size: 11px; }
 .px-auth-demo { margin: 27px 0 0; padding: 14px; background: #f3f4f5; color: #6c7179; font-size: 10px; line-height: 1.55; }
 .px-auth-demo b { margin-right: 7px; color: var(--px-red); letter-spacing: .1em; }
 .px-auth-role-back { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 28px; color: #70757e; font-size: 10px; font-weight: 850; text-transform: uppercase; }

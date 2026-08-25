@@ -1,0 +1,86 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownsUser(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function currentUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isApprovedSeller() {
+      return signedIn()
+        && 'seller' in currentUser().roles
+        && currentUser().sellerStatus == 'approved';
+    }
+
+    match /users/{uid} {
+      allow create: if ownsUser(uid)
+        && request.resource.data.roles.size() == 1
+        && request.resource.data.activeRole in request.resource.data.roles
+        && request.resource.data.roles[0] in ['customer', 'seller']
+        && (
+          request.resource.data.roles[0] == 'customer'
+          || request.resource.data.sellerStatus == 'pending'
+        );
+      allow read: if ownsUser(uid);
+      allow update: if ownsUser(uid)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['activeRole', 'name', 'mobile', 'updatedAt'])
+        && request.resource.data.activeRole in resource.data.roles;
+      allow delete: if false;
+    }
+
+    match /stores/{storeId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update: if isApprovedSeller()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.status == resource.data.status;
+      allow delete: if false;
+    }
+
+    match /products/{productId} {
+      allow read: if true;
+      allow create: if isApprovedSeller()
+        && request.resource.data.sellerId == request.auth.uid;
+      allow update, delete: if isApprovedSeller()
+        && resource.data.sellerId == request.auth.uid;
+    }
+
+    match /orders/{orderId} {
+      allow create: if signedIn()
+        && request.resource.data.customerId == request.auth.uid;
+      allow read: if signedIn() && (
+        resource.data.customerId == request.auth.uid
+        || (isApprovedSeller() && resource.data.storeId in currentUser().storeIds)
+      );
+      allow update: if isApprovedSeller()
+        && resource.data.storeId in currentUser().storeIds;
+      allow delete: if false;
+    }
+
+    match /tickets/{ticketId} {
+      allow create: if signedIn()
+        && request.resource.data.customerId == request.auth.uid;
+      allow read, update: if signedIn() && (
+        resource.data.customerId == request.auth.uid
+        || (isApprovedSeller() && resource.data.storeId in currentUser().storeIds)
+      );
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

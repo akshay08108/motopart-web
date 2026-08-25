@@ -38,13 +38,13 @@ function RoleChoice({ role, title, description }: { role: UserRole; title: strin
 
 export function RoleAuthPage({ role }: { role: UserRole }) {
   const router = useRouter();
-  const { signIn, register, user, authHydrated } = usePartX();
+  const { signIn, register, resetPassword, user, authHydrated } = usePartX();
   const [mode, setMode] = useState<AuthMode>("signin");
   const [showPassword, setShowPassword] = useState(false);
-  const [otpMode, setOtpMode] = useState(false);
-  const [otpSent, setOtpSent] = useState(false);
+  const [identifier, setIdentifier] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const copy = roleCopy[role];
 
   useEffect(() => {
@@ -53,22 +53,28 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
   }, [authHydrated, role, router, user]);
 
   const complete = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setError(""); setBusy(true);
+    event.preventDefault(); setError(""); setNotice(""); setBusy(true);
     const data = new FormData(event.currentTarget);
     let success = false;
     if (mode === "register") {
       success = await register({ name: String(data.get("name")), email: String(data.get("email")), mobile: String(data.get("mobile")), password: String(data.get("password")), role, storeName: String(data.get("storeName") ?? "") });
-    } else if (otpMode && role === "customer") {
-      const mobile = String(data.get("mobile")); const otp = String(data.get("otp"));
-      if (!otpSent) { setOtpSent(true); setBusy(false); return; }
-      success = otp === "123456" && await signIn(mobile, "otp-demo", role);
-    } else success = await signIn(String(data.get("identifier")), String(data.get("password")), role);
+    } else success = await signIn(identifier, String(data.get("password")), role);
     setBusy(false);
     if (success) router.replace(role === "seller" ? mode === "register" ? "/seller/pending" : "/seller" : "/account");
-    else setError(otpMode ? "Enter demo OTP 123456 to continue." : "Please check the fields and try again.");
+    else setError(`We could not sign you in as a ${role}. Check your email, password and selected account type.`);
   };
 
-  const changeMode = (next: AuthMode) => { setMode(next); setOtpMode(false); setOtpSent(false); setError(""); };
+  const changeMode = (next: AuthMode) => { setMode(next); setError(""); setNotice(""); };
+
+  const requestReset = async () => {
+    setError(""); setNotice("");
+    if (!identifier.includes("@")) { setError("Enter your email address before requesting a password reset."); return; }
+    setBusy(true);
+    const sent = await resetPassword(identifier);
+    setBusy(false);
+    if (sent) setNotice("Password reset email sent. Check your inbox and spam folder.");
+    else setError("We could not send a reset email. Check the address and try again.");
+  };
 
   return <main className={`px-auth px-auth-${role}`}>
     <AuthStory role={role}/>
@@ -81,17 +87,16 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
         <form className="px-auth-form" onSubmit={complete}>
           {mode === "register" ? <label>Full name<div><Icon name="user"/><input name="name" autoComplete="name" placeholder="Your full name" required/></div></label> : null}
           {mode === "register" && role === "seller" ? <label>Store name<div><Icon name="store"/><input name="storeName" placeholder="Your business name" required/></div></label> : null}
-          {mode === "signin" && !otpMode ? <label>{role === "seller" ? "Seller email" : "Email or mobile number"}<div><Icon name="mail"/><input name="identifier" autoComplete="username" type={role === "seller" ? "email" : "text"} placeholder={role === "seller" ? "seller@store.com" : "you@example.com"} required/></div></label> : null}
+          {mode === "signin" ? <label>{role === "seller" ? "Seller email" : "Email address"}<div><Icon name="mail"/><input name="identifier" autoComplete="username" type="email" value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder={role === "seller" ? "seller@store.com" : "you@example.com"} required/></div></label> : null}
           {mode === "register" ? <label>Email address<div><Icon name="mail"/><input name="email" type="email" autoComplete="email" placeholder="you@example.com" required/></div></label> : null}
-          {mode === "register" || otpMode ? <label>Mobile number<div><Icon name="phone"/><input name="mobile" type="tel" autoComplete="tel" placeholder="+91 98765 43210" required/></div></label> : null}
-          {otpMode && otpSent ? <label>6-digit OTP<div><Icon name="lock"/><input name="otp" inputMode="numeric" maxLength={6} placeholder="123456" required/></div></label> : null}
-          {!otpMode ? <label>Password<div><Icon name="lock"/><input name="password" type={showPassword ? "text" : "password"} autoComplete={mode === "signin" ? "current-password" : "new-password"} minLength={4} placeholder="Minimum 4 characters" required/><button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide password" : "Show password"}><Icon name="eye"/></button></div></label> : null}
-          {mode === "signin" && !otpMode ? <div className="px-auth-options"><label><input type="checkbox" defaultChecked/>Remember me</label><button type="button" onClick={() => setError(`Demo ${role} account: use any email and a password with 4+ characters.`)}>Forgot password?</button></div> : null}
+          {mode === "register" ? <label>Mobile number<div><Icon name="phone"/><input name="mobile" type="tel" autoComplete="tel" placeholder="+91 98765 43210" required/></div></label> : null}
+          <label>Password<div><Icon name="lock"/><input name="password" type={showPassword ? "text" : "password"} autoComplete={mode === "signin" ? "current-password" : "new-password"} minLength={6} placeholder="Minimum 6 characters" required/><button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide password" : "Show password"}><Icon name="eye"/></button></div></label>
+          {mode === "signin" ? <div className="px-auth-options"><label><input type="checkbox" defaultChecked/>Remember me</label><button type="button" onClick={requestReset} disabled={busy}>Forgot password?</button></div> : null}
           {error ? <p className="px-auth-error" role="alert">{error}</p> : null}
-          <button className="px-btn px-btn-red px-auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : otpMode ? otpSent ? "Verify OTP" : "Send demo OTP" : mode === "signin" ? `Sign in as ${role}` : role === "seller" ? "Submit seller application" : "Create customer account"}<Icon name="arrow"/></button>
-          {mode === "signin" && role === "customer" ? <button className="px-auth-otp" type="button" onClick={() => { setOtpMode((active) => !active); setOtpSent(false); setError(""); }}>{otpMode ? "Use email and password" : "Sign in with phone OTP"}</button> : null}
+          {notice ? <p className="px-auth-notice" role="status">{notice}</p> : null}
+          <button className="px-btn px-btn-red px-auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "signin" ? `Sign in as ${role}` : role === "seller" ? "Submit seller application" : "Create customer account"}<Icon name="arrow"/></button>
         </form>
-        <p className="px-auth-demo"><b>DEMO ACCESS</b> {role === "seller" ? "Any seller email + a 4-character password opens an approved demo store. New registrations enter pending approval." : <>Any email + a 4-character password, or OTP <strong>123456</strong>.</>} Firebase Auth can replace this adapter later.</p>
+        <p className="px-auth-demo"><b>FIREBASE SECURED</b> {role === "seller" ? "New seller accounts are saved with pending status until the store is approved." : "Your customer account and role are now stored securely in Firebase."}</p>
       </div>
     </section>
   </main>;
