@@ -264,6 +264,8 @@ button, select { cursor: pointer; }
 .px-order-live-note div { display: grid; gap: 2px; }
 .px-order-live-note b { font-size: 13px; }
 .px-order-live-note span { color: var(--px-muted); font-size: 11px; line-height: 1.45; }
+.px-order-status-note { border-color: color-mix(in srgb,var(--px-red) 45%,var(--px-border)); background: color-mix(in srgb,var(--px-red) 7%,var(--px-surface)); }
+.px-order-status-note > svg { color: var(--px-red); }
 .px-tracking-hero h1 { margin-bottom: 8px; }
 .px-tracking-hero p { color: #b7bcc4; }
 .px-tracking-steps { display: grid; grid-template-columns: repeat(5,1fr); margin-top: 44px; }

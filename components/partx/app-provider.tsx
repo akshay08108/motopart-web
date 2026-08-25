@@ -1,7 +1,7 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import type { AppLocation, CartLine, Garage, Order, PartnerStore, Vehicle } from "@/lib/types";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { AppLocation, CartLine, Garage, Order, OrderStage, PartnerStore, Vehicle } from "@/lib/types";
 import { activeOrder, vehicles as initialVehicles } from "@/lib/demo-data";
 import { demoGarages, demoLocation, demoStores } from "@/lib/marketplace-data";
 import { createPartXId } from "@/lib/seller-data";
@@ -37,6 +37,8 @@ type AppContextValue = {
   submitStoreRating: (storeId: string, stars: number) => void;
   orders: PartXOrder[];
   placeOrder: (fulfilment: PartXOrder["fulfilment"], total: number) => PartXOrder;
+  updateOrderStage: (orderId: string, stage: OrderStage) => void;
+  liveOrderUpdate: { orderId: string; stage: OrderStage } | null;
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -50,7 +52,13 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   const [garages, setGarages] = useState<Garage[]>(demoGarages);
   const [stores, setStores] = useState<PartnerStore[]>(demoStores);
   const [orders, setOrders] = useState<PartXOrder[]>([activeOrder, deliveredOrder]);
+  const [liveOrderUpdate, setLiveOrderUpdate] = useState<{ orderId: string; stage: OrderStage } | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const ordersRef = useRef<PartXOrder[]>([activeOrder, deliveredOrder]);
+
+  useEffect(() => {
+    ordersRef.current = orders;
+  }, [orders]);
 
   useEffect(() => {
     const hydrate = () => {
@@ -83,6 +91,24 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       setHydrated(true);
     };
     queueMicrotask(hydrate);
+  }, []);
+
+  useEffect(() => {
+    const syncCustomerOrders = (event: StorageEvent) => {
+      if (event.key !== "partx-orders-v1" || !event.newValue) return;
+      try {
+        const incoming = JSON.parse(event.newValue) as PartXOrder[];
+        const changed = incoming.find((nextOrder) => {
+          const current = ordersRef.current.find((order) => order.id === nextOrder.id);
+          return current && current.stage !== nextOrder.stage;
+        });
+        ordersRef.current = incoming;
+        setOrders(incoming);
+        if (changed) setLiveOrderUpdate({ orderId: changed.id, stage: changed.stage });
+      } catch {}
+    };
+    window.addEventListener("storage", syncCustomerOrders);
+    return () => window.removeEventListener("storage", syncCustomerOrders);
   }, []);
 
   useEffect(() => {
@@ -143,7 +169,12 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       setCart([]);
       return order;
     },
-  }), [theme, cart, vehicles, activeVehicleId, location, garages, stores, orders]);
+    updateOrderStage: (orderId, stage) => {
+      setOrders((current) => current.map((order) => order.id === orderId ? { ...order, stage, eta: stage === "Delivered" ? "Delivered just now" : order.eta } : order));
+      setLiveOrderUpdate({ orderId, stage });
+    },
+    liveOrderUpdate,
+  }), [theme, cart, vehicles, activeVehicleId, location, garages, stores, orders, liveOrderUpdate]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

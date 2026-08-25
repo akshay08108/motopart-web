@@ -94,19 +94,21 @@ export function OrdersPage() {
 
 export function OrderDetailPage({ id }: { id: string }) {
   const params = useSearchParams();
-  const { orders, submitStoreRating } = usePartX();
+  const { orders, submitStoreRating, liveOrderUpdate } = usePartX();
   const { addRating, ratings } = useSeller();
   const order = orders.find((item) => item.id === id);
   const alreadyRated = ratings.some((rating) => rating.orderId === id);
-  const [ratingOpen, setRatingOpen] = useState(order?.stage === "Delivered" && !alreadyRated);
+  const [ratingDismissed, setRatingDismissed] = useState(false);
   const [rated, setRated] = useState(alreadyRated);
+  const ratingOpen = order?.stage === "Delivered" && !alreadyRated && !ratingDismissed;
   if (!order) return <div className="px-page px-container"><div className="px-empty"><h1>Order not found</h1><Link href="/orders" className="px-btn px-btn-dark">View all orders</Link></div></div>;
   return <div className="px-page px-container">
     <Link href="/orders" className="px-back-link"><Icon name="back"/>All orders</Link>
-    {params.get("placed") === "1" ? <div className="px-order-live-note" role="status"><Icon name="bell"/><div><b>Order sent to AutoHub Mumbai</b><span>The seller was notified in real time and this order is now in their packing queue.</span></div></div> : null}
+    {params.get("placed") === "1" && liveOrderUpdate?.orderId !== order.id ? <div className="px-order-live-note" role="status"><Icon name="bell"/><div><b>Order sent to AutoHub Mumbai</b><span>The seller was notified in real time and this order is now in their packing queue.</span></div></div> : null}
+    {liveOrderUpdate?.orderId === order.id ? <div className="px-order-live-note px-order-status-note" role="status" aria-live="polite"><Icon name="orders"/><div><b>Live order update: {liveOrderUpdate.stage}</b><span>AutoHub Mumbai updated your order status just now.</span></div></div> : null}
     <div className="px-tracking-hero"><span>ORDER {order.id}</span><h1>{order.stage}</h1><p>{order.eta}</p><div className="px-tracking-steps">{["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].map((stage, index) => { const reached = index <= ["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].indexOf(order.stage); return <div className={reached ? "done" : ""} key={stage}><i>{reached ? <Icon name="check"/> : index + 1}</i><b>{stage}</b></div>; })}</div></div>
-    <div className="px-dashboard-grid"><section className="px-panel px-panel-wide"><span>ORDER DETAILS</span><h2>{order.items?.length ?? 1} item{(order.items?.length ?? 1) > 1 ? "s" : ""} · ₹{order.total.toLocaleString("en-IN")}</h2><p>Tracking ID: {order.trackingId ?? "PX-TRK-78451236"} · Fulfilment: {order.fulfilment ?? "delivery"}</p>{order.stage === "Delivered" ? <button className="px-btn px-btn-red" onClick={() => setRatingOpen(true)}>{rated || alreadyRated ? "Rating submitted" : "Rate this store"}</button> : null}</section><section className="px-panel"><span>NEED HELP?</span><h2>We’re here for this order</h2><p>Report delivery, fitment, payment, return, or wrong-part issues.</p><Link href={`/support?order=${order.id}`} className="px-btn px-btn-outline">Contact us</Link></section></div>
-    {ratingOpen && !alreadyRated ? <RatingDialog orderId={order.id} storeId={order.storeId ?? "autohub-mumbai"} close={() => setRatingOpen(false)} submit={(stars, comment) => { addRating({ orderId: order.id, storeId: order.storeId ?? "autohub-mumbai", customerName: "Akshay Singh", stars, comment }); submitStoreRating(order.storeId ?? "autohub-mumbai", stars); setRated(true); setRatingOpen(false); }}/> : null}
+    <div className="px-dashboard-grid"><section className="px-panel px-panel-wide"><span>ORDER DETAILS</span><h2>{order.items?.length ?? 1} item{(order.items?.length ?? 1) > 1 ? "s" : ""} · ₹{order.total.toLocaleString("en-IN")}</h2><p>Tracking ID: {order.trackingId ?? "PX-TRK-78451236"} · Fulfilment: {order.fulfilment ?? "delivery"}</p>{order.stage === "Delivered" ? <button className="px-btn px-btn-red" onClick={() => setRatingDismissed(false)}>{rated || alreadyRated ? "Rating submitted" : "Rate this store"}</button> : null}</section><section className="px-panel"><span>NEED HELP?</span><h2>We’re here for this order</h2><p>Report delivery, fitment, payment, return, or wrong-part issues.</p><Link href={`/support?order=${order.id}`} className="px-btn px-btn-outline">Contact us</Link></section></div>
+    {ratingOpen ? <RatingDialog orderId={order.id} storeId={order.storeId ?? "autohub-mumbai"} close={() => setRatingDismissed(true)} submit={(stars, comment) => { addRating({ orderId: order.id, storeId: order.storeId ?? "autohub-mumbai", customerName: "Akshay Singh", stars, comment }); submitStoreRating(order.storeId ?? "autohub-mumbai", stars); setRated(true); setRatingDismissed(true); }}/> : null}
   </div>;
 }
 

@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { SellerOrder, SellerOrderStatus, SellerTicket, StoreRating } from "@/lib/types";
 import { createPartXId, sellerOrdersSeed, sellerTicketsSeed, storeRatingsSeed } from "@/lib/seller-data";
+import { usePartX } from "./app-provider";
 
 type NewTicket = Pick<SellerTicket, "orderId" | "issue" | "message"> & { customer?: SellerTicket["customer"] };
 type SellerAlert = { kind: "order"; order: SellerOrder } | { kind: "ticket"; ticket: SellerTicket };
@@ -26,6 +27,15 @@ type SellerContextValue = {
 
 const SellerContext = createContext<SellerContextValue | null>(null);
 
+const customerStageForSellerStatus = {
+  New: "Confirmed",
+  Accepted: "Preparing",
+  Packing: "Preparing",
+  Packed: "Preparing",
+  Dispatched: "On the way",
+  Delivered: "Delivered",
+} as const;
+
 function playFiveSecondAlert() {
   const AudioContextClass = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioContextClass) return;
@@ -45,6 +55,7 @@ function playFiveSecondAlert() {
 }
 
 export function SellerProvider({ children }: { children: React.ReactNode }) {
+  const { updateOrderStage } = usePartX();
   const [sellerOrders, setSellerOrders] = useState<SellerOrder[]>(sellerOrdersSeed);
   const [tickets, setTickets] = useState<SellerTicket[]>(sellerTicketsSeed);
   const [ratings, setRatings] = useState<StoreRating[]>(storeRatingsSeed);
@@ -140,7 +151,10 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       setActiveAlert({ kind: "order", order });
       if (alertsEnabled) playFiveSecondAlert();
     },
-    updateOrderStatus: (orderId, status) => setSellerOrders((current) => current.map((order) => order.id === orderId ? { ...order, status } : order)),
+    updateOrderStatus: (orderId, status) => {
+      setSellerOrders((current) => current.map((order) => order.id === orderId ? { ...order, status } : order));
+      updateOrderStage(orderId, customerStageForSellerStatus[status]);
+    },
     addTicket: (ticket) => {
       const created: SellerTicket = {
         ...ticket,
@@ -164,7 +178,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     },
     updateProduct: (partNumber, price, stock) => setProductOverrides((current) => ({ ...current, [partNumber]: { price, stock } })),
     productOverrides,
-  }), [sellerOrders, tickets, ratings, alertsEnabled, activeAlert, productOverrides]);
+  }), [sellerOrders, tickets, ratings, alertsEnabled, activeAlert, productOverrides, updateOrderStage]);
 
   return <SellerContext.Provider value={value}>{children}</SellerContext.Provider>;
 }
