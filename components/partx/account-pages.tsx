@@ -49,6 +49,7 @@ export function CartPage() {
 export function CheckoutPage() {
   const router = useRouter();
   const { cart, cartTotal, location, garages, stores, placeOrder } = usePartX();
+  const { addSellerOrder } = useSeller();
   const [fulfilment, setFulfilment] = useState<FulfilmentMode>("delivery");
   const [payment, setPayment] = useState<PaymentMethod>("upi");
   const [offer, setOffer] = useState(true);
@@ -57,7 +58,28 @@ export function CheckoutPage() {
   const discount = offer ? Math.min(Math.round(cartTotal * .1), 500) : 0;
   const total = Math.max(0, cartTotal + delivery - discount);
   if (!cart.length) return <div className="px-page px-container"><div className="px-empty"><h1>No items to checkout</h1><p>Add a part before starting checkout.</p><Link href="/shop" className="px-btn px-btn-red">Shop parts</Link></div></div>;
-  const pay = async () => { setProcessing(true); await new Promise((resolve) => setTimeout(resolve, 800)); const order = placeOrder(fulfilment, total); router.push(`/orders/${order.id}`); };
+  const pay = async () => {
+    setProcessing(true);
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    const orderedItems = [...cart];
+    const order = placeOrder(fulfilment, total);
+    const primaryItem = orderedItems[0];
+    addSellerOrder({
+      id: order.id,
+      trackingId: order.trackingId ?? "PX-TRK-PENDING",
+      customer: { name: "Akshay Singh", phone: "+91 98765 43210", email: "akshay@gmail.com" },
+      placedAt: "Just now",
+      productName: orderedItems.length > 1 ? `${primaryItem.product.name} + ${orderedItems.length - 1} more` : primaryItem.product.name,
+      partNumber: primaryItem.product.partNumber,
+      quantity: orderedItems.reduce((sum, item) => sum + item.quantity, 0),
+      fulfilment,
+      paymentStatus: payment === "cod" ? "COD" : "Paid",
+      deadline: fulfilment === "pickup" ? "Ready within 45 minutes" : "Tomorrow, 11:00 AM",
+      status: "New",
+      total,
+    });
+    router.push(`/orders/${order.id}?placed=1`);
+  };
   return <div className="px-page px-container"><Link className="px-back-link" href="/cart"><Icon name="back"/>Back to cart</Link><div className="px-page-title"><span>SECURE TEST CHECKOUT</span><h1>Choose how you receive it</h1><p>Complete a realistic order using the demo payment gateway.</p></div>
     <div className="px-checkout-layout"><div className="px-checkout-main"><section className="px-panel"><div className="px-step-title"><b>1</b><div><span>FULFILMENT</span><h2>Delivery, pickup or garage</h2></div></div><div className="px-choice-grid">{(["delivery", "pickup", "garage"] as FulfilmentMode[]).map((mode) => <button className={fulfilment === mode ? "active" : ""} onClick={() => setFulfilment(mode)} key={mode}><Icon name={mode === "delivery" ? "pin" : mode === "pickup" ? "orders" : "garage"}/><b>{mode === "delivery" ? "Deliver to me" : mode === "pickup" ? "Self pickup" : "Send to garage"}</b><span>{mode === "delivery" ? location.address : mode === "pickup" ? `${stores[0].name} · ${stores[0].distanceKm} km` : garages[0]?.name ?? "Add a garage first"}</span></button>)}</div></section>
       <section className="px-panel"><div className="px-step-title"><b>2</b><div><span>PAYMENT</span><h2>Test payment method</h2></div></div><div className="px-test-note"><b>DEMO MODE</b>No money will be charged.</div><div className="px-payment-row">{(["upi", "card", "cod"] as PaymentMethod[]).map((method) => <button className={payment === method ? "active" : ""} onClick={() => setPayment(method)} key={method}>{method === "upi" ? "UPI" : method === "card" ? "Credit / debit card" : "Cash on delivery"}</button>)}</div>{payment === "card" && <div className="px-card-fields"><input defaultValue="4242 4242 4242 4242" aria-label="Card number"/><input defaultValue="12 / 28" aria-label="Expiry"/><input defaultValue="123" aria-label="CVV"/></div>}{payment === "upi" && <div className="px-upi">partx-test@okaxis <span>Approval is simulated.</span></div>}</section></div>
@@ -71,9 +93,21 @@ export function OrdersPage() {
 }
 
 export function OrderDetailPage({ id }: { id: string }) {
-  const { orders, submitStoreRating } = usePartX(); const { addRating, ratings } = useSeller(); const order = orders.find((item) => item.id === id); const alreadyRated = ratings.some((rating)=>rating.orderId===id); const [ratingOpen,setRatingOpen] = useState(order?.stage === "Delivered" && !alreadyRated); const [rated,setRated] = useState(alreadyRated);
+  const params = useSearchParams();
+  const { orders, submitStoreRating } = usePartX();
+  const { addRating, ratings } = useSeller();
+  const order = orders.find((item) => item.id === id);
+  const alreadyRated = ratings.some((rating) => rating.orderId === id);
+  const [ratingOpen, setRatingOpen] = useState(order?.stage === "Delivered" && !alreadyRated);
+  const [rated, setRated] = useState(alreadyRated);
   if (!order) return <div className="px-page px-container"><div className="px-empty"><h1>Order not found</h1><Link href="/orders" className="px-btn px-btn-dark">View all orders</Link></div></div>;
-  return <div className="px-page px-container"><Link href="/orders" className="px-back-link"><Icon name="back"/>All orders</Link><div className="px-tracking-hero"><span>ORDER {order.id}</span><h1>{order.stage}</h1><p>{order.eta}</p><div className="px-tracking-steps">{["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].map((stage, index) => { const reached = index <= ["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].indexOf(order.stage); return <div className={reached ? "done" : ""} key={stage}><i>{reached ? <Icon name="check"/> : index + 1}</i><b>{stage}</b></div>; })}</div></div><div className="px-dashboard-grid"><section className="px-panel px-panel-wide"><span>ORDER DETAILS</span><h2>{order.items?.length ?? 1} item{(order.items?.length ?? 1) > 1 ? "s" : ""} · ₹{order.total.toLocaleString("en-IN")}</h2><p>Tracking ID: {order.trackingId ?? "PX-TRK-78451236"} · Fulfilment: {order.fulfilment ?? "delivery"}</p>{order.stage === "Delivered" ? <button className="px-btn px-btn-red" onClick={()=>setRatingOpen(true)}>{rated||alreadyRated?"Rating submitted":"Rate this store"}</button>:null}</section><section className="px-panel"><span>NEED HELP?</span><h2>We’re here for this order</h2><p>Report delivery, fitment, payment, return, or wrong-part issues.</p><Link href={`/support?order=${order.id}`} className="px-btn px-btn-outline">Contact us</Link></section></div>{ratingOpen&&!alreadyRated ? <RatingDialog orderId={order.id} storeId={order.storeId ?? "autohub-mumbai"} close={()=>setRatingOpen(false)} submit={(stars,comment)=>{addRating({orderId:order.id,storeId:order.storeId??"autohub-mumbai",customerName:"Akshay Singh",stars,comment});submitStoreRating(order.storeId??"autohub-mumbai",stars);setRated(true);setRatingOpen(false);}}/>:null}</div>;
+  return <div className="px-page px-container">
+    <Link href="/orders" className="px-back-link"><Icon name="back"/>All orders</Link>
+    {params.get("placed") === "1" ? <div className="px-order-live-note" role="status"><Icon name="bell"/><div><b>Order sent to AutoHub Mumbai</b><span>The seller was notified in real time and this order is now in their packing queue.</span></div></div> : null}
+    <div className="px-tracking-hero"><span>ORDER {order.id}</span><h1>{order.stage}</h1><p>{order.eta}</p><div className="px-tracking-steps">{["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].map((stage, index) => { const reached = index <= ["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].indexOf(order.stage); return <div className={reached ? "done" : ""} key={stage}><i>{reached ? <Icon name="check"/> : index + 1}</i><b>{stage}</b></div>; })}</div></div>
+    <div className="px-dashboard-grid"><section className="px-panel px-panel-wide"><span>ORDER DETAILS</span><h2>{order.items?.length ?? 1} item{(order.items?.length ?? 1) > 1 ? "s" : ""} · ₹{order.total.toLocaleString("en-IN")}</h2><p>Tracking ID: {order.trackingId ?? "PX-TRK-78451236"} · Fulfilment: {order.fulfilment ?? "delivery"}</p>{order.stage === "Delivered" ? <button className="px-btn px-btn-red" onClick={() => setRatingOpen(true)}>{rated || alreadyRated ? "Rating submitted" : "Rate this store"}</button> : null}</section><section className="px-panel"><span>NEED HELP?</span><h2>We’re here for this order</h2><p>Report delivery, fitment, payment, return, or wrong-part issues.</p><Link href={`/support?order=${order.id}`} className="px-btn px-btn-outline">Contact us</Link></section></div>
+    {ratingOpen && !alreadyRated ? <RatingDialog orderId={order.id} storeId={order.storeId ?? "autohub-mumbai"} close={() => setRatingOpen(false)} submit={(stars, comment) => { addRating({ orderId: order.id, storeId: order.storeId ?? "autohub-mumbai", customerName: "Akshay Singh", stars, comment }); submitStoreRating(order.storeId ?? "autohub-mumbai", stars); setRated(true); setRatingOpen(false); }}/> : null}
+  </div>;
 }
 
 export function OffersPage() {

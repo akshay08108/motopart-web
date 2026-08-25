@@ -259,6 +259,11 @@ button, select { cursor: pointer; }
 .px-order-actions { display: grid; justify-items: end; gap: 7px; }
 .px-order-actions > a:last-child { color: var(--px-red); font-size: 10px; font-weight: 800; }
 .px-tracking-hero { padding: 50px; background: #111318; color: #fff; }
+.px-order-live-note { display: flex; align-items: center; gap: 14px; margin: 0 0 16px; padding: 15px 18px; border: 1px solid color-mix(in srgb,#16834a 45%,var(--px-border)); background: color-mix(in srgb,#16834a 8%,var(--px-surface)); color: var(--px-text); }
+.px-order-live-note > svg { flex: 0 0 22px; width: 22px; color: #16834a; }
+.px-order-live-note div { display: grid; gap: 2px; }
+.px-order-live-note b { font-size: 13px; }
+.px-order-live-note span { color: var(--px-muted); font-size: 11px; line-height: 1.45; }
 .px-tracking-hero h1 { margin-bottom: 8px; }
 .px-tracking-hero p { color: #b7bcc4; }
 .px-tracking-steps { display: grid; grid-template-columns: repeat(5,1fr); margin-top: 44px; }

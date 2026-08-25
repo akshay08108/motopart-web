@@ -45,7 +45,7 @@ export function SellerShell({ children }: { children: React.ReactNode }) {
       </header>
       <main className="sx-main">{children}</main>
     </div>
-    {activeAlert ? <div className="sx-alert-toast" role="status" aria-live="assertive"><Icon name="bell"/><div><b>Urgent ticket received</b><strong>{activeAlert.id}</strong><span>{activeAlert.issue} · {activeAlert.orderId}</span></div><button onClick={dismissAlert} aria-label="Dismiss alert"><Icon name="close"/></button></div> : null}
+    {activeAlert ? <div className="sx-alert-toast" role="status" aria-live="assertive"><Icon name="bell"/><div><b>{activeAlert.kind === "order" ? "New order received" : "Urgent ticket received"}</b><strong>{activeAlert.kind === "order" ? activeAlert.order.id : activeAlert.ticket.id}</strong><span>{activeAlert.kind === "order" ? `${activeAlert.order.productName} · ${activeAlert.order.fulfilment}` : `${activeAlert.ticket.issue} · ${activeAlert.ticket.orderId}`}</span></div><button onClick={dismissAlert} aria-label="Dismiss alert"><Icon name="close"/></button></div> : null}
     <nav className="sx-mobile-nav" aria-label="Seller mobile navigation">{sellerNav.slice(0, 5).map(([href, icon, label]) => <Link className={active(href) ? "active" : ""} href={href} key={href}><Icon name={icon}/><span>{label === "Packing Queue" ? "Packing" : label.replace("Products & Prices", "Products")}</span>{countFor(href) > 0 ? <em>{countFor(href)}</em> : null}</Link>)}</nav>
   </div>;
 }
