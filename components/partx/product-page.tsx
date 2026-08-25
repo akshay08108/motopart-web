@@ -26,14 +26,14 @@ export function ProductPage({ product }: { product: Product }) {
   return <div className="px-page px-container">
     <Link className="px-back-link" href="/shop"><Icon name="back"/>Back to parts</Link>
     <div className="px-detail-grid">
-      <div className="px-detail-image"><Image src={`/parts/${product.imageIndex}-v2.png`} alt={product.name} width={900} height={720} priority/><span>{product.kind}</span></div>
+      <div className="px-detail-image"><Image src={product.imageUrl ?? `/parts/${product.imageIndex}-v2.png`} alt={product.name} width={900} height={720} priority/><span>{product.kind}</span></div>
       <div className="px-detail-copy">
         <div className="px-eyebrow">{product.brand} · {product.category}</div>
         <h1>{product.name}</h1>
         <div className="px-rating">★ {product.rating} <span>{product.reviews.toLocaleString("en-IN")} reviews</span></div>
         <div className="px-detail-price"><strong>₹{selectedPrice.toLocaleString("en-IN")}</strong><s>₹{product.listPrice.toLocaleString("en-IN")}</s><span>Inclusive of taxes · {selectedStoreName}</span></div>
         <div className={compatible ? "px-fitment-box fits" : "px-fitment-box"}><Icon name={compatible ? "check" : "garage"}/><div><b>{compatible ? `Fits your ${vehicle?.make} ${vehicle?.model}` : "Fitment not confirmed"}</b><span>{compatible ? `${vehicle?.year} · ${vehicle?.variant}` : "Select a compatible vehicle in My Garage"}</span></div></div>
-        <dl className="px-specs"><div><dt>Part number</dt><dd>{product.partNumber}</dd></div><div><dt>OEM reference</dt><dd>{product.oemNumber}</dd></div><div><dt>Warranty</dt><dd>{product.warranty}</dd></div><div><dt>Stock</dt><dd>{selected?.stock ?? product.stock} available</dd></div></dl>
+        <dl className="px-specs"><div><dt>Part number</dt><dd>{product.partNumber}</dd></div><div><dt>{product.barcode ? "Barcode" : "OEM reference"}</dt><dd>{product.barcode ?? product.oemNumber}</dd></div><div><dt>Warranty</dt><dd>{product.warranty}</dd></div><div><dt>Stock</dt><dd>{selected?.stock ?? product.stock} available</dd></div></dl>
         <button className="px-btn px-btn-red px-btn-large" onClick={() => addToCart(product, 1, { storeId: selected?.store.id ?? "autohub-mumbai", storeName: selectedStoreName, price: selectedPrice })}>Add from {selectedStoreName} · ₹{selectedPrice.toLocaleString("en-IN")} <Icon name="cart"/></button>
         <p className="px-delivery-callout"><Icon name="orders"/><b>{product.deliveryLabel}</b> · Pickup also available at checkout</p>
       </div>

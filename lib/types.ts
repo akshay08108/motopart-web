@@ -24,6 +24,8 @@ export type Product = {
   reviews: number;
   category: string;
   imageIndex: number;
+  imageUrl?: string;
+  barcode?: string;
   compatibleVehicleIds: string[];
   stock: number;
   deliveryLabel: string;
@@ -40,6 +42,7 @@ export type SellerProduct = {
   category: string;
   partNumber: string;
   sku: string;
+  barcode?: string;
   condition: "New" | "Refurbished" | "Used";
   mrp: number;
   sellingPrice: number;
@@ -48,6 +51,7 @@ export type SellerProduct = {
   warranty: string;
   description: string;
   compatibility: string;
+  imageUrl?: string;
   status: "published" | "out-of-stock";
 };
 

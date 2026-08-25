@@ -368,6 +368,8 @@ function toCatalogProduct(product: SellerProduct, storeName: string, vehicles: V
     reviews: 0,
     category: product.category,
     imageIndex: stableImageIndex(product.id),
+    imageUrl: product.imageUrl,
+    barcode: product.barcode,
     compatibleVehicleIds: vehicles.filter((vehicle) => compatibility.includes(vehicle.make.toLowerCase()) && compatibility.includes(vehicle.model.toLowerCase())).map((vehicle) => vehicle.id),
     stock: product.stock,
     deliveryLabel: "Delivery estimate at checkout",

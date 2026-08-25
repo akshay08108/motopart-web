@@ -62,7 +62,7 @@ export function SellerTicketsPage() {
 }
 
 export function SellerProductsPage() {
-  const { productOverrides, updateProduct, sellerProducts, addProduct, addProducts, updateSellerProduct } = useSeller();
+  const { productOverrides, updateProduct, sellerProducts, addProduct, addProducts, updateSellerProduct, uploadProductImage } = useSeller();
   const products = getDemoCatalog();
   const [adding, setAdding] = useState(false);
   const [spreadsheet, setSpreadsheet] = useState<ProductSpreadsheet | null>(null);
@@ -91,13 +91,13 @@ export function SellerProductsPage() {
     {message ? <div className="sx-product-success" role="status"><Icon name="check"/>{message}</div> : null}
     <section className="sx-panel">
       <PanelHead title={`Your Firebase products (${sellerProducts.length})`}/>
-      {sellerProducts.length ? <div className="sx-product-table"><div className="sx-product-table-head"><span>Product</span><span>Part number</span><span>Your price</span><span>Stock</span><span>Status</span><span>Action</span></div>{sellerProducts.map((product) => <SellerProductEditor key={product.id} product={product} save={updateSellerProduct}/>)}</div> : <div className="sx-product-empty"><span><Icon name="box"/></span><h2>No products added yet</h2><p>Add your first part with its price, stock and vehicle compatibility.</p><button className="sx-primary" onClick={() => setAdding(true)}>Add your first product</button></div>}
+      {sellerProducts.length ? <div className="sx-product-table"><div className="sx-product-table-head"><span>Product</span><span>Part number</span><span>Your price</span><span>Stock</span><span>Status</span><span>Action</span></div>{sellerProducts.map((product) => <SellerProductEditor key={product.id} product={product} save={updateSellerProduct} uploadImage={uploadProductImage}/>)}</div> : <div className="sx-product-empty"><span><Icon name="box"/></span><h2>No products added yet</h2><p>Add your first part with its price, stock and vehicle compatibility.</p><button className="sx-primary" onClick={() => setAdding(true)}>Add your first product</button></div>}
     </section>
     <section className="sx-panel sx-demo-products">
       <PanelHead title="Demo catalogue pricing"/>
       <div className="sx-product-table"><div className="sx-product-table-head"><span>Product</span><span>Part number</span><span>Your price</span><span>Stock</span><span>Status</span><span>Action</span></div>{products.map((product) => <ProductEditor key={product.id} product={product} current={productOverrides[product.partNumber] ?? {price:product.price,stock:product.stock}} save={updateProduct}/>)}</div>
     </section>
-    {adding ? <AddProductDialog existingProducts={sellerProducts} close={() => setAdding(false)} submit={async (product) => { await addProduct(product); setAdding(false); setMessage(`${product.name} was published to your store.`); }}/> : null}
+    {adding ? <AddProductDialog existingProducts={sellerProducts} close={() => setAdding(false)} submit={async (product, image) => { await addProduct(product, image); setAdding(false); setMessage(`${product.name} was published${image ? " with its product image" : ""} to your store.`); }}/> : null}
     {spreadsheet ? <SpreadsheetImportDialog spreadsheet={spreadsheet} close={() => setSpreadsheet(null)} submit={async () => { await addProducts(spreadsheet.products); setSpreadsheet(null); setMessage(`${spreadsheet.products.length} products were imported into your Firebase inventory.`); }}/> : null}
   </>;
 }
@@ -121,16 +121,26 @@ function ProductEditor({ product,current,save }: { product: ReturnType<typeof ge
   return <div className="sx-product-row"><span><Image src={`/parts/${product.imageIndex}-v2.png`} alt="" width={74} height={58}/><b>{product.name}</b></span><span>{product.partNumber}</span><label>₹<input type="number" value={price} onChange={(event)=>setPrice(Number(event.target.value))}/></label><input type="number" value={stock} onChange={(event)=>setStock(Number(event.target.value))}/><Status status={stock===0?"Out of stock":stock<5?"Low stock":"Active"}/><button onClick={()=>{save(product.partNumber,price,stock);setSaved(true);}}>{saved?"Saved":"Save"}</button></div>;
 }
 
-function SellerProductEditor({ product, save }: { product: SellerProduct; save: (productId: string, sellingPrice: number, stock: number) => Promise<void> }) {
+function SellerProductEditor({ product, save, uploadImage }: { product: SellerProduct; save: (productId: string, sellingPrice: number, stock: number) => Promise<void>; uploadImage: (productId: string, image: File) => Promise<void> }) {
   const [price, setPrice] = useState(product.sellingPrice);
   const [stock, setStock] = useState(product.stock);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [imageError, setImageError] = useState("");
   const submit = async () => {
     setSaving(true); setSaved(false);
     try { await save(product.id, price, stock); setSaved(true); } finally { setSaving(false); }
   };
-  return <div className="sx-product-row"><span><span className="sx-product-placeholder"><Icon name="box"/></span><b>{product.name}<small>{product.brand} · {product.sku}</small></b></span><span>{product.partNumber}</span><label>₹<input type="number" min="0" value={price} onChange={(event) => setPrice(Number(event.target.value))}/></label><input type="number" min="0" value={stock} onChange={(event) => setStock(Number(event.target.value))}/><Status status={stock===0?"Out of stock":stock<5?"Low stock":"Active"}/><button disabled={saving} onClick={() => void submit()}>{saving?"Saving…":saved?"Saved":"Save"}</button></div>;
+  const chooseImage = async (event: ChangeEvent<HTMLInputElement>) => {
+    const image = event.target.files?.[0]; event.target.value = "";
+    if (!image) return;
+    setUploadingImage(true); setImageError("");
+    try { await uploadImage(product.id, image); }
+    catch (reason) { setImageError(reason instanceof Error ? reason.message : "Image upload failed."); }
+    finally { setUploadingImage(false); }
+  };
+  return <div className="sx-product-row"><span>{product.imageUrl ? <Image src={product.imageUrl} alt={product.name} width={74} height={58}/> : <span className="sx-product-placeholder"><Icon name="box"/></span>}<b>{product.name}<small>{product.brand} · {product.sku}{product.barcode ? ` · ${product.barcode}` : ""}</small><label className="sx-product-image-upload"><Icon name="upload"/>{uploadingImage?"Uploading…":product.imageUrl?"Change image":"Add image"}<input className="sx-hidden-file" type="file" accept="image/jpeg,image/png,image/webp" disabled={uploadingImage} onChange={(event) => void chooseImage(event)}/></label>{imageError ? <small className="sx-image-error">{imageError}</small> : null}</b></span><span>{product.partNumber}</span><label>₹<input type="number" min="0" value={price} onChange={(event) => setPrice(Number(event.target.value))}/></label><input type="number" min="0" value={stock} onChange={(event) => setStock(Number(event.target.value))}/><Status status={stock===0?"Out of stock":stock<5?"Low stock":"Active"}/><button disabled={saving} onClick={() => void submit()}>{saving?"Saving…":saved?"Saved":"Save"}</button></div>;
 }
 
 type ProductSpreadsheet = { fileName: string; products: NewSellerProduct[]; errors: string[] };
@@ -138,7 +148,7 @@ type ProductSpreadsheet = { fileName: string; products: NewSellerProduct[]; erro
 async function readProductSpreadsheet(file: File, existingProducts: SellerProduct[]): Promise<ProductSpreadsheet> {
   const { readSheet } = await import("read-excel-file/browser");
   const rows = await readSheet(file, "Products");
-  const expectedHeaders = ["Product Name", "Brand", "Category", "Part Number", "SKU", "Condition", "MRP", "Selling Price", "GST Rate", "Stock", "Warranty", "Vehicle Compatibility", "Description"];
+  const expectedHeaders = ["Product Name", "Brand", "Category", "Part Number", "SKU", "Barcode", "Condition", "MRP", "Selling Price", "GST Rate", "Stock", "Warranty", "Vehicle Compatibility", "Description"];
   const headerIndex = rows.findIndex((row) => expectedHeaders.every((header, index) => String(row[index] ?? "").trim() === header));
   if (headerIndex < 0) throw new Error("The Products sheet or PartX column headings are missing. Download a fresh template and try again.");
   const errors: string[] = [];
@@ -155,10 +165,10 @@ async function readProductSpreadsheet(file: File, existingProducts: SellerProduc
     if (sku.startsWith("SAMPLE-")) return;
     const product: NewSellerProduct = {
       name: text(0), brand: text(1), category: text(2), partNumber: text(3).toUpperCase(), sku,
-      condition: text(5) as NewSellerProduct["condition"], mrp: Number(row[6]), sellingPrice: Number(row[7]),
-      gstRate: Number(row[8]), stock: Number(row[9]), warranty: text(10), compatibility: text(11), description: text(12),
+      barcode: text(5) || undefined, condition: text(6) as NewSellerProduct["condition"], mrp: Number(row[7]), sellingPrice: Number(row[8]),
+      gstRate: Number(row[9]), stock: Number(row[10]), warranty: text(11), compatibility: text(12), description: text(13),
     };
-    const missing = expectedHeaders.filter((_, index) => index !== 8 && (row[index] === null || String(row[index]).trim() === ""));
+    const missing = expectedHeaders.filter((_, index) => ![5, 9].includes(index) && (row[index] === null || String(row[index]).trim() === ""));
     const rowErrors: string[] = [];
     if (missing.length) rowErrors.push(`missing ${missing.join(", ")}`);
     if (!categories.has(product.category)) rowErrors.push("invalid category");
@@ -188,7 +198,7 @@ function SpreadsheetImportDialog({ spreadsheet, close, submit }: { spreadsheet: 
   return <div className="sx-dialog-backdrop" role="presentation"><div className="sx-product-dialog sx-import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-products-title"><header><div><span>EXCEL BULK UPLOAD</span><h2 id="import-products-title">Review product import</h2><p>{spreadsheet.fileName}</p></div><button type="button" onClick={close} aria-label="Close Excel import"><Icon name="close"/></button></header><div className="sx-import-body"><div className="sx-import-summary"><div><strong>{spreadsheet.products.length}</strong><span>Ready to import</span></div><div className={spreadsheet.errors.length ? "has-errors" : ""}><strong>{spreadsheet.errors.length}</strong><span>Rows needing attention</span></div><div><Icon name="box"/><span>Images can be added later from product editing.</span></div></div>{spreadsheet.products.length ? <div className="sx-import-preview"><div><b>Product</b><b>SKU</b><b>Price</b><b>Stock</b></div>{spreadsheet.products.slice(0,8).map((product) => <div key={product.sku}><span>{product.name}<small>{product.brand} · {product.category}</small></span><span>{product.sku}</span><span>₹{product.sellingPrice.toLocaleString("en-IN")}</span><span>{product.stock}</span></div>)}{spreadsheet.products.length > 8 ? <p>+ {spreadsheet.products.length - 8} more valid products</p> : null}</div> : null}{spreadsheet.errors.length ? <section className="sx-import-errors"><h3>Fix these rows</h3>{spreadsheet.errors.map((message) => <p key={message}>{message}</p>)}</section> : null}{error ? <p className="sx-form-error" role="alert">{error}</p> : null}</div><footer><button type="button" className="sx-secondary" onClick={close}>Cancel</button><button type="button" className="sx-primary" disabled={importing || !spreadsheet.products.length} onClick={() => void runImport()}>{importing?"Importing…":`Import ${spreadsheet.products.length} products`}</button></footer></div></div>;
 }
 
-function AddProductDialog({ existingProducts, close, submit }: { existingProducts: SellerProduct[]; close: () => void; submit: (product: NewSellerProduct) => Promise<void> }) {
+function AddProductDialog({ existingProducts, close, submit }: { existingProducts: SellerProduct[]; close: () => void; submit: (product: NewSellerProduct, image?: File) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const save = async (event: FormEvent<HTMLFormElement>) => {
@@ -200,6 +210,7 @@ function AddProductDialog({ existingProducts, close, submit }: { existingProduct
       category: String(data.get("category") ?? "").trim(),
       partNumber: String(data.get("partNumber") ?? "").trim().toUpperCase(),
       sku: String(data.get("sku") ?? "").trim().toUpperCase(),
+      barcode: String(data.get("barcode") ?? "").trim() || undefined,
       condition: String(data.get("condition")) as NewSellerProduct["condition"],
       mrp: Number(data.get("mrp")),
       sellingPrice: Number(data.get("sellingPrice")),
@@ -212,9 +223,10 @@ function AddProductDialog({ existingProducts, close, submit }: { existingProduct
     if (product.sellingPrice > product.mrp) { setError("Selling price cannot be higher than MRP."); return; }
     if (existingProducts.some((item) => item.sku.toLowerCase() === product.sku.toLowerCase())) { setError("This SKU already exists in your store."); return; }
     setSaving(true);
-    try { await submit(product); } catch (reason) { setError(reason instanceof Error ? reason.message : "Product could not be saved. Check Firebase access and try again."); setSaving(false); }
+    const image = data.get("image");
+    try { await submit(product, image instanceof File && image.size ? image : undefined); } catch (reason) { setError(reason instanceof Error ? reason.message : "Product could not be saved. Check Firebase access and try again."); setSaving(false); }
   };
-  return <div className="sx-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><div className="sx-product-dialog" role="dialog" aria-modal="true" aria-labelledby="add-product-title"><header><div><span>SELLER INVENTORY</span><h2 id="add-product-title">Add a product</h2><p>Publish a part with its price, stock and fitment details.</p></div><button type="button" onClick={close} aria-label="Close add product form"><Icon name="close"/></button></header><form onSubmit={save}><div className="sx-product-form-grid"><label>Product name<input name="name" required placeholder="e.g. BMW Air Filter"/></label><label>Brand<input name="brand" required placeholder="e.g. Bosch"/></label><label>Category<select name="category" required defaultValue=""><option value="" disabled>Select category</option><option>Filters</option><option>Brakes</option><option>Batteries</option><option>Engine</option><option>Electrical</option><option>Suspension</option><option>Accessories</option><option>Other</option></select></label><label>Condition<select name="condition" defaultValue="New"><option>New</option><option>Refurbished</option><option>Used</option></select></label><label>Manufacturer part number<input name="partNumber" required placeholder="e.g. F026400492"/></label><label>Your SKU<input name="sku" required placeholder="e.g. ARR-BMW-AF-001"/></label><label>MRP (₹)<input name="mrp" type="number" min="0" required/></label><label>Selling price (₹)<input name="sellingPrice" type="number" min="0" required/></label><label>GST rate<select name="gstRate" defaultValue="18"><option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option><option value="28">28%</option></select></label><label>Available stock<input name="stock" type="number" min="0" required/></label><label>Warranty<input name="warranty" required placeholder="e.g. 6 months"/></label><label>Vehicle compatibility<input name="compatibility" required placeholder="e.g. BMW X1 2020–2024 Diesel"/></label></div><label className="sx-product-description">Description<textarea name="description" required placeholder="Part specifications, fitment notes and box contents"/></label>{error ? <p className="sx-form-error" role="alert">{error}</p> : null}<footer><button type="button" className="sx-secondary" onClick={close}>Cancel</button><button type="submit" className="sx-primary" disabled={saving}>{saving?"Publishing…":"Publish product"}</button></footer></form></div></div>;
+  return <div className="sx-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><div className="sx-product-dialog" role="dialog" aria-modal="true" aria-labelledby="add-product-title"><header><div><span>SELLER INVENTORY</span><h2 id="add-product-title">Add a product</h2><p>Publish a part with its image, price, stock and fitment details.</p></div><button type="button" onClick={close} aria-label="Close add product form"><Icon name="close"/></button></header><form onSubmit={save}><label className="sx-product-image-field">Product image <span>JPG, PNG or WebP · maximum 5 MB</span><input name="image" type="file" accept="image/jpeg,image/png,image/webp"/></label><div className="sx-product-form-grid"><label>Product name<input name="name" required placeholder="e.g. BMW Air Filter"/></label><label>Brand<input name="brand" required placeholder="e.g. Bosch"/></label><label>Category<select name="category" required defaultValue=""><option value="" disabled>Select category</option><option>Filters</option><option>Brakes</option><option>Batteries</option><option>Engine</option><option>Electrical</option><option>Suspension</option><option>Accessories</option><option>Other</option></select></label><label>Condition<select name="condition" defaultValue="New"><option>New</option><option>Refurbished</option><option>Used</option></select></label><label>Manufacturer part number<input name="partNumber" required placeholder="e.g. F026400492"/></label><label>Your SKU<input name="sku" required placeholder="e.g. ARR-BMW-AF-001"/></label><label>Barcode / EAN / UPC (optional)<input name="barcode" inputMode="numeric" placeholder="Scan or enter the code"/></label><label>MRP (₹)<input name="mrp" type="number" min="0" required/></label><label>Selling price (₹)<input name="sellingPrice" type="number" min="0" required/></label><label>GST rate<select name="gstRate" defaultValue="18"><option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option><option value="28">28%</option></select></label><label>Available stock<input name="stock" type="number" min="0" required/></label><label>Warranty<input name="warranty" required placeholder="e.g. 6 months"/></label><label>Vehicle compatibility<input name="compatibility" required placeholder="e.g. BMW X1 2020–2024 Diesel"/></label></div><label className="sx-product-description">Description<textarea name="description" required placeholder="Part specifications, fitment notes and box contents"/></label>{error ? <p className="sx-form-error" role="alert">{error}</p> : null}<footer><button type="button" className="sx-secondary" onClick={close}>Cancel</button><button type="submit" className="sx-primary" disabled={saving}>{saving?"Publishing…":"Publish product"}</button></footer></form></div></div>;
 }
 
 function SellerTitle({ title,subtitle }: { title:string;subtitle:string }) { return <div className="sx-page-title"><h1>{title}</h1><p>{subtitle}</p></div>; }

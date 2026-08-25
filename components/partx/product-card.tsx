@@ -13,7 +13,7 @@ export function ProductCard({ product }: { product: Product }) {
   return <article className="px-product-card">
     <Link href={`/shop/${product.id}`} className="px-product-image">
       {discount > 0 && <span className="px-discount">-{discount}%</span>}
-      <Image src={`/parts/${product.imageIndex}-v2.png`} alt={product.name} width={520} height={390} />
+      <Image src={product.imageUrl ?? `/parts/${product.imageIndex}-v2.png`} alt={product.name} width={520} height={390} />
     </Link>
     <div className="px-product-body">
       <div className="px-product-meta"><b>{product.brand}</b><span>★ {product.rating}</span></div>

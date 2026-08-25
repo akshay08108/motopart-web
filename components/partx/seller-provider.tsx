@@ -1,10 +1,11 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { addDoc, collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore";
+import { collection, doc, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
+import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import type { NewSellerProduct, SellerOrder, SellerOrderStatus, SellerProduct, SellerTicket, StoreRating } from "@/lib/types";
 import { createPartXId, sellerOrdersSeed, sellerTicketsSeed, storeRatingsSeed } from "@/lib/seller-data";
-import { firestore } from "@/lib/firebase";
+import { firebaseStorage, firestore } from "@/lib/firebase";
 import { usePartX } from "./app-provider";
 
 type NewTicket = Pick<SellerTicket, "orderId" | "issue" | "message"> & { customer?: SellerTicket["customer"] };
@@ -26,9 +27,10 @@ type SellerContextValue = {
   updateProduct: (partNumber: string, price: number, stock: number) => void;
   productOverrides: Record<string, { price: number; stock: number }>;
   sellerProducts: SellerProduct[];
-  addProduct: (product: NewSellerProduct) => Promise<void>;
+  addProduct: (product: NewSellerProduct, image?: File) => Promise<void>;
   addProducts: (products: NewSellerProduct[]) => Promise<void>;
   updateSellerProduct: (productId: string, sellingPrice: number, stock: number) => Promise<void>;
+  uploadProductImage: (productId: string, image: File) => Promise<void>;
 };
 
 const SellerContext = createContext<SellerContextValue | null>(null);
@@ -195,16 +197,30 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     updateProduct: (partNumber, price, stock) => setProductOverrides((current) => ({ ...current, [partNumber]: { price, stock } })),
     productOverrides,
     sellerProducts,
-    addProduct: async (product) => {
+    addProduct: async (product, image) => {
       if (!user || user.sellerStatus !== "approved" || !user.storeIds?.[0]) throw new Error("Only approved sellers can add products.");
-      await addDoc(collection(firestore, "products"), {
-        ...product,
-        sellerId: user.id,
-        storeId: user.storeIds[0],
-        status: product.stock > 0 ? "published" : "out-of-stock",
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      const productRef = doc(collection(firestore, "products"));
+      const imageRef = image ? ref(firebaseStorage, productImagePath(user.id, productRef.id, image)) : null;
+      let imageUrl: string | undefined;
+      if (image && imageRef) {
+        validateProductImage(image);
+        await uploadBytes(imageRef, image, { contentType: image.type });
+        imageUrl = await getDownloadURL(imageRef);
+      }
+      try {
+        await setDoc(productRef, {
+          ...product,
+          ...(imageUrl ? { imageUrl } : {}),
+          sellerId: user.id,
+          storeId: user.storeIds[0],
+          status: product.stock > 0 ? "published" : "out-of-stock",
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch (reason) {
+        if (imageRef) await deleteObject(imageRef).catch(() => undefined);
+        throw reason;
+      }
     },
     addProducts: async (products) => {
       if (!user || user.sellerStatus !== "approved" || !user.storeIds?.[0]) throw new Error("Only approved sellers can import products.");
@@ -230,6 +246,15 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
         updatedAt: serverTimestamp(),
       });
     },
+    uploadProductImage: async (productId, image) => {
+      if (!user || user.sellerStatus !== "approved") throw new Error("Only approved sellers can upload product images.");
+      const product = sellerProducts.find((item) => item.id === productId);
+      if (!product || product.sellerId !== user.id) throw new Error("You can only update products owned by your store.");
+      validateProductImage(image);
+      const imageRef = ref(firebaseStorage, productImagePath(user.id, productId, image));
+      await uploadBytes(imageRef, image, { contentType: image.type });
+      await updateDoc(doc(firestore, "products", productId), { imageUrl: await getDownloadURL(imageRef), updatedAt: serverTimestamp() });
+    },
   }), [sellerOrders, tickets, ratings, alertsEnabled, activeAlert, productOverrides, sellerProducts, updateOrderStage, user]);
 
   return <SellerContext.Provider value={value}>{children}</SellerContext.Provider>;
@@ -239,4 +264,14 @@ export function useSeller() {
   const context = useContext(SellerContext);
   if (!context) throw new Error("useSeller must be used inside SellerProvider");
   return context;
+}
+
+function validateProductImage(image: File) {
+  if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(image.type)) throw new Error("Choose a JPG, PNG or WebP image.");
+  if (image.size > 5 * 1024 * 1024) throw new Error("Product images must be 5 MB or smaller.");
+}
+
+function productImagePath(sellerId: string, productId: string, image: File) {
+  const extension = image.type === "image/png" ? "png" : image.type === "image/webp" ? "webp" : "jpg";
+  return `products/${sellerId}/${productId}/primary-${Date.now()}.${extension}`;
 }

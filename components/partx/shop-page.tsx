@@ -22,7 +22,7 @@ export function ShopPage() {
     const compactQuery = normalizedQuery.replaceAll(" ", "");
     const list = catalog.filter((product) => {
       const matchesCategory = activeCategory === "All" || product.category === activeCategory;
-      const haystack = normalizeSearch(`${product.name} ${product.brand} ${product.partNumber} ${product.oemNumber} ${product.category}`);
+      const haystack = normalizeSearch(`${product.name} ${product.brand} ${product.partNumber} ${product.oemNumber} ${product.barcode ?? ""} ${product.category}`);
       return matchesCategory && (!normalizedQuery || haystack.includes(normalizedQuery) || haystack.replaceAll(" ", "").includes(compactQuery));
     });
     if (sort === "low") list.sort((a, b) => a.price - b.price);

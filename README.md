@@ -25,13 +25,17 @@ The web app is registered with the `partx-production` Firebase project. Complete
 
 1. Go to **Security → Authentication → Sign-in method** and enable **Email/Password**.
 2. Go to **Databases & Storage → Firestore**, create the default database in production mode, and choose the closest permanent region.
-3. Publish [`firestore.rules`](firestore.rules) in the Firestore Rules editor, or deploy it with the Firebase CLI:
+3. Go to **Databases & Storage → Storage**, create the default Storage bucket, and keep the project-selected location.
+4. Publish [`firestore.rules`](firestore.rules) and [`storage.rules`](storage.rules), or deploy both with the Firebase CLI:
 
 ```bash
-pnpm dlx firebase-tools deploy --only firestore:rules --project partx-production
+firebase login
+firebase deploy --only firestore:rules,storage --project partx-production
 ```
 
 Customer registrations are active immediately. Seller registrations create a pending user and store. To approve a seller from the Firebase console, change `users/{uid}.sellerStatus` and the related `stores/{storeId}.status` from `pending` to `approved`. The user profile listener applies the approval without creating a new account.
+
+Approved sellers can upload JPG, PNG or WebP product images up to 5 MB. Bulk inventory supports an optional Barcode column. Standard USB or Bluetooth scanners configured in HID/keyboard mode can scan directly into that field without a scanner SDK.
 
 ## Quality checks
 
