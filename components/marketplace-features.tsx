@@ -2,8 +2,8 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { demoApi } from "@/lib/api/client";
-import { demoGarages, demoLocation, demoOffers, demoStores } from "@/lib/marketplace-data";
-import type { AppLocation, CartLine, FulfilmentMode, Garage, Offer, Order, PartnerStore, PaymentMethod, Product, Vehicle } from "@/lib/types";
+import { demoGarages, demoLocation, demoStores } from "@/lib/marketplace-data";
+import type { AppLocation, CartLine, FulfilmentMode, Garage, Order, PartnerStore, PaymentMethod, Product, Vehicle } from "@/lib/types";
 import { LocationPicker } from "./location-picker";
 
 export type MarketplaceView = null | "location" | "garage" | "store" | "sellers" | "checkout";
@@ -37,15 +37,11 @@ export function MarketplaceFeatures({ view, onViewChange, cart, subtotal, vehicl
   const [location, setLocation] = useState<AppLocation>(demoLocation);
   const [garages, setGarages] = useState<Garage[]>(demoGarages);
   const [stores, setStores] = useState<PartnerStore[]>(demoStores);
-  const [offers, setOffers] = useState<Offer[]>(demoOffers);
   const [fulfilment, setFulfilment] = useState<FulfilmentMode>("delivery");
-  const [isNewUser, setIsNewUser] = useState(true);
   const pushedHistory = useRef(false);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("motopart-marketplace-v1");
-    const hasOrdered = window.localStorage.getItem("motopart_has_ordered") === "true";
-    if (hasOrdered) Promise.resolve().then(() => setIsNewUser(false));
     if (saved) {
       try {
         const data = JSON.parse(saved) as { location?: AppLocation; garages?: Garage[]; stores?: PartnerStore[] };
@@ -56,9 +52,8 @@ export function MarketplaceFeatures({ view, onViewChange, cart, subtotal, vehicl
         });
       } catch { /* Ignore invalid old demo data. */ }
     }
-    Promise.all([demoApi.getStores(), demoApi.getGarages(), demoApi.getOffers()]).then(([nextStores, nextGarages, nextOffers]) => {
+    Promise.all([demoApi.getStores(), demoApi.getGarages()]).then(([nextStores, nextGarages]) => {
       if (!saved) { setStores(nextStores); setGarages(nextGarages); }
-      setOffers(nextOffers);
     }).catch(() => undefined);
   }, []);
 
@@ -101,7 +96,6 @@ export function MarketplaceFeatures({ view, onViewChange, cart, subtotal, vehicl
   }
 
   return <>
-    {isNewUser ? <section className="welcome-offer"><button onClick={() => document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" })}><span>WELCOME10</span><b>{offers[0]?.title ?? "10% off your first order"}</b><small>Applied automatically at checkout</small></button></section> : null}
     <section className="marketplace-tools page-shell" aria-label="Marketplace preferences">
       <button className="market-tool" onClick={() => openView("location")}><span>Delivery location</span><b>{location.address.split(",").slice(0, 2).join(",")}</b><small>Change location →</small></button>
       <button className="market-tool" onClick={() => openView("garage")}><span>Saved garage</span><b>{garages[0]?.name ?? "Add your garage"}</b><small>{garages[0] ? `${garages[0].distanceKm} km · Change or add` : "Install parts at a garage"}</small></button>
@@ -113,7 +107,7 @@ export function MarketplaceFeatures({ view, onViewChange, cart, subtotal, vehicl
     {view === "garage" ? <GarageModal initialLocation={location} onSave={addGarage} onClose={closeView}/> : null}
     {view === "store" ? <StoreModal initialLocation={location} products={cart.map((line) => line.product)} onSave={addStore} onClose={closeView}/> : null}
     {view === "sellers" && comparisonProduct ? <SellerModal product={comparisonProduct} stores={stores} fulfilment={fulfilment} onSelect={(product) => { onAddFromStore(product); closeView(); }} onClose={closeView}/> : null}
-    {view === "checkout" ? <CheckoutModal cart={cart} subtotal={subtotal} location={location} garages={garages} stores={stores} vehicle={vehicle} initialFulfilment={fulfilment} offer={isNewUser ? offers[0] : undefined} onLocationChange={setLocation} onFirstOrder={() => setIsNewUser(false)} onComplete={onOrderComplete} onClose={closeView}/> : null}
+    {view === "checkout" ? <CheckoutModal cart={cart} subtotal={subtotal} location={location} garages={garages} stores={stores} vehicle={vehicle} initialFulfilment={fulfilment} onLocationChange={setLocation} onComplete={onOrderComplete} onClose={closeView}/> : null}
   </>;
 }
 
@@ -158,26 +152,23 @@ function SellerModal({ product, stores, fulfilment, onSelect, onClose }: { produ
   return <FlowModal title="Choose a store" onBack={onClose} onClose={onClose} wide><div className="seller-comparison"><header><div><b>{product.name}</b><span>{product.partNumber} · Fits your selected vehicle</span></div><strong>{offers.length} prices near you</strong></header>{offers.map(({ store, listing }, index) => <article className={index === 0 ? "best" : ""} key={listing.id}>{index === 0 ? <em>Best value</em> : null}<div><b>{store.name}</b><span>{store.location.address} · {store.distanceKm} km</span></div><strong>{money(listing.price)}<del>{money(listing.mrp)}</del></strong><div><b>★ {store.rating}</b><span>{listing.stock} in stock</span></div><div><b>{fulfilment === "pickup" ? "Pickup today" : fulfilment === "garage" ? "Delivery to garage" : "Delivery tomorrow"}</b><span>{fulfilment === "pickup" ? "Free" : "₹49"}</span></div><button onClick={() => onSelect({ ...product, seller: store.name, price: listing.price, listPrice: listing.mrp, stock: listing.stock })}>Choose & add</button></article>)}</div></FlowModal>;
 }
 
-function CheckoutModal({ cart, subtotal, location, garages, stores, vehicle, initialFulfilment, offer, onLocationChange, onFirstOrder, onComplete, onClose }: { cart: CartLine[]; subtotal: number; location: AppLocation; garages: Garage[]; stores: PartnerStore[]; vehicle: Vehicle; initialFulfilment: FulfilmentMode; offer?: Offer; onLocationChange: (location: AppLocation) => void; onFirstOrder: () => void; onComplete: (order: Order) => void; onClose: () => void }) {
+function CheckoutModal({ cart, subtotal, location, garages, stores, vehicle, initialFulfilment, onLocationChange, onComplete, onClose }: { cart: CartLine[]; subtotal: number; location: AppLocation; garages: Garage[]; stores: PartnerStore[]; vehicle: Vehicle; initialFulfilment: FulfilmentMode; onLocationChange: (location: AppLocation) => void; onComplete: (order: Order) => void; onClose: () => void }) {
   const [step, setStep] = useState(1);
   const [fulfilment, setFulfilment] = useState(initialFulfilment);
   const [payment, setPayment] = useState<PaymentMethod>("upi");
   const [card, setCard] = useState("4242 4242 4242 4242");
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState("");
-  const discount = offer ? Math.min(Math.round(subtotal * offer.discountPercent / 100), offer.maxDiscount) : 0;
   const deliveryFee = fulfilment === "pickup" ? 0 : 49;
-  const total = Math.max(0, subtotal + deliveryFee - discount);
+  const total = subtotal + deliveryFee;
   function back() { if (step > 1 && step < 5) setStep((current) => current - 1); else onClose(); }
   async function pay() {
     setPaying(true); setError("");
     try {
       const result = await demoApi.processTestPayment({ amount: total, method: payment, cardNumber: card });
       if (result.status !== "approved") { setError(result.message); return; }
-      const order = await demoApi.checkout({ address: fulfilment === "garage" ? garages[0]?.location.address ?? location.address : location.address, delivery: fulfilment, payment, productIds: cart.map((line) => line.product.id), discountCode: offer?.code, storeId: stores[0]?.id });
+      const order = await demoApi.checkout({ address: fulfilment === "garage" ? garages[0]?.location.address ?? location.address : location.address, delivery: fulfilment, payment, productIds: cart.map((line) => line.product.id), storeId: stores[0]?.id });
       onComplete({ ...order, total });
-      window.localStorage.setItem("motopart_has_ordered", "true");
-      onFirstOrder();
       setStep(5);
     } finally { setPaying(false); }
   }
@@ -185,7 +176,7 @@ function CheckoutModal({ cart, subtotal, location, garages, stores, vehicle, ini
     {step === 1 ? <section><h3>Confirm your location</h3><LocationPicker value={location} onSelect={onLocationChange} label="Search delivery location"/><button className="primary-button flow-primary" onClick={() => setStep(2)}>Continue to fulfilment <Arrow direction="right"/></button></section> : null}
     {step === 2 ? <section><h3>How should we get the parts to you?</h3><div className="fulfilment-choices"><button className={fulfilment === "delivery" ? "selected" : ""} onClick={() => setFulfilment("delivery")}><b>Deliver to me</b><span>{location.address}</span><small>Tomorrow · ₹49</small></button><button className={fulfilment === "pickup" ? "selected" : ""} onClick={() => setFulfilment("pickup")}><b>Self pickup</b><span>{stores[0]?.name} · {stores[0]?.distanceKm} km</span><small>Today by 7 PM · Free</small></button><button className={fulfilment === "garage" ? "selected" : ""} onClick={() => setFulfilment("garage")}><b>Deliver to garage</b><span>{garages[0]?.name ?? "Add a garage first"}</span><small>Tomorrow · ₹49</small></button></div><div className="flow-actions"><button className="secondary-action" onClick={back}><Arrow/>Back</button><button className="primary-button" onClick={() => setStep(3)}>Continue to payment <Arrow direction="right"/></button></div></section> : null}
     {step === 3 ? <section><h3>Select a test payment method</h3><div className="test-payment-note"><b>TEST PAYMENT</b><span>No money will be charged</span></div><div className="payment-methods">{(["upi", "card", "cod"] as PaymentMethod[]).map((method) => <button className={payment === method ? "selected" : ""} key={method} onClick={() => setPayment(method)}>{method === "upi" ? "UPI" : method === "card" ? "Credit / debit card" : "Cash on delivery"}</button>)}</div>{payment === "card" ? <div className="card-fields"><label>Card number<input value={card} onChange={(e) => setCard(e.target.value)} inputMode="numeric"/></label><label>Expiry<input defaultValue="12 / 28"/></label><label>CVV<input defaultValue="123" inputMode="numeric"/></label><label>Name on card<input defaultValue="Akshay Singh"/></label></div> : null}{payment === "upi" ? <div className="upi-demo"><b>partx-test@okaxis</b><span>Use any demo UPI app. Approval is simulated.</span></div> : null}<div className="flow-actions"><button className="secondary-action" onClick={back}><Arrow/>Back</button><button className="primary-button" onClick={() => setStep(4)}>Review order <Arrow direction="right"/></button></div></section> : null}
-    {step === 4 ? <section><h3>Review and place your order</h3><div className="review-layout"><div>{cart.map((line) => <div className="review-line" key={line.product.id}><span><b>{line.product.name}</b><small>{line.product.seller} · Qty {line.quantity}</small></span><strong>{money(line.product.price * line.quantity)}</strong></div>)}<div className="review-meta"><span>For {vehicle.year} {vehicle.make} {vehicle.model}</span><span>{fulfilment === "pickup" ? `Pickup from ${stores[0]?.name}` : fulfilment === "garage" ? `Deliver to ${garages[0]?.name}` : `Deliver to ${location.address}`}</span></div></div><aside><p><span>Subtotal</span><b>{money(subtotal)}</b></p><p><span>Delivery</span><b>{deliveryFee ? money(deliveryFee) : "Free"}</b></p><p className="discount"><span>{offer?.code} applied</span><b>-{money(discount)}</b></p><p className="review-total"><span>Total</span><b>{money(total)}</b></p></aside></div>{error ? <p className="payment-error">{error}</p> : null}<div className="flow-actions"><button className="secondary-action" onClick={back}><Arrow/>Back</button><button className="primary-button" disabled={paying} onClick={() => void pay()}>{paying ? "Processing test payment…" : `Pay ${money(total)} securely`}</button></div></section> : null}
+    {step === 4 ? <section><h3>Review and place your order</h3><div className="review-layout"><div>{cart.map((line) => <div className="review-line" key={line.product.id}><span><b>{line.product.name}</b><small>{line.product.seller} · Qty {line.quantity}</small></span><strong>{money(line.product.price * line.quantity)}</strong></div>)}<div className="review-meta"><span>For {vehicle.year} {vehicle.make} {vehicle.model}</span><span>{fulfilment === "pickup" ? `Pickup from ${stores[0]?.name}` : fulfilment === "garage" ? `Deliver to ${garages[0]?.name}` : `Deliver to ${location.address}`}</span></div></div><aside><p><span>Subtotal</span><b>{money(subtotal)}</b></p><p><span>Delivery</span><b>{deliveryFee ? money(deliveryFee) : "Free"}</b></p><p className="review-total"><span>Total</span><b>{money(total)}</b></p></aside></div>{error ? <p className="payment-error">{error}</p> : null}<div className="flow-actions"><button className="secondary-action" onClick={back}><Arrow/>Back</button><button className="primary-button" disabled={paying} onClick={() => void pay()}>{paying ? "Processing test payment…" : `Pay ${money(total)} securely`}</button></div></section> : null}
     {step === 5 ? <section className="checkout-success"><span>✓</span><h3>Your order is confirmed.</h3><p>Test payment approved. No money was charged. Your parts are booked for {fulfilment === "pickup" ? "self pickup" : fulfilment === "garage" ? "garage delivery" : "home delivery"}.</p><button className="primary-button" onClick={onClose}>Track your order</button></section> : null}
   </div></FlowModal>;
 }

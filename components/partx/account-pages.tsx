@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useState } from "react";
 import type { FulfilmentMode, Garage, PartnerStore, PaymentMethod, Vehicle } from "@/lib/types";
-import { demoOffers } from "@/lib/marketplace-data";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import { useSeller } from "./seller-provider";
@@ -51,13 +50,11 @@ export function CheckoutPage() {
   const { cart, cartTotal, location, garages, stores, placeOrder } = usePartX();
   const [fulfilment, setFulfilment] = useState<FulfilmentMode>("delivery");
   const [payment, setPayment] = useState<PaymentMethod>("upi");
-  const [offer, setOffer] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
   const delivery = fulfilment === "delivery" && cartTotal < 999 ? 99 : 0;
   const selectedStore = stores.find((store) => store.id === cart[0]?.storeId) ?? stores[0];
-  const discount = offer ? Math.min(Math.round(cartTotal * .1), 500) : 0;
-  const total = Math.max(0, cartTotal + delivery - discount);
+  const total = cartTotal + delivery;
   if (!cart.length) return <div className="px-page px-container"><div className="px-empty"><h1>No items to checkout</h1><p>Add a part before starting checkout.</p><Link href="/shop" className="px-btn px-btn-red">Shop parts</Link></div></div>;
   const pay = async () => {
     setProcessing(true); setCheckoutError("");
@@ -73,7 +70,7 @@ export function CheckoutPage() {
   return <div className="px-page px-container"><Link className="px-back-link" href="/cart"><Icon name="back"/>Back to cart</Link><div className="px-page-title"><span>SECURE TEST CHECKOUT</span><h1>Choose how you receive it</h1><p>Complete a realistic order using the demo payment gateway.</p></div>
     <div className="px-checkout-layout"><div className="px-checkout-main"><section className="px-panel"><div className="px-step-title"><b>1</b><div><span>FULFILMENT</span><h2>Delivery, pickup or garage</h2></div></div><div className="px-choice-grid">{(["delivery", "pickup", "garage"] as FulfilmentMode[]).map((mode) => <button className={fulfilment === mode ? "active" : ""} onClick={() => setFulfilment(mode)} key={mode}><Icon name={mode === "delivery" ? "pin" : mode === "pickup" ? "orders" : "garage"}/><b>{mode === "delivery" ? "Deliver to me" : mode === "pickup" ? "Self pickup" : "Send to garage"}</b><span>{mode === "delivery" ? location.address : mode === "pickup" ? `${selectedStore.name} · ${selectedStore.distanceKm} km` : garages[0]?.name ?? "Add a garage first"}</span></button>)}</div></section>
       <section className="px-panel"><div className="px-step-title"><b>2</b><div><span>PAYMENT</span><h2>Test payment method</h2></div></div><div className="px-test-note"><b>DEMO MODE</b>No money will be charged.</div><div className="px-payment-row">{(["upi", "card", "cod"] as PaymentMethod[]).map((method) => <button className={payment === method ? "active" : ""} onClick={() => setPayment(method)} key={method}>{method === "upi" ? "UPI" : method === "card" ? "Credit / debit card" : "Cash on delivery"}</button>)}</div>{payment === "card" && <div className="px-card-fields"><input defaultValue="4242 4242 4242 4242" aria-label="Card number"/><input defaultValue="12 / 28" aria-label="Expiry"/><input defaultValue="123" aria-label="CVV"/></div>}{payment === "upi" && <div className="px-upi">partx-test@okaxis <span>Approval is simulated.</span></div>}</section></div>
-      <aside className="px-summary"><span>ORDER SUMMARY</span><h2>{cart.length} item{cart.length > 1 ? "s" : ""}</h2><p className="px-summary-seller"><Icon name="store"/>Seller: <b>{cart[0]?.storeName ?? cart[0]?.product.seller}</b></p><label className="px-offer-toggle"><input type="checkbox" checked={offer} onChange={(event) => setOffer(event.target.checked)}/><span><b>WELCOME10 applied</b>New user savings up to ₹500</span></label><dl><div><dt>Parts total</dt><dd>₹{cartTotal.toLocaleString("en-IN")}</dd></div><div><dt>Delivery</dt><dd>{delivery ? `₹${delivery}` : "FREE"}</dd></div>{discount > 0 && <div className="saving"><dt>New-user offer</dt><dd>−₹{discount}</dd></div>}<div className="total"><dt>Total</dt><dd>₹{total.toLocaleString("en-IN")}</dd></div></dl>{checkoutError ? <p className="px-checkout-error" role="alert">{checkoutError}</p> : null}<button className="px-btn px-btn-red px-btn-large" onClick={pay} disabled={processing}>{processing ? "Approving test payment…" : `Place test order · ₹${total.toLocaleString("en-IN")}`}<Icon name="arrow"/></button><small>By placing this demo order you accept the test terms.</small></aside></div>
+      <aside className="px-summary"><span>ORDER SUMMARY</span><h2>{cart.length} item{cart.length > 1 ? "s" : ""}</h2><p className="px-summary-seller"><Icon name="store"/>Seller: <b>{cart[0]?.storeName ?? cart[0]?.product.seller}</b></p><dl><div><dt>Parts total</dt><dd>₹{cartTotal.toLocaleString("en-IN")}</dd></div><div><dt>Delivery</dt><dd>{delivery ? `₹${delivery}` : "FREE"}</dd></div><div className="total"><dt>Total</dt><dd>₹{total.toLocaleString("en-IN")}</dd></div></dl>{checkoutError ? <p className="px-checkout-error" role="alert">{checkoutError}</p> : null}<button className="px-btn px-btn-red px-btn-large" onClick={pay} disabled={processing}>{processing ? "Approving test payment…" : `Place test order · ₹${total.toLocaleString("en-IN")}`}<Icon name="arrow"/></button><small>By placing this demo order you accept the test terms.</small></aside></div>
   </div>;
 }
 
@@ -103,15 +100,14 @@ export function OrderDetailPage({ id }: { id: string }) {
 }
 
 export function OffersPage() {
-  const [copied, setCopied] = useState("");
-  return <div className="px-page px-container"><div className="px-page-title"><span>SAVE ON THE RIGHT PART</span><h1>Offers</h1><p>Clear savings with no hidden conditions.</p></div><div className="px-offers-grid">{demoOffers.map((offer) => <article key={offer.code}><span>NEW USER</span><strong>{offer.discountPercent}%<small>OFF</small></strong><h2>{offer.title}</h2><p>{offer.description}</p><button className="px-btn px-btn-white" onClick={() => { navigator.clipboard?.writeText(offer.code); setCopied(offer.code); }}>{copied === offer.code ? "Copied!" : `Copy ${offer.code}`}</button></article>)}<article className="secondary"><span>DELIVERY</span><strong>₹0<small>ABOVE ₹999</small></strong><h2>Free doorstep delivery</h2><p>Available on eligible parts and serviceable Mumbai locations.</p><Link href="/shop" className="px-btn px-btn-dark">Shop eligible parts</Link></article></div></div>;
+  return <div className="px-page px-container"><div className="px-page-title"><span>SAVE ON THE RIGHT PART</span><h1>Offers</h1><p>Clear savings with no hidden conditions.</p></div><div className="px-offers-grid"><article className="secondary"><span>DELIVERY</span><strong>₹0<small>ABOVE ₹999</small></strong><h2>Free doorstep delivery</h2><p>Available on eligible parts and serviceable Mumbai locations.</p><Link href="/shop" className="px-btn px-btn-dark">Shop eligible parts</Link></article></div></div>;
 }
 
 export function AccountPage() {
   const router = useRouter();
   const { location, vehicles, orders, user, signOut } = usePartX();
   const initials = user?.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase() ?? "PX";
-  const links = [["/garage", "garage", "My garage", `${vehicles.length} vehicles · ${location.label}`], ["/orders", "orders", "My orders", `${orders.length} orders`], ["/offers", "offer", "Offers", "New-user and delivery savings"], ["/support", "headset", "Help & support", "Issues, returns and contact"], ["/sell", "plus", "Add your store", "Sell products at your prices"]];
+  const links = [["/garage", "garage", "My garage", `${vehicles.length} vehicles · ${location.label}`], ["/orders", "orders", "My orders", `${orders.length} orders`], ["/offers", "offer", "Offers", "Delivery savings"], ["/support", "headset", "Help & support", "Issues, returns and contact"], ["/sell", "plus", "Add your store", "Sell products at your prices"]];
   return <div className="px-page px-container"><div className="px-account-hero"><div className="px-avatar">{initials}</div><div><span>PARTX CUSTOMER</span><h1>{user?.name}</h1><p>{user?.email} · {user?.mobile}</p></div><div className="px-account-actions">{user?.roles.includes("seller") ? <Link href="/seller" className="px-btn px-btn-dark"><Icon name="store"/>Switch to Seller</Link> : null}<button className="px-btn px-btn-outline" onClick={() => { signOut(); router.replace("/login"); }}><Icon name="logout"/>Sign out</button></div></div><div className="px-account-links">{links.map(([href, icon, title, subtitle]) => <Link href={href} key={href}><span className="px-square-icon"><Icon name={icon}/></span><div><b>{title}</b><span>{subtitle}</span></div><Icon name="chevron"/></Link>)}</div></div>;
 }
 

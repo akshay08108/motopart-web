@@ -32,7 +32,7 @@ export function HomePage() {
             <label>Part or part number<input value={term} onChange={(event) => setTerm(event.target.value)} onKeyDown={(event) => event.key === "Enter" && go()} placeholder="e.g. brake pads, LX-3541"/></label>
             <button className="px-btn px-btn-red" onClick={go}>Find parts <Icon name="arrow"/></button>
           </div>
-          <div className="px-hero-facts"><span><Icon name="check"/>Fitment checked</span><span><Icon name="pin"/>{location.label}: {location.address.split(",")[0]}</span><span><Icon name="offer"/>New-user offer</span></div>
+          <div className="px-hero-facts"><span><Icon name="check"/>Fitment checked</span><span><Icon name="pin"/>{location.label}: {location.address.split(",")[0]}</span></div>
         </div>
         <div className="px-hero-visual" aria-label={`${activeVehicle.make} ${activeVehicle.model} selected`}>
           <div className="px-hero-ring"/>
@@ -55,8 +55,6 @@ export function HomePage() {
         <div className="px-product-grid">{getDemoCatalog().slice(0, 4).map((product) => <ProductCard product={product} key={product.id}/>)}</div>
       </div>
     </section>
-
-    <section className="px-offer-band"><div className="px-container"><div><span>NEW CUSTOMER</span><h2>10% OFF YOUR FIRST ORDER</h2><p>Use code <b>WELCOME10</b> · Save up to ₹500</p></div><Link className="px-btn px-btn-white" href="/offers">Claim offer <Icon name="arrow"/></Link></div></section>
 
     <section className="px-trust"><div className="px-container"><div><Icon name="check"/><span><b>Fitment verified</b>Against your vehicle</span></div><div><Icon name="garage"/><span><b>Trusted sellers</b>Prices from local stores</span></div><div><Icon name="orders"/><span><b>Easy fulfilment</b>Delivery, pickup or garage</span></div><div><Icon name="headset"/><span><b>Order support</b>Help when you need it</span></div></div></section>
   </>;
