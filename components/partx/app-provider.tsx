@@ -2,8 +2,8 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createUserWithEmailAndPassword, deleteUser, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut as firebaseSignOut, updateProfile } from "firebase/auth";
-import { collection, doc, getDoc, onSnapshot, serverTimestamp, updateDoc, writeBatch } from "firebase/firestore";
-import type { AppLocation, CartLine, CustomerUser, Garage, Order, OrderStage, PartnerStore, Product, SellerProduct, UserRole, Vehicle } from "@/lib/types";
+import { collection, doc, getDoc, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
+import type { AppLocation, CartLine, CustomerUser, Garage, Order, OrderStage, PartnerStore, PaymentMethod, Product, SellerProduct, UserRole, Vehicle } from "@/lib/types";
 import { activeOrder, getDemoCatalog, vehicles as initialVehicles } from "@/lib/demo-data";
 import { firebaseAuth, firestore } from "@/lib/firebase";
 import { demoGarages, demoLocation, demoStores } from "@/lib/marketplace-data";
@@ -44,7 +44,7 @@ type AppContextValue = {
   addStore: (store: PartnerStore) => void;
   submitStoreRating: (storeId: string, stars: number) => void;
   orders: PartXOrder[];
-  placeOrder: (fulfilment: PartXOrder["fulfilment"], total: number) => PartXOrder;
+  placeOrder: (fulfilment: PartXOrder["fulfilment"], total: number, payment: PaymentMethod) => Promise<PartXOrder>;
   updateOrderStage: (orderId: string, stage: OrderStage) => void;
   liveOrderUpdate: { orderId: string; stage: OrderStage } | null;
   user: CustomerUser | null;
@@ -87,6 +87,28 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     }, () => setFirebaseProducts([]));
     return () => { stopStores(); stopProducts(); };
   }, []);
+
+  const isCustomer = user?.roles.includes("customer") ?? false;
+
+  useEffect(() => {
+    if (!user?.id || !isCustomer) return;
+    return onSnapshot(
+      query(collection(firestore, "orders"), where("customerId", "==", user.id)),
+      (snapshot) => {
+        const liveOrders = snapshot.docs.map((orderDoc) => toCustomerOrder(orderDoc.id, orderDoc.data()));
+        const liveIds = new Set(liveOrders.map((order) => order.id));
+        const previous = ordersRef.current;
+        const changed = liveOrders.find((nextOrder) => {
+          const current = previous.find((order) => order.id === nextOrder.id);
+          return current && current.stage !== nextOrder.stage;
+        });
+        const merged = [...liveOrders, ...previous.filter((order) => !liveIds.has(order.id))];
+        ordersRef.current = merged;
+        setOrders(merged);
+        if (changed) setLiveOrderUpdate({ orderId: changed.id, stage: changed.stage });
+      },
+    );
+  }, [isCustomer, user?.id]);
 
   useEffect(() => {
     const hydrate = () => {
@@ -226,7 +248,8 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       return { ...store, rating: Number(((store.rating * count + stars) / (count + 1)).toFixed(1)), ratingCount: count + 1 };
     })),
     orders,
-    placeOrder: (fulfilment, total) => {
+    placeOrder: async (fulfilment, total, payment) => {
+      if (!user) throw new Error("Sign in as a customer before placing an order.");
       const order: PartXOrder = {
         id: createPartXId("ORD"),
         trackingId: createPartXId("TRK"),
@@ -239,7 +262,37 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         items: cart,
         fulfilment,
       };
-      setOrders((current) => [order, ...current]);
+      const primaryItem = cart[0];
+      await setDoc(doc(firestore, "orders", order.id), {
+        customerId: user.id,
+        customer: { name: user.name, phone: user.mobile, email: user.email },
+        trackingId: order.trackingId,
+        storeId: order.storeId,
+        storeName: order.storeName,
+        placedAt: order.placedAt,
+        eta: order.eta,
+        stage: order.stage,
+        status: "New",
+        total,
+        fulfilment,
+        paymentStatus: payment === "cod" ? "COD" : "Paid",
+        deadline: fulfilment === "pickup" ? "Ready within 45 minutes" : "Tomorrow, 11:00 AM",
+        productName: cart.length > 1 ? `${primaryItem.product.name} + ${cart.length - 1} more` : primaryItem.product.name,
+        partNumber: primaryItem.product.partNumber,
+        quantity: cart.reduce((sum, item) => sum + item.quantity, 0),
+        items: cart.map((item) => ({
+          productId: item.product.id,
+          productName: item.product.name,
+          partNumber: item.product.partNumber,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice ?? item.product.price,
+          storeId: item.storeId ?? order.storeId,
+          storeName: item.storeName ?? order.storeName,
+        })),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setOrders((current) => [order, ...current.filter((item) => item.id !== order.id)]);
       setCart([]);
       return order;
     },
@@ -382,6 +435,24 @@ function stableImageIndex(value: string) {
   let hash = 0;
   for (let index = 0; index < value.length; index += 1) hash = (hash * 31 + value.charCodeAt(index)) | 0;
   return Math.abs(hash) % 6;
+}
+
+function toCustomerOrder(id: string, data: Record<string, unknown>): PartXOrder {
+  return {
+    id,
+    trackingId: String(data.trackingId ?? "PX-TRK-PENDING"),
+    storeId: String(data.storeId ?? ""),
+    storeName: String(data.storeName ?? "PartX seller"),
+    placedAt: String(data.placedAt ?? "Just now"),
+    eta: String(data.eta ?? "Delivery estimate pending"),
+    stage: isOrderStage(data.stage) ? data.stage : "Confirmed",
+    total: Number(data.total ?? 0),
+    fulfilment: data.fulfilment === "pickup" || data.fulfilment === "garage" ? data.fulfilment : "delivery",
+  };
+}
+
+function isOrderStage(value: unknown): value is OrderStage {
+  return value === "Confirmed" || value === "Preparing" || value === "Picked up" || value === "On the way" || value === "Delivered";
 }
 
 function parseFirebaseUser(uid: string, authEmail: string, data: Record<string, unknown>): CustomerUser | null {

@@ -566,3 +566,4 @@ body:has(.px-auth), body:has(.px-seller-pending) { padding-bottom: 0; }
 .sx-product-image-field { margin-bottom:15px; padding:14px; border:1px dashed #b9bec5; background:#f7f8f9; }
 .sx-product-image-field span { color:#747b84; font-size:8px; font-weight:600; }
 .sx-product-image-field input { padding:9px 10px; background:#fff; }
+.px-checkout-error { margin:0 0 12px; padding:10px 12px; border:1px solid #ff9ba1; background:#fff2f2; color:#b2121c; font-size:10px; font-weight:800; line-height:1.45; }

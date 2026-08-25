@@ -48,45 +48,32 @@ export function CartPage() {
 
 export function CheckoutPage() {
   const router = useRouter();
-  const { cart, cartTotal, location, garages, stores, placeOrder, user } = usePartX();
-  const { addSellerOrder } = useSeller();
+  const { cart, cartTotal, location, garages, stores, placeOrder } = usePartX();
   const [fulfilment, setFulfilment] = useState<FulfilmentMode>("delivery");
   const [payment, setPayment] = useState<PaymentMethod>("upi");
   const [offer, setOffer] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [checkoutError, setCheckoutError] = useState("");
   const delivery = fulfilment === "delivery" && cartTotal < 999 ? 99 : 0;
   const selectedStore = stores.find((store) => store.id === cart[0]?.storeId) ?? stores[0];
   const discount = offer ? Math.min(Math.round(cartTotal * .1), 500) : 0;
   const total = Math.max(0, cartTotal + delivery - discount);
   if (!cart.length) return <div className="px-page px-container"><div className="px-empty"><h1>No items to checkout</h1><p>Add a part before starting checkout.</p><Link href="/shop" className="px-btn px-btn-red">Shop parts</Link></div></div>;
   const pay = async () => {
-    setProcessing(true);
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    const orderedItems = [...cart];
-    const order = placeOrder(fulfilment, total);
-    const primaryItem = orderedItems[0];
-    addSellerOrder({
-      id: order.id,
-      trackingId: order.trackingId ?? "PX-TRK-PENDING",
-      storeId: primaryItem.storeId,
-      storeName: primaryItem.storeName,
-      customer: { name: user?.name ?? "Akshay Singh", phone: user?.mobile ?? "+91 98765 43210", email: user?.email ?? "akshay@gmail.com" },
-      placedAt: "Just now",
-      productName: orderedItems.length > 1 ? `${primaryItem.product.name} + ${orderedItems.length - 1} more` : primaryItem.product.name,
-      partNumber: primaryItem.product.partNumber,
-      quantity: orderedItems.reduce((sum, item) => sum + item.quantity, 0),
-      fulfilment,
-      paymentStatus: payment === "cod" ? "COD" : "Paid",
-      deadline: fulfilment === "pickup" ? "Ready within 45 minutes" : "Tomorrow, 11:00 AM",
-      status: "New",
-      total,
-    });
-    router.push(`/orders/${order.id}?placed=1`);
+    setProcessing(true); setCheckoutError("");
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      const order = await placeOrder(fulfilment, total, payment);
+      router.push(`/orders/${order.id}?placed=1`);
+    } catch (reason) {
+      setCheckoutError(reason instanceof Error ? reason.message : "The order could not be sent to the seller. Please try again.");
+      setProcessing(false);
+    }
   };
   return <div className="px-page px-container"><Link className="px-back-link" href="/cart"><Icon name="back"/>Back to cart</Link><div className="px-page-title"><span>SECURE TEST CHECKOUT</span><h1>Choose how you receive it</h1><p>Complete a realistic order using the demo payment gateway.</p></div>
     <div className="px-checkout-layout"><div className="px-checkout-main"><section className="px-panel"><div className="px-step-title"><b>1</b><div><span>FULFILMENT</span><h2>Delivery, pickup or garage</h2></div></div><div className="px-choice-grid">{(["delivery", "pickup", "garage"] as FulfilmentMode[]).map((mode) => <button className={fulfilment === mode ? "active" : ""} onClick={() => setFulfilment(mode)} key={mode}><Icon name={mode === "delivery" ? "pin" : mode === "pickup" ? "orders" : "garage"}/><b>{mode === "delivery" ? "Deliver to me" : mode === "pickup" ? "Self pickup" : "Send to garage"}</b><span>{mode === "delivery" ? location.address : mode === "pickup" ? `${selectedStore.name} · ${selectedStore.distanceKm} km` : garages[0]?.name ?? "Add a garage first"}</span></button>)}</div></section>
       <section className="px-panel"><div className="px-step-title"><b>2</b><div><span>PAYMENT</span><h2>Test payment method</h2></div></div><div className="px-test-note"><b>DEMO MODE</b>No money will be charged.</div><div className="px-payment-row">{(["upi", "card", "cod"] as PaymentMethod[]).map((method) => <button className={payment === method ? "active" : ""} onClick={() => setPayment(method)} key={method}>{method === "upi" ? "UPI" : method === "card" ? "Credit / debit card" : "Cash on delivery"}</button>)}</div>{payment === "card" && <div className="px-card-fields"><input defaultValue="4242 4242 4242 4242" aria-label="Card number"/><input defaultValue="12 / 28" aria-label="Expiry"/><input defaultValue="123" aria-label="CVV"/></div>}{payment === "upi" && <div className="px-upi">partx-test@okaxis <span>Approval is simulated.</span></div>}</section></div>
-      <aside className="px-summary"><span>ORDER SUMMARY</span><h2>{cart.length} item{cart.length > 1 ? "s" : ""}</h2><p className="px-summary-seller"><Icon name="store"/>Seller: <b>{cart[0]?.storeName ?? cart[0]?.product.seller}</b></p><label className="px-offer-toggle"><input type="checkbox" checked={offer} onChange={(event) => setOffer(event.target.checked)}/><span><b>WELCOME10 applied</b>New user savings up to ₹500</span></label><dl><div><dt>Parts total</dt><dd>₹{cartTotal.toLocaleString("en-IN")}</dd></div><div><dt>Delivery</dt><dd>{delivery ? `₹${delivery}` : "FREE"}</dd></div>{discount > 0 && <div className="saving"><dt>New-user offer</dt><dd>−₹{discount}</dd></div>}<div className="total"><dt>Total</dt><dd>₹{total.toLocaleString("en-IN")}</dd></div></dl><button className="px-btn px-btn-red px-btn-large" onClick={pay} disabled={processing}>{processing ? "Approving test payment…" : `Place test order · ₹${total.toLocaleString("en-IN")}`}<Icon name="arrow"/></button><small>By placing this demo order you accept the test terms.</small></aside></div>
+      <aside className="px-summary"><span>ORDER SUMMARY</span><h2>{cart.length} item{cart.length > 1 ? "s" : ""}</h2><p className="px-summary-seller"><Icon name="store"/>Seller: <b>{cart[0]?.storeName ?? cart[0]?.product.seller}</b></p><label className="px-offer-toggle"><input type="checkbox" checked={offer} onChange={(event) => setOffer(event.target.checked)}/><span><b>WELCOME10 applied</b>New user savings up to ₹500</span></label><dl><div><dt>Parts total</dt><dd>₹{cartTotal.toLocaleString("en-IN")}</dd></div><div><dt>Delivery</dt><dd>{delivery ? `₹${delivery}` : "FREE"}</dd></div>{discount > 0 && <div className="saving"><dt>New-user offer</dt><dd>−₹{discount}</dd></div>}<div className="total"><dt>Total</dt><dd>₹{total.toLocaleString("en-IN")}</dd></div></dl>{checkoutError ? <p className="px-checkout-error" role="alert">{checkoutError}</p> : null}<button className="px-btn px-btn-red px-btn-large" onClick={pay} disabled={processing}>{processing ? "Approving test payment…" : `Place test order · ₹${total.toLocaleString("en-IN")}`}<Icon name="arrow"/></button><small>By placing this demo order you accept the test terms.</small></aside></div>
   </div>;
 }
 

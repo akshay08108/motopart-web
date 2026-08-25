@@ -19,8 +19,7 @@ type SellerContextValue = {
   activeAlert: SellerAlert | null;
   enableAlerts: () => void;
   dismissAlert: () => void;
-  addSellerOrder: (order: SellerOrder) => void;
-  updateOrderStatus: (orderId: string, status: SellerOrderStatus) => void;
+  updateOrderStatus: (orderId: string, status: SellerOrderStatus) => Promise<void>;
   addTicket: (ticket: NewTicket) => SellerTicket;
   resolveTicket: (ticketId: string, internalNote: string) => void;
   addRating: (rating: Omit<StoreRating, "id" | "createdAt" | "verified">) => StoreRating;
@@ -44,10 +43,8 @@ const customerStageForSellerStatus = {
   Delivered: "Delivered",
 } as const;
 
-function playFiveSecondAlert() {
-  const AudioContextClass = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!AudioContextClass) return;
-  const context = new AudioContextClass();
+function playFiveSecondAlert(context: AudioContext) {
+  if (context.state !== "running") return;
   const started = context.currentTime;
   for (let index = 0; index < 5; index += 1) {
     const oscillator = context.createOscillator();
@@ -59,7 +56,10 @@ function playFiveSecondAlert() {
     oscillator.connect(gain); gain.connect(context.destination);
     oscillator.start(started + index); oscillator.stop(started + index + 0.6);
   }
-  window.setTimeout(() => void context.close(), 5200);
+}
+
+function resumeAndPlayAlert(context: AudioContext) {
+  void context.resume().then(() => playFiveSecondAlert(context)).catch(() => undefined);
 }
 
 export function SellerProvider({ children }: { children: React.ReactNode }) {
@@ -68,7 +68,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   const [tickets, setTickets] = useState<SellerTicket[]>(sellerTicketsSeed);
   const [ratings, setRatings] = useState<StoreRating[]>(storeRatingsSeed);
   const [alertsEnabled, setAlertsEnabled] = useState(false);
-  const [activeAlert, setActiveAlert] = useState<SellerAlert | null>({ kind: "ticket", ticket: sellerTicketsSeed[0] });
+  const [activeAlert, setActiveAlert] = useState<SellerAlert | null>(null);
   const [productOverrides, setProductOverrides] = useState<Record<string, { price: number; stock: number }>>({
     "BP-0986-424-384": { price: 1299, stock: 3 }, "LX-3541": { price: 649, stock: 12 }, MTRED60L: { price: 4999, stock: 2 }, "3397011417": { price: 799, stock: 4 }, "OC-523": { price: 259, stock: 0 },
   });
@@ -76,6 +76,9 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   const alertsEnabledRef = useRef(false);
   const sellerOrdersRef = useRef(sellerOrdersSeed);
+  const liveOrdersInitializedRef = useRef(false);
+  const alertAudioRef = useRef<AudioContext | null>(null);
+  const sellerStoreId = user?.activeRole === "seller" ? user.storeIds?.[0] : undefined;
 
   useEffect(() => {
     alertsEnabledRef.current = alertsEnabled;
@@ -89,6 +92,37 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       () => setSellerProducts([]),
     );
   }, [user?.activeRole, user?.id]);
+
+  useEffect(() => {
+    const storeId = sellerStoreId;
+    if (!storeId) return;
+    liveOrdersInitializedRef.current = false;
+    return onSnapshot(
+      query(collection(firestore, "orders"), where("storeId", "==", storeId)),
+      (snapshot) => {
+        const liveOrders = snapshot.docs.map((orderDoc) => toSellerOrder(orderDoc.id, orderDoc.data())).sort((a, b) => firestoreTime(b.createdAt) - firestoreTime(a.createdAt));
+        const combined = mergeSellerOrders(liveOrders, sellerOrdersSeed);
+        sellerOrdersRef.current = combined;
+        setSellerOrders(combined);
+        if (liveOrdersInitializedRef.current) {
+          const incomingChange = snapshot.docChanges().find((change) => change.type === "added");
+          if (incomingChange) {
+            const incoming = toSellerOrder(incomingChange.doc.id, incomingChange.doc.data());
+            setActiveAlert({ kind: "order", order: incoming });
+            if (alertsEnabledRef.current && alertAudioRef.current) resumeAndPlayAlert(alertAudioRef.current);
+          }
+        } else {
+          liveOrdersInitializedRef.current = true;
+        }
+      },
+    );
+  }, [sellerStoreId]);
+
+  useEffect(() => () => {
+    const context = alertAudioRef.current;
+    alertAudioRef.current = null;
+    if (context && context.state !== "closed") void context.close();
+  }, []);
 
   useEffect(() => {
     sellerOrdersRef.current = sellerOrders;
@@ -132,7 +166,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
           setSellerOrders(next.sellerOrders);
           if (incoming) {
             setActiveAlert({ kind: "order", order: incoming });
-            if (alertsEnabledRef.current) playFiveSecondAlert();
+            if (alertsEnabledRef.current && alertAudioRef.current) resumeAndPlayAlert(alertAudioRef.current);
           }
         }
         if (next.tickets) setTickets(next.tickets);
@@ -156,21 +190,26 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     alertsEnabled,
     activeAlert,
     enableAlerts: () => {
+      const AudioContextClass = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const context = alertAudioRef.current?.state === "closed" ? null : alertAudioRef.current;
+      alertAudioRef.current = context ?? new AudioContextClass();
       setAlertsEnabled(true);
-      const recentOrder = sellerOrders.find((order) => order.status === "New" && order.placedAt === "Just now");
-      const openTicket = tickets.find((ticket) => ticket.status === "Open");
-      setActiveAlert(recentOrder ? { kind: "order", order: recentOrder } : openTicket ? { kind: "ticket", ticket: openTicket } : null);
-      playFiveSecondAlert();
+      alertsEnabledRef.current = true;
+      resumeAndPlayAlert(alertAudioRef.current);
     },
     dismissAlert: () => setActiveAlert(null),
-    addSellerOrder: (order) => {
-      setSellerOrders((current) => current.some((item) => item.id === order.id) ? current : [order, ...current]);
-      sellerOrdersRef.current = sellerOrdersRef.current.some((item) => item.id === order.id) ? sellerOrdersRef.current : [order, ...sellerOrdersRef.current];
-      setActiveAlert({ kind: "order", order });
-      if (alertsEnabled) playFiveSecondAlert();
-    },
-    updateOrderStatus: (orderId, status) => {
+    updateOrderStatus: async (orderId, status) => {
       setSellerOrders((current) => current.map((order) => order.id === orderId ? { ...order, status } : order));
+      const order = sellerOrdersRef.current.find((item) => item.id === orderId);
+      if (order?.storeId) {
+        await updateDoc(doc(firestore, "orders", orderId), {
+          status,
+          stage: customerStageForSellerStatus[status],
+          ...(status === "Delivered" ? { eta: "Delivered just now" } : {}),
+          updatedAt: serverTimestamp(),
+        });
+      }
       updateOrderStage(orderId, customerStageForSellerStatus[status]);
     },
     addTicket: (ticket) => {
@@ -185,7 +224,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       };
       setTickets((current) => [created, ...current]);
       setActiveAlert({ kind: "ticket", ticket: created });
-      if (alertsEnabled) playFiveSecondAlert();
+      if (alertsEnabled && alertAudioRef.current) resumeAndPlayAlert(alertAudioRef.current);
       return created;
     },
     resolveTicket: (ticketId, internalNote) => setTickets((current) => current.map((ticket) => ticket.id === ticketId ? { ...ticket, status: "Resolved", internalNote, resolvedAt: "Just now" } : ticket)),
@@ -274,4 +313,42 @@ function validateProductImage(image: File) {
 function productImagePath(sellerId: string, productId: string, image: File) {
   const extension = image.type === "image/png" ? "png" : image.type === "image/webp" ? "webp" : "jpg";
   return `products/${sellerId}/${productId}/primary-${Date.now()}.${extension}`;
+}
+
+type FirestoreSellerOrder = SellerOrder & { createdAt?: unknown };
+
+function toSellerOrder(id: string, data: Record<string, unknown>): FirestoreSellerOrder {
+  const customer = data.customer && typeof data.customer === "object" ? data.customer as Record<string, unknown> : {};
+  return {
+    id,
+    trackingId: String(data.trackingId ?? "PX-TRK-PENDING"),
+    storeId: String(data.storeId ?? ""),
+    storeName: String(data.storeName ?? "PartX seller"),
+    customer: { name: String(customer.name ?? "Customer"), phone: String(customer.phone ?? ""), email: String(customer.email ?? "") },
+    placedAt: String(data.placedAt ?? "Just now"),
+    productName: String(data.productName ?? "Order item"),
+    partNumber: String(data.partNumber ?? ""),
+    quantity: Number(data.quantity ?? 1),
+    fulfilment: data.fulfilment === "pickup" || data.fulfilment === "garage" ? data.fulfilment : "delivery",
+    paymentStatus: data.paymentStatus === "COD" || data.paymentStatus === "Pending" ? data.paymentStatus : "Paid",
+    deadline: String(data.deadline ?? "Review order"),
+    status: isSellerOrderStatus(data.status) ? data.status : "New",
+    total: Number(data.total ?? 0),
+    createdAt: data.createdAt,
+  };
+}
+
+function mergeSellerOrders(live: SellerOrder[], demo: SellerOrder[]) {
+  const merged = new Map<string, SellerOrder>();
+  for (const order of [...live, ...demo]) if (!merged.has(order.id)) merged.set(order.id, order);
+  return [...merged.values()];
+}
+
+function firestoreTime(value: unknown) {
+  if (value && typeof value === "object" && "toMillis" in value && typeof value.toMillis === "function") return value.toMillis();
+  return 0;
+}
+
+function isSellerOrderStatus(value: unknown): value is SellerOrderStatus {
+  return value === "New" || value === "Accepted" || value === "Packing" || value === "Packed" || value === "Dispatched" || value === "Delivered";
 }
