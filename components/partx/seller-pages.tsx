@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import type { NewSellerProduct, SellerOrder, SellerOrderStatus, SellerProduct } from "@/lib/types";
 import { getDemoCatalog } from "@/lib/demo-data";
+import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import { useSeller } from "./seller-provider";
 
@@ -13,6 +14,10 @@ const nextStatus: Partial<Record<SellerOrderStatus, SellerOrderStatus>> = { New:
 
 export function SellerDashboardPage() {
   const { sellerOrders, tickets, ratings, productOverrides } = useSeller();
+  const { user } = usePartX();
+  const storeId = user?.storeIds?.[0];
+  const storeRatings = ratings.filter((rating) => rating.storeId === storeId);
+  const rating = ratingSummary(storeRatings);
   const openTickets = tickets.filter((ticket) => ticket.status === "Open");
   const toPack = sellerOrders.filter((order) => packStatuses.includes(order.status));
   const lowStock = Object.entries(productOverrides).filter(([, item]) => item.stock < 5);
@@ -22,7 +27,7 @@ export function SellerDashboardPage() {
       <Stat href="/seller/orders" icon="cart" label="New orders" value={sellerOrders.filter((order) => order.status === "New").length} action="View orders"/>
       <Stat href="/seller/packing" icon="box" label="To pack" value={toPack.length} action="Go to packing queue"/>
       <Stat href="/seller/tickets" icon="ticket" label="Open tickets" value={openTickets.length} action="View tickets"/>
-      <Stat href="/seller/reviews" icon="star" label="Store rating" value="4.7 / 5" action="View reviews"/>
+      <Stat href="/seller/reviews" icon="star" label="Store rating" value={rating.count ? `${rating.average.toFixed(1)} / 5` : "New"} action="View reviews"/>
     </div>
     <div className="sx-dashboard-main">
       <section className="sx-panel sx-orders-panel"><PanelHead title="Orders to pack" href="/seller/orders" link="View all orders"/><SellerOrderTable orders={toPack}/></section>
@@ -30,7 +35,7 @@ export function SellerDashboardPage() {
     </div>
     <div className="sx-lower-grid">
       <section className="sx-panel"><PanelHead title="Stock needs attention" href="/seller/products" link="View all products"/><div className="sx-stock-list">{lowStock.map(([partNumber, item]) => <div key={partNumber}><b>{getDemoCatalog().find((product) => product.partNumber === partNumber)?.name ?? partNumber}</b><span>{partNumber}</span><strong>{item.stock} units</strong><em>{item.stock === 0 ? "Out of stock" : "Low stock"}</em><Link href="/seller/products">Update stock</Link></div>)}</div></section>
-      <section className="sx-panel sx-rating-summary"><PanelHead title="Verified ratings" href="/seller/reviews" link="View all reviews"/><div><strong>4.7<small>/ 5</small></strong><div className="sx-stars">★★★★★</div><span>Based on 128 verified reviews</span></div><div className="sx-rating-bars">{[72,19,6,2,1].map((width, index) => <div key={width}><b>{5-index} ★</b><i><span style={{width:`${width}%`}}/></i><em>{width}%</em></div>)}</div><small>{ratings.length} detailed demo reviews loaded</small></section>
+      <section className="sx-panel sx-rating-summary"><PanelHead title="Verified ratings" href="/seller/reviews" link="View all reviews"/><div><strong>{rating.count ? rating.average.toFixed(1) : "New"}{rating.count ? <small>/ 5</small> : null}</strong><div className="sx-stars">{rating.stars}</div><span>{rating.count ? `Based on ${rating.count} verified ${rating.count === 1 ? "review" : "reviews"}` : "No verified ratings yet"}</span></div><div className="sx-rating-bars">{rating.distribution.map(({ star, percentage }) => <div key={star}><b>{star} ★</b><i><span style={{width:`${percentage}%`}}/></i><em>{percentage}%</em></div>)}</div><small>{user?.storeName ?? "Your store"} ratings only</small></section>
     </div>
   </>;
 }
@@ -104,7 +109,11 @@ export function SellerProductsPage() {
 
 export function SellerReviewsPage() {
   const { ratings } = useSeller();
-  return <><SellerTitle title="Verified customer ratings" subtitle="Ratings submitted only after successful delivery"/><div className="sx-reviews-layout"><section className="sx-panel sx-rating-hero"><strong>4.7<small>/ 5</small></strong><div className="sx-stars">★★★★★</div><p>128 verified store ratings</p><span>Displayed during customer store selection</span></section><section className="sx-review-list">{ratings.map((rating) => <article className="sx-panel" key={rating.id}><div><b>{rating.customerName}</b><span>{"★".repeat(rating.stars)}{"☆".repeat(5-rating.stars)}</span></div><p>{rating.comment}</p><small><Icon name="check"/>Verified purchase · {rating.orderId} · {rating.createdAt}</small></article>)}</section></div></>;
+  const { user } = usePartX();
+  const storeName = user?.storeName ?? "Your store";
+  const storeRatings = ratings.filter((rating) => rating.storeId === user?.storeIds?.[0]);
+  const summary = ratingSummary(storeRatings);
+  return <><SellerTitle title="Verified customer ratings" subtitle={`Ratings submitted for ${storeName} after successful delivery`}/><div className="sx-reviews-layout"><section className="sx-panel sx-rating-hero"><strong>{summary.count ? summary.average.toFixed(1) : "New"}{summary.count ? <small>/ 5</small> : null}</strong><div className="sx-stars">{summary.stars}</div><p>{summary.count ? `${summary.count} verified store ${summary.count === 1 ? "rating" : "ratings"}` : "No verified ratings yet"}</p><span>Displayed during customer store selection</span></section><section className="sx-review-list">{storeRatings.map((rating) => <article className="sx-panel" key={rating.id}><div><b>{rating.customerName}</b><span>{"★".repeat(rating.stars)}{"☆".repeat(5-rating.stars)}</span></div><p>{rating.comment}</p><small><Icon name="check"/>Verified purchase · {rating.orderId} · {rating.createdAt}</small></article>)}{!storeRatings.length ? <div className="sx-empty-row">Ratings for other stores are hidden. This store has no verified customer ratings yet.</div> : null}</section></div></>;
 }
 
 export function SellerSettingsPage() {
@@ -245,3 +254,10 @@ function labelFulfilment(value: SellerOrder["fulfilment"]) { return value === "d
 function actionFor(status: SellerOrderStatus) { return status === "New" ? "Accept order" : status === "Accepted" ? "Start packing" : status === "Packing" ? "Mark as packed" : status === "Packed" ? "Hand to courier" : status === "Dispatched" ? "Mark delivered" : "Completed"; }
 function initials(name:string){return name.split(" ").map((part)=>part[0]).join("").slice(0,2).toUpperCase();}
 function maskEmail(email:string){const [name,domain]=email.split("@");return `${name.slice(0,2)}***@${domain}`;}
+function ratingSummary(ratings: Array<{ stars: number }>) {
+  const count = ratings.length;
+  const average = count ? ratings.reduce((total, rating) => total + rating.stars, 0) / count : 0;
+  const rounded = Math.round(average);
+  const distribution = [5, 4, 3, 2, 1].map((star) => ({ star, percentage: count ? Math.round((ratings.filter((rating) => rating.stars === star).length / count) * 100) : 0 }));
+  return { count, average, stars: count ? `${"★".repeat(rounded)}${"☆".repeat(5 - rounded)}` : "☆☆☆☆☆", distribution };
+}
