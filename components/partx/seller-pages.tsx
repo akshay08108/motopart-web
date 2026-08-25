@@ -127,12 +127,13 @@ function ProductEditor({ product,current,save }: { product: ReturnType<typeof ge
   return <div className="sx-product-row"><span><Image src={`/parts/${product.imageIndex}-v2.png`} alt="" width={74} height={58}/><b>{product.name}</b></span><span>{product.partNumber}</span><label>₹<input type="number" value={price} onChange={(event)=>setPrice(Number(event.target.value))}/></label><input type="number" value={stock} onChange={(event)=>setStock(Number(event.target.value))}/><Status status={stock===0?"Out of stock":stock<5?"Low stock":"Active"}/><button onClick={()=>{save(product.partNumber,price,stock);setSaved(true);}}>{saved?"Saved":"Save"}</button></div>;
 }
 
-function SellerProductEditor({ product, save, uploadImage }: { product: SellerProduct; save: (productId: string, sellingPrice: number, stock: number) => Promise<void>; uploadImage: (productId: string, image: File) => Promise<void> }) {
+function SellerProductEditor({ product, save, uploadImage }: { product: SellerProduct; save: (productId: string, sellingPrice: number, stock: number) => Promise<void>; uploadImage: (productId: string, image: File, onProgress?: (progress: number) => void) => Promise<void> }) {
   const [price, setPrice] = useState(product.sellingPrice);
   const [stock, setStock] = useState(product.stock);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [imageError, setImageError] = useState("");
   const submit = async () => {
     setSaving(true); setSaved(false);
@@ -141,12 +142,12 @@ function SellerProductEditor({ product, save, uploadImage }: { product: SellerPr
   const chooseImage = async (event: ChangeEvent<HTMLInputElement>) => {
     const image = event.target.files?.[0]; event.target.value = "";
     if (!image) return;
-    setUploadingImage(true); setImageError("");
-    try { await uploadImage(product.id, image); }
+    setUploadingImage(true); setUploadProgress(0); setImageError("");
+    try { await uploadImage(product.id, image, setUploadProgress); }
     catch (reason) { setImageError(reason instanceof Error ? reason.message : "Image upload failed."); }
     finally { setUploadingImage(false); }
   };
-  return <div className="sx-product-row"><span>{product.imageUrl ? <Image src={product.imageUrl} alt={product.name} width={74} height={58}/> : <span className="sx-product-placeholder"><Icon name="box"/></span>}<b>{product.name}<small>{product.brand} · {product.sku}{product.barcode ? ` · ${product.barcode}` : ""}</small><label className="sx-product-image-upload"><Icon name="upload"/>{uploadingImage?"Uploading…":product.imageUrl?"Change image":"Add image"}<input className="sx-hidden-file" type="file" accept="image/jpeg,image/png,image/webp" disabled={uploadingImage} onChange={(event) => void chooseImage(event)}/></label>{imageError ? <small className="sx-image-error">{imageError}</small> : null}</b></span><span>{product.partNumber}</span><label>₹<input type="number" min="0" value={price} onChange={(event) => setPrice(Number(event.target.value))}/></label><input type="number" min="0" value={stock} onChange={(event) => setStock(Number(event.target.value))}/><Status status={stock===0?"Out of stock":stock<5?"Low stock":"Active"}/><button disabled={saving} onClick={() => void submit()}>{saving?"Saving…":saved?"Saved":"Save"}</button></div>;
+  return <div className="sx-product-row"><span>{product.imageUrl ? <Image src={product.imageUrl} alt={product.name} width={74} height={58}/> : <span className="sx-product-placeholder"><Icon name="box"/></span>}<b>{product.name}<small>{product.brand} · {product.sku}{product.barcode ? ` · ${product.barcode}` : ""}</small><label className="sx-product-image-upload"><Icon name="upload"/>{uploadingImage?`Uploading ${uploadProgress}%`:product.imageUrl?"Change image":"Add image"}<input className="sx-hidden-file" type="file" accept="image/jpeg,image/png,image/webp" disabled={uploadingImage} onChange={(event) => void chooseImage(event)}/></label>{uploadingImage ? <span className="sx-upload-progress" aria-label={`Image upload ${uploadProgress}%`}><i style={{ width: `${uploadProgress}%` }}/></span> : null}{imageError ? <small className="sx-image-error" role="alert">{imageError}</small> : null}</b></span><span>{product.partNumber}</span><label>₹<input type="number" min="0" value={price} onChange={(event) => setPrice(Number(event.target.value))}/></label><input type="number" min="0" value={stock} onChange={(event) => setStock(Number(event.target.value))}/><Status status={stock===0?"Out of stock":stock<5?"Low stock":"Active"}/><button disabled={saving} onClick={() => void submit()}>{saving?"Saving…":saved?"Saved":"Save"}</button></div>;
 }
 
 type ProductSpreadsheet = { fileName: string; products: NewSellerProduct[]; errors: string[] };

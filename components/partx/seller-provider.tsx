@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { collection, doc, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
-import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { deleteObject, getDownloadURL, ref, uploadBytesResumable, type StorageReference } from "firebase/storage";
 import type { NewSellerProduct, SellerOrder, SellerOrderStatus, SellerProduct, SellerTicket, StoreRating } from "@/lib/types";
 import { createPartXId, sellerTicketsSeed, storeRatingsSeed } from "@/lib/seller-data";
 import { firebaseStorage, firestore } from "@/lib/firebase";
@@ -29,7 +29,7 @@ type SellerContextValue = {
   addProduct: (product: NewSellerProduct, image?: File) => Promise<void>;
   addProducts: (products: NewSellerProduct[]) => Promise<void>;
   updateSellerProduct: (productId: string, sellingPrice: number, stock: number) => Promise<void>;
-  uploadProductImage: (productId: string, image: File) => Promise<void>;
+  uploadProductImage: (productId: string, image: File, onProgress?: (progress: number) => void) => Promise<void>;
 };
 
 const SellerContext = createContext<SellerContextValue | null>(null);
@@ -221,7 +221,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       let imageUrl: string | undefined;
       if (image && imageRef) {
         validateProductImage(image);
-        await uploadBytes(imageRef, image, { contentType: image.type });
+        await uploadImageFile(imageRef, image);
         imageUrl = await getDownloadURL(imageRef);
       }
       try {
@@ -263,13 +263,13 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
         updatedAt: serverTimestamp(),
       });
     },
-    uploadProductImage: async (productId, image) => {
+    uploadProductImage: async (productId, image, onProgress) => {
       if (!user || user.sellerStatus !== "approved") throw new Error("Only approved sellers can upload product images.");
       const product = sellerProducts.find((item) => item.id === productId);
       if (!product || product.sellerId !== user.id) throw new Error("You can only update products owned by your store.");
       validateProductImage(image);
       const imageRef = ref(firebaseStorage, productImagePath(user.id, productId, image));
-      await uploadBytes(imageRef, image, { contentType: image.type });
+      await uploadImageFile(imageRef, image, onProgress);
       await updateDoc(doc(firestore, "products", productId), { imageUrl: await getDownloadURL(imageRef), updatedAt: serverTimestamp() });
     },
   }), [sellerOrders, tickets, ratings, alertsEnabled, activeAlert, productOverrides, sellerProducts, updateOrderStage, user]);
@@ -291,6 +291,62 @@ function validateProductImage(image: File) {
 function productImagePath(sellerId: string, productId: string, image: File) {
   const extension = image.type === "image/png" ? "png" : image.type === "image/webp" ? "webp" : "jpg";
   return `products/${sellerId}/${productId}/primary-${Date.now()}.${extension}`;
+}
+
+const storageSetupMessage = "Product image storage is not active. Upgrade Firebase to the Blaze plan, open Databases & Storage → Storage, create the default bucket, then publish storage.rules.";
+
+async function uploadImageFile(imageRef: StorageReference, image: File, onProgress?: (progress: number) => void) {
+  await verifyStorageBucket(imageRef.bucket);
+  return new Promise<void>((resolve, reject) => {
+    const task = uploadBytesResumable(imageRef, image, { contentType: image.type });
+    let settled = false;
+    let stalledTimer: ReturnType<typeof setTimeout>;
+    const stopTimer = () => clearTimeout(stalledTimer);
+    const failForStall = () => {
+      if (settled) return;
+      settled = true;
+      void task.cancel();
+      reject(new Error(storageSetupMessage));
+    };
+    const restartTimer = () => {
+      stopTimer();
+      stalledTimer = setTimeout(failForStall, 20_000);
+    };
+    restartTimer();
+    task.on("state_changed", (snapshot) => {
+      restartTimer();
+      onProgress?.(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100));
+    }, (reason) => {
+      stopTimer();
+      if (settled) return;
+      settled = true;
+      reject(new Error(storageErrorMessage(reason)));
+    }, () => {
+      stopTimer();
+      if (settled) return;
+      settled = true;
+      onProgress?.(100);
+      resolve();
+    });
+  });
+}
+
+async function verifyStorageBucket(bucket: string) {
+  let response: Response;
+  try {
+    response = await fetch(`https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?maxResults=1`);
+  } catch {
+    return;
+  }
+  if (response.status === 402 || response.status === 404) throw new Error(storageSetupMessage);
+}
+
+function storageErrorMessage(reason: unknown) {
+  const code = typeof reason === "object" && reason && "code" in reason ? String(reason.code) : "";
+  if (code.includes("bucket-not-found") || code.includes("project-not-found") || code.includes("quota-exceeded")) return storageSetupMessage;
+  if (code.includes("unauthorized")) return "Firebase Storage denied this upload. Confirm you are signed in as the product owner and publish the repository's storage.rules file.";
+  if (code.includes("canceled")) return "The image upload was cancelled. Please try again.";
+  return reason instanceof Error ? reason.message : "Image upload failed. Check Firebase Storage and try again.";
 }
 
 type FirestoreSellerOrder = SellerOrder & { createdAt?: unknown };
