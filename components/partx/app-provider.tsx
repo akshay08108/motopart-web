@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import type { AppLocation, CartLine, CustomerUser, Garage, Order, OrderStage, PartnerStore, Vehicle } from "@/lib/types";
+import type { AppLocation, CartLine, CustomerUser, Garage, Order, OrderStage, PartnerStore, UserRole, Vehicle } from "@/lib/types";
 import { activeOrder, vehicles as initialVehicles } from "@/lib/demo-data";
 import { demoGarages, demoLocation, demoStores } from "@/lib/marketplace-data";
 import { createPartXId } from "@/lib/seller-data";
@@ -15,6 +15,7 @@ export type PartXOrder = Order & {
 };
 
 export type CartSellerSelection = { storeId: string; storeName: string; price: number };
+export type RegisterInput = { name: string; email: string; mobile: string; password: string; role: UserRole; storeName?: string };
 
 const deliveredOrder: PartXOrder = { id: "PX-ORD-260820-J4F2", trackingId: "PX-TRK-8C4H2M", storeId: "autohub-mumbai", storeName: "AutoHub Mumbai", placedAt: "20 Aug, 4:18 PM", eta: "Delivered 21 Aug, 11:42 AM", stage: "Delivered", total: 1299, fulfilment: "delivery" };
 
@@ -44,8 +45,8 @@ type AppContextValue = {
   liveOrderUpdate: { orderId: string; stage: OrderStage } | null;
   user: CustomerUser | null;
   authHydrated: boolean;
-  signIn: (identifier: string, password: string) => Promise<boolean>;
-  register: (input: Omit<CustomerUser, "id"> & { password: string }) => Promise<boolean>;
+  signIn: (identifier: string, password: string, role: UserRole) => Promise<boolean>;
+  register: (input: RegisterInput) => Promise<boolean>;
   signOut: () => void;
 };
 
@@ -98,7 +99,12 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
           }));
         }
       } catch {}
-      try { if (savedAuth) setUser(JSON.parse(savedAuth)); } catch {}
+      try {
+        if (savedAuth) {
+          const savedUser = JSON.parse(savedAuth) as Partial<CustomerUser> & Pick<CustomerUser, "id" | "name" | "email" | "mobile">;
+          setUser({ ...savedUser, roles: savedUser.roles ?? ["customer"], activeRole: savedUser.activeRole ?? "customer" });
+        }
+      } catch {}
       setHydrated(true);
     };
     queueMicrotask(hydrate);
@@ -197,16 +203,20 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     liveOrderUpdate,
     user,
     authHydrated: hydrated,
-    signIn: async (identifier, password) => {
+    signIn: async (identifier, password, role) => {
       await new Promise((resolve) => setTimeout(resolve, 650));
       if (!identifier.trim() || password.trim().length < 4) return false;
-      setUser({ id: "customer-akshay", name: "Akshay Singh", email: identifier.includes("@") ? identifier : "akshay@partx.demo", mobile: identifier.includes("@") ? "+91 98765 43210" : identifier });
+      setUser(role === "seller"
+        ? { id: "seller-rohan", name: "Rohan Mehta", email: identifier.includes("@") ? identifier : "seller@partx.demo", mobile: identifier.includes("@") ? "+91 98190 11022" : identifier, roles: ["seller"], activeRole: "seller", sellerStatus: "approved", storeIds: ["autohub-mumbai"], storeName: "AutoHub Mumbai" }
+        : { id: "customer-akshay", name: "Akshay Singh", email: identifier.includes("@") ? identifier : "akshay@partx.demo", mobile: identifier.includes("@") ? "+91 98765 43210" : identifier, roles: ["customer"], activeRole: "customer" });
       return true;
     },
     register: async (input) => {
       await new Promise((resolve) => setTimeout(resolve, 650));
       if (!input.name.trim() || !input.email.trim() || !input.mobile.trim() || input.password.length < 4) return false;
-      setUser({ id: `customer-${Date.now()}`, name: input.name, email: input.email, mobile: input.mobile });
+      setUser(input.role === "seller"
+        ? { id: `seller-${Date.now()}`, name: input.name, email: input.email, mobile: input.mobile, roles: ["seller"], activeRole: "seller", sellerStatus: "pending", storeIds: [], storeName: input.storeName }
+        : { id: `customer-${Date.now()}`, name: input.name, email: input.email, mobile: input.mobile, roles: ["customer"], activeRole: "customer" });
       return true;
     },
     signOut: () => setUser(null),

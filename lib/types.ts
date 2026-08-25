@@ -44,7 +44,14 @@ export type CustomerUser = {
   name: string;
   email: string;
   mobile: string;
+  roles: UserRole[];
+  activeRole: UserRole;
+  sellerStatus?: "pending" | "approved";
+  storeIds?: string[];
+  storeName?: string;
 };
+
+export type UserRole = "customer" | "seller";
 
 export type OrderStage = "Confirmed" | "Preparing" | "Picked up" | "On the way" | "Delivered";
 
