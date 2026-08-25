@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
+import { SellerShell } from "./seller-shell";
 
 const nav = [
   ["/", "Home"], ["/shop", "Shop Parts"], ["/garage", "My Garage"], ["/orders", "Orders"], ["/offers", "Offers"],
@@ -22,6 +23,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.push(`/shop${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ""}`);
   };
   const active = (href: string) => href === "/" ? pathname === "/" : pathname.startsWith(href);
+
+  if (pathname.startsWith("/seller")) return <SellerShell>{children}</SellerShell>;
 
   return <div className="px-app">
     <header className="px-header">

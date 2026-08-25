@@ -81,9 +81,61 @@ export type PartnerStore = {
   businessHours: string;
   deliveryRadiusKm: number;
   rating: number;
+  ratingCount?: number;
   distanceKm: number;
   location: AppLocation;
   listings: StoreListing[];
+};
+
+export type SellerOrderStatus = "New" | "Accepted" | "Packing" | "Packed" | "Dispatched" | "Delivered";
+
+export type SellerCustomer = {
+  name: string;
+  phone: string;
+  email: string;
+};
+
+export type SellerOrder = {
+  id: string;
+  trackingId: string;
+  customer: SellerCustomer;
+  placedAt: string;
+  productName: string;
+  partNumber: string;
+  quantity: number;
+  fulfilment: FulfilmentMode;
+  paymentStatus: "Paid" | "Pending" | "COD";
+  deadline: string;
+  status: SellerOrderStatus;
+  total: number;
+};
+
+export type SellerTicketPriority = "Urgent" | "High" | "Normal";
+
+export type SellerTicket = {
+  id: string;
+  orderId: string;
+  customer: SellerCustomer;
+  issue: string;
+  message: string;
+  createdAt: string;
+  priority: SellerTicketPriority;
+  status: "Open" | "Resolved";
+  orderedProduct: string;
+  deliveredProduct?: string;
+  internalNote?: string;
+  resolvedAt?: string;
+};
+
+export type StoreRating = {
+  id: string;
+  orderId: string;
+  storeId: string;
+  customerName: string;
+  stars: number;
+  comment: string;
+  createdAt: string;
+  verified: true;
 };
 
 export type FulfilmentMode = "delivery" | "pickup" | "garage";

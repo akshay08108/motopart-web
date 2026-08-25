@@ -22,6 +22,16 @@ export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: strin
     plus: <path d="M12 5v14M5 12h14"/>,
     trash: <><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14"/></>,
     chevron: <path d="m9 18 6-6-6-6"/>,
+    box: <><path d="m4 7 8-4 8 4-8 4z"/><path d="M4 7v10l8 4 8-4V7M12 11v10"/></>,
+    ticket: <><path d="M4 4h16v5a3 3 0 0 0 0 6v5H4v-5a3 3 0 0 0 0-6z"/><path d="M9 9h6M9 13h6"/></>,
+    star: <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z"/>,
+    bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></>,
+    volume: <><path d="M5 10v4h4l5 4V6L9 10z"/><path d="M17 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12"/></>,
+    phone: <path d="M6 3h4l2 5-3 2a15 15 0 0 0 5 5l2-3 5 2v4c0 2-2 3-4 3C9 20 4 15 3 7c0-2 1-4 3-4Z"/>,
+    copy: <><rect x="8" y="8" width="11" height="11" rx="1"/><path d="M16 8V5H5v11h3"/></>,
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2-.7-.8-1.8.9-1.9-2.2-2.2-1.9.9-1.8-.8L10.5 2h-3l-.7 2-1.8.8-1.9-.9L.9 6.1 1.8 8l-.8 1.8-2 .7v3l2 .7.8 1.8-.9 1.9 2.2 2.2 1.9-.9 1.8.8.7 2h3l.7-2 1.8-.8 1.9.9 2.2-2.2-.9-1.9.8-1.8z" transform="translate(2) scale(.83)"/></>,
+    logout: <><path d="M10 4H4v16h6M14 8l4 4-4 4M8 12h10"/></>,
+    package: <><rect x="3" y="6" width="18" height="15"/><path d="m3 6 4-3h10l4 3M8 3l4 3 4-3M12 6v6"/></>,
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>{paths[name]}</svg>;
 }

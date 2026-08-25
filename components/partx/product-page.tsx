@@ -3,15 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Product } from "@/lib/types";
-import { demoStores } from "@/lib/marketplace-data";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 
 export function ProductPage({ product }: { product: Product }) {
-  const { addToCart, activeVehicleId, vehicles } = usePartX();
+  const { addToCart, activeVehicleId, vehicles, stores } = usePartX();
   const vehicle = vehicles.find((item) => item.id === activeVehicleId);
   const compatible = product.compatibleVehicleIds.includes(activeVehicleId);
-  const storeOptions = demoStores.filter((store) => store.listings.some((listing) => listing.productId === product.id));
+  const storeOptions = stores.filter((store) => store.listings.some((listing) => listing.productId === product.id));
   return <div className="px-page px-container">
     <Link className="px-back-link" href="/shop"><Icon name="back"/>Back to parts</Link>
     <div className="px-detail-grid">
@@ -28,7 +27,7 @@ export function ProductPage({ product }: { product: Product }) {
       </div>
     </div>
     <section className="px-subsection"><div className="px-section-head"><div><span>COMPARE SELLERS</span><h2>Available stores</h2></div></div>
-      <div className="px-seller-list">{(storeOptions.length ? storeOptions : demoStores.slice(0, 2)).map((store, index) => { const listing = store.listings.find((item) => item.productId === product.id); return <div key={store.id}><div><b>{store.name}</b><span>★ {store.rating} · {store.distanceKm} km · {store.businessHours}</span></div><strong>₹{(listing?.price ?? product.price + index * 50).toLocaleString("en-IN")}</strong><span>{listing?.stock ?? product.stock} in stock</span></div>; })}</div>
+      <div className="px-seller-list">{(storeOptions.length ? storeOptions : stores.slice(0, 2)).map((store, index) => { const listing = store.listings.find((item) => item.productId === product.id); return <div key={store.id}><div><b>{store.name}</b><span>★ {store.rating} · {store.ratingCount ?? 0} verified ratings · {store.distanceKm} km</span></div><strong>₹{(listing?.price ?? product.price + index * 50).toLocaleString("en-IN")}</strong><span>{listing?.stock ?? product.stock} in stock</span></div>; })}</div>
     </section>
   </div>;
 }
