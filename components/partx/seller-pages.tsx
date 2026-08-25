@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import type { NewSellerProduct, SellerOrder, SellerOrderStatus, SellerProduct } from "@/lib/types";
 import { getDemoCatalog } from "@/lib/demo-data";
 import { Icon } from "./icons";
@@ -62,14 +62,31 @@ export function SellerTicketsPage() {
 }
 
 export function SellerProductsPage() {
-  const { productOverrides, updateProduct, sellerProducts, addProduct, updateSellerProduct } = useSeller();
+  const { productOverrides, updateProduct, sellerProducts, addProduct, addProducts, updateSellerProduct } = useSeller();
   const products = getDemoCatalog();
   const [adding, setAdding] = useState(false);
+  const [spreadsheet, setSpreadsheet] = useState<ProductSpreadsheet | null>(null);
+  const [readingSpreadsheet, setReadingSpreadsheet] = useState(false);
   const [message, setMessage] = useState("");
+  const fileInput = useRef<HTMLInputElement>(null);
+  const chooseSpreadsheet = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setReadingSpreadsheet(true); setMessage("");
+    try { setSpreadsheet(await readProductSpreadsheet(file, sellerProducts)); }
+    catch (reason) { setSpreadsheet({ fileName: file.name, products: [], errors: [reason instanceof Error ? reason.message : "The workbook could not be read."] }); }
+    finally { setReadingSpreadsheet(false); }
+  };
   return <>
     <div className="sx-product-page-head">
       <SellerTitle title="Products & prices" subtitle="Manage what your store sells, its price and live stock"/>
-      <button className="sx-primary sx-add-product" onClick={() => setAdding(true)}><Icon name="plus"/>Add product</button>
+      <div className="sx-product-head-actions">
+        <a className="sx-secondary" href="/templates/PartX_Product_Upload_Template.xlsx" download><Icon name="download"/>Download Excel template</a>
+        <button className="sx-secondary" disabled={readingSpreadsheet} onClick={() => fileInput.current?.click()}><Icon name="upload"/>{readingSpreadsheet?"Reading Excel…":"Upload Excel"}</button>
+        <button className="sx-primary" onClick={() => setAdding(true)}><Icon name="plus"/>Add product</button>
+        <input ref={fileInput} className="sx-hidden-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => void chooseSpreadsheet(event)}/>
+      </div>
     </div>
     {message ? <div className="sx-product-success" role="status"><Icon name="check"/>{message}</div> : null}
     <section className="sx-panel">
@@ -81,6 +98,7 @@ export function SellerProductsPage() {
       <div className="sx-product-table"><div className="sx-product-table-head"><span>Product</span><span>Part number</span><span>Your price</span><span>Stock</span><span>Status</span><span>Action</span></div>{products.map((product) => <ProductEditor key={product.id} product={product} current={productOverrides[product.partNumber] ?? {price:product.price,stock:product.stock}} save={updateProduct}/>)}</div>
     </section>
     {adding ? <AddProductDialog existingProducts={sellerProducts} close={() => setAdding(false)} submit={async (product) => { await addProduct(product); setAdding(false); setMessage(`${product.name} was published to your store.`); }}/> : null}
+    {spreadsheet ? <SpreadsheetImportDialog spreadsheet={spreadsheet} close={() => setSpreadsheet(null)} submit={async () => { await addProducts(spreadsheet.products); setSpreadsheet(null); setMessage(`${spreadsheet.products.length} products were imported into your Firebase inventory.`); }}/> : null}
   </>;
 }
 
@@ -113,6 +131,61 @@ function SellerProductEditor({ product, save }: { product: SellerProduct; save: 
     try { await save(product.id, price, stock); setSaved(true); } finally { setSaving(false); }
   };
   return <div className="sx-product-row"><span><span className="sx-product-placeholder"><Icon name="box"/></span><b>{product.name}<small>{product.brand} · {product.sku}</small></b></span><span>{product.partNumber}</span><label>₹<input type="number" min="0" value={price} onChange={(event) => setPrice(Number(event.target.value))}/></label><input type="number" min="0" value={stock} onChange={(event) => setStock(Number(event.target.value))}/><Status status={stock===0?"Out of stock":stock<5?"Low stock":"Active"}/><button disabled={saving} onClick={() => void submit()}>{saving?"Saving…":saved?"Saved":"Save"}</button></div>;
+}
+
+type ProductSpreadsheet = { fileName: string; products: NewSellerProduct[]; errors: string[] };
+
+async function readProductSpreadsheet(file: File, existingProducts: SellerProduct[]): Promise<ProductSpreadsheet> {
+  const { readSheet } = await import("read-excel-file/browser");
+  const rows = await readSheet(file, "Products");
+  const expectedHeaders = ["Product Name", "Brand", "Category", "Part Number", "SKU", "Condition", "MRP", "Selling Price", "GST Rate", "Stock", "Warranty", "Vehicle Compatibility", "Description"];
+  const headerIndex = rows.findIndex((row) => expectedHeaders.every((header, index) => String(row[index] ?? "").trim() === header));
+  if (headerIndex < 0) throw new Error("The Products sheet or PartX column headings are missing. Download a fresh template and try again.");
+  const errors: string[] = [];
+  const products: NewSellerProduct[] = [];
+  const knownSkus = new Set(existingProducts.map((product) => product.sku.trim().toLowerCase()));
+  const importedSkus = new Set<string>();
+  const categories = new Set(["Filters", "Brakes", "Batteries", "Engine", "Electrical", "Suspension", "Accessories", "Other"]);
+  const conditions = new Set(["New", "Refurbished", "Used"]);
+  rows.slice(headerIndex + 1).forEach((row, offset) => {
+    const excelRow = headerIndex + offset + 2;
+    if (row.every((cell) => cell === null || String(cell).trim() === "")) return;
+    const text = (index: number) => String(row[index] ?? "").trim();
+    const sku = text(4).toUpperCase();
+    if (sku.startsWith("SAMPLE-")) return;
+    const product: NewSellerProduct = {
+      name: text(0), brand: text(1), category: text(2), partNumber: text(3).toUpperCase(), sku,
+      condition: text(5) as NewSellerProduct["condition"], mrp: Number(row[6]), sellingPrice: Number(row[7]),
+      gstRate: Number(row[8]), stock: Number(row[9]), warranty: text(10), compatibility: text(11), description: text(12),
+    };
+    const missing = expectedHeaders.filter((_, index) => index !== 8 && (row[index] === null || String(row[index]).trim() === ""));
+    const rowErrors: string[] = [];
+    if (missing.length) rowErrors.push(`missing ${missing.join(", ")}`);
+    if (!categories.has(product.category)) rowErrors.push("invalid category");
+    if (!conditions.has(product.condition)) rowErrors.push("invalid condition");
+    if (![0, 5, 12, 18, 28].includes(product.gstRate)) rowErrors.push("invalid GST rate");
+    if (!Number.isFinite(product.mrp) || product.mrp < 0) rowErrors.push("invalid MRP");
+    if (!Number.isFinite(product.sellingPrice) || product.sellingPrice < 0) rowErrors.push("invalid selling price");
+    if (product.sellingPrice > product.mrp) rowErrors.push("selling price is higher than MRP");
+    if (!Number.isInteger(product.stock) || product.stock < 0) rowErrors.push("stock must be a whole number");
+    if (knownSkus.has(sku.toLowerCase())) rowErrors.push("SKU already exists in your store");
+    if (importedSkus.has(sku.toLowerCase())) rowErrors.push("duplicate SKU in this workbook");
+    if (rowErrors.length) { errors.push(`Row ${excelRow}: ${rowErrors.join("; ")}.`); return; }
+    importedSkus.add(sku.toLowerCase());
+    products.push(product);
+  });
+  if (!products.length && !errors.length) errors.push("No products were found. Delete the sample row and add at least one real product.");
+  return { fileName: file.name, products, errors };
+}
+
+function SpreadsheetImportDialog({ spreadsheet, close, submit }: { spreadsheet: ProductSpreadsheet; close: () => void; submit: () => Promise<void> }) {
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState("");
+  const runImport = async () => {
+    setImporting(true); setError("");
+    try { await submit(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Products could not be imported."); setImporting(false); }
+  };
+  return <div className="sx-dialog-backdrop" role="presentation"><div className="sx-product-dialog sx-import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-products-title"><header><div><span>EXCEL BULK UPLOAD</span><h2 id="import-products-title">Review product import</h2><p>{spreadsheet.fileName}</p></div><button type="button" onClick={close} aria-label="Close Excel import"><Icon name="close"/></button></header><div className="sx-import-body"><div className="sx-import-summary"><div><strong>{spreadsheet.products.length}</strong><span>Ready to import</span></div><div className={spreadsheet.errors.length ? "has-errors" : ""}><strong>{spreadsheet.errors.length}</strong><span>Rows needing attention</span></div><div><Icon name="box"/><span>Images can be added later from product editing.</span></div></div>{spreadsheet.products.length ? <div className="sx-import-preview"><div><b>Product</b><b>SKU</b><b>Price</b><b>Stock</b></div>{spreadsheet.products.slice(0,8).map((product) => <div key={product.sku}><span>{product.name}<small>{product.brand} · {product.category}</small></span><span>{product.sku}</span><span>₹{product.sellingPrice.toLocaleString("en-IN")}</span><span>{product.stock}</span></div>)}{spreadsheet.products.length > 8 ? <p>+ {spreadsheet.products.length - 8} more valid products</p> : null}</div> : null}{spreadsheet.errors.length ? <section className="sx-import-errors"><h3>Fix these rows</h3>{spreadsheet.errors.map((message) => <p key={message}>{message}</p>)}</section> : null}{error ? <p className="sx-form-error" role="alert">{error}</p> : null}</div><footer><button type="button" className="sx-secondary" onClick={close}>Cancel</button><button type="button" className="sx-primary" disabled={importing || !spreadsheet.products.length} onClick={() => void runImport()}>{importing?"Importing…":`Import ${spreadsheet.products.length} products`}</button></footer></div></div>;
 }
 
 function AddProductDialog({ existingProducts, close, submit }: { existingProducts: SellerProduct[]; close: () => void; submit: (product: NewSellerProduct) => Promise<void> }) {

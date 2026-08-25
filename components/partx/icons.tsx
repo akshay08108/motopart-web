@@ -33,6 +33,8 @@ export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: strin
     logout: <><path d="M10 4H4v16h6M14 8l4 4-4 4M8 12h10"/></>,
     package: <><rect x="3" y="6" width="18" height="15"/><path d="m3 6 4-3h10l4 3M8 3l4 3 4-3M12 6v6"/></>,
     mail: <><rect x="3" y="5" width="18" height="14" rx="1"/><path d="m4 7 8 6 8-6"/></>,
+    download: <><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></>,
+    upload: <><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 20h16"/></>,
     lock: <><rect x="5" y="10" width="14" height="11" rx="1"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></>,
     eye: <><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></>,
     store: <><path d="M4 10v11h16V10M3 10l2-6h14l2 6"/><path d="M3 10a3 3 0 0 0 5 2 3 3 0 0 0 4 0 3 3 0 0 0 4 0 3 3 0 0 0 5-2M9 21v-5h6v5"/></>,

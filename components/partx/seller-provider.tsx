@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { addDoc, collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where } from "firebase/firestore";
+import { addDoc, collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore";
 import type { NewSellerProduct, SellerOrder, SellerOrderStatus, SellerProduct, SellerTicket, StoreRating } from "@/lib/types";
 import { createPartXId, sellerOrdersSeed, sellerTicketsSeed, storeRatingsSeed } from "@/lib/seller-data";
 import { firestore } from "@/lib/firebase";
@@ -27,6 +27,7 @@ type SellerContextValue = {
   productOverrides: Record<string, { price: number; stock: number }>;
   sellerProducts: SellerProduct[];
   addProduct: (product: NewSellerProduct) => Promise<void>;
+  addProducts: (products: NewSellerProduct[]) => Promise<void>;
   updateSellerProduct: (productId: string, sellingPrice: number, stock: number) => Promise<void>;
 };
 
@@ -204,6 +205,22 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+    },
+    addProducts: async (products) => {
+      if (!user || user.sellerStatus !== "approved" || !user.storeIds?.[0]) throw new Error("Only approved sellers can import products.");
+      if (!products.length) throw new Error("No valid products were found in this workbook.");
+      const batch = writeBatch(firestore);
+      for (const product of products) {
+        batch.set(doc(collection(firestore, "products")), {
+          ...product,
+          sellerId: user.id,
+          storeId: user.storeIds[0],
+          status: product.stock > 0 ? "published" : "out-of-stock",
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+      await batch.commit();
     },
     updateSellerProduct: async (productId, sellingPrice, stock) => {
       await updateDoc(doc(firestore, "products", productId), {
