@@ -567,3 +567,9 @@ body:has(.px-auth), body:has(.px-seller-pending) { padding-bottom: 0; }
 .sx-product-image-field span { color:#747b84; font-size:8px; font-weight:600; }
 .sx-product-image-field input { padding:9px 10px; background:#fff; }
 .px-checkout-error { margin:0 0 12px; padding:10px 12px; border:1px solid #ff9ba1; background:#fff2f2; color:#b2121c; font-size:10px; font-weight:800; line-height:1.45; }
+.sx-payment-detail { display:grid; gap:3px; }.sx-payment-detail small { color:#727984; font-size:8px; font-weight:650; }
+.sx-queue-empty { display:grid; justify-items:center; gap:6px; min-height:300px; padding:48px 20px; border:1px solid #dfe2e6; background:#fff; text-align:center; }.sx-queue-empty svg { width:34px; color:var(--px-red); }.sx-queue-empty h2 { margin:8px 0 0; font-size:20px; }.sx-queue-empty p { max-width:430px; margin:0; color:#6d747e; font-size:11px; line-height:1.5; }
+
+@media (max-width: 860px) {
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size:16px!important; }
+}

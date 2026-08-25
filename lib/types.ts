@@ -153,6 +153,10 @@ export type SellerOrder = {
   quantity: number;
   fulfilment: FulfilmentMode;
   paymentStatus: "Paid" | "Pending" | "COD";
+  paymentMethod?: PaymentMethod;
+  paymentReference?: string;
+  paymentVerifiedAt?: string;
+  paymentMode?: "test" | "live";
   deadline: string;
   status: SellerOrderStatus;
   total: number;

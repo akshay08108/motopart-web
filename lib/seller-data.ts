@@ -18,7 +18,7 @@ export const storeRatingsSeed: StoreRating[] = [
   { id: "PX-REV-1007", orderId: "PX-ORD-260819-C2M8", storeId: "autohub-mumbai", customerName: "Rahul Desai", stars: 4, comment: "Well packed and exactly as described.", createdAt: "21 Aug 2026", verified: true },
 ];
 
-export function createPartXId(kind: "ORD" | "TRK" | "TKT" | "REV") {
+export function createPartXId(kind: "ORD" | "TRK" | "TKT" | "REV" | "PAY") {
   const date = new Date();
   const stamp = `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
   const random = Math.random().toString(36).slice(2, 6).toUpperCase();

@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { collection, doc, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import type { NewSellerProduct, SellerOrder, SellerOrderStatus, SellerProduct, SellerTicket, StoreRating } from "@/lib/types";
-import { createPartXId, sellerOrdersSeed, sellerTicketsSeed, storeRatingsSeed } from "@/lib/seller-data";
+import { createPartXId, sellerTicketsSeed, storeRatingsSeed } from "@/lib/seller-data";
 import { firebaseStorage, firestore } from "@/lib/firebase";
 import { usePartX } from "./app-provider";
 
@@ -64,7 +64,7 @@ function resumeAndPlayAlert(context: AudioContext) {
 
 export function SellerProvider({ children }: { children: React.ReactNode }) {
   const { updateOrderStage, user } = usePartX();
-  const [sellerOrders, setSellerOrders] = useState<SellerOrder[]>(sellerOrdersSeed);
+  const [sellerOrders, setSellerOrders] = useState<SellerOrder[]>([]);
   const [tickets, setTickets] = useState<SellerTicket[]>(sellerTicketsSeed);
   const [ratings, setRatings] = useState<StoreRating[]>(storeRatingsSeed);
   const [alertsEnabled, setAlertsEnabled] = useState(false);
@@ -75,7 +75,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   const [sellerProducts, setSellerProducts] = useState<SellerProduct[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const alertsEnabledRef = useRef(false);
-  const sellerOrdersRef = useRef(sellerOrdersSeed);
+  const sellerOrdersRef = useRef<SellerOrder[]>([]);
   const liveOrdersInitializedRef = useRef(false);
   const alertAudioRef = useRef<AudioContext | null>(null);
   const sellerStoreId = user?.activeRole === "seller" ? user.storeIds?.[0] : undefined;
@@ -101,9 +101,8 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       query(collection(firestore, "orders"), where("storeId", "==", storeId)),
       (snapshot) => {
         const liveOrders = snapshot.docs.map((orderDoc) => toSellerOrder(orderDoc.id, orderDoc.data())).sort((a, b) => firestoreTime(b.createdAt) - firestoreTime(a.createdAt));
-        const combined = mergeSellerOrders(liveOrders, sellerOrdersSeed);
-        sellerOrdersRef.current = combined;
-        setSellerOrders(combined);
+        sellerOrdersRef.current = liveOrders;
+        setSellerOrders(liveOrders);
         if (liveOrdersInitializedRef.current) {
           const incomingChange = snapshot.docChanges().find((change) => change.type === "added");
           if (incomingChange) {
@@ -134,18 +133,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
         const saved = localStorage.getItem("partx-seller-v1");
         if (saved) {
           const value = JSON.parse(saved);
-          if (value.sellerOrders) {
-            setSellerOrders(value.sellerOrders);
-            const latestOrder = (value.sellerOrders as SellerOrder[]).find((order) => order.status === "New" && order.placedAt === "Just now");
-            if (latestOrder) setActiveAlert({ kind: "order", order: latestOrder });
-          }
-          if (value.tickets) {
-            setTickets(value.tickets);
-            if (!value.sellerOrders?.some((order: SellerOrder) => order.status === "New" && order.placedAt === "Just now")) {
-              const openTicket = value.tickets.find((ticket: SellerTicket) => ticket.status === "Open");
-              if (openTicket) setActiveAlert({ kind: "ticket", ticket: openTicket });
-            }
-          }
+          if (value.tickets) setTickets(value.tickets);
           if (value.ratings) setRatings(value.ratings);
           if (value.productOverrides) setProductOverrides(value.productOverrides);
         }
@@ -158,17 +146,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     const syncSellerState = (event: StorageEvent) => {
       if (event.key !== "partx-seller-v1" || !event.newValue) return;
       try {
-        const next = JSON.parse(event.newValue) as { sellerOrders?: SellerOrder[]; tickets?: SellerTicket[]; ratings?: StoreRating[]; productOverrides?: Record<string, { price: number; stock: number }> };
-        if (next.sellerOrders) {
-          const currentIds = new Set(sellerOrdersRef.current.map((order) => order.id));
-          const incoming = next.sellerOrders.find((order) => !currentIds.has(order.id));
-          sellerOrdersRef.current = next.sellerOrders;
-          setSellerOrders(next.sellerOrders);
-          if (incoming) {
-            setActiveAlert({ kind: "order", order: incoming });
-            if (alertsEnabledRef.current && alertAudioRef.current) resumeAndPlayAlert(alertAudioRef.current);
-          }
-        }
+        const next = JSON.parse(event.newValue) as { tickets?: SellerTicket[]; ratings?: StoreRating[]; productOverrides?: Record<string, { price: number; stock: number }> };
         if (next.tickets) setTickets(next.tickets);
         if (next.ratings) setRatings(next.ratings);
         if (next.productOverrides) setProductOverrides(next.productOverrides);
@@ -180,8 +158,8 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem("partx-seller-v1", JSON.stringify({ sellerOrders, tickets, ratings, productOverrides }));
-  }, [sellerOrders, tickets, ratings, productOverrides, hydrated]);
+    localStorage.setItem("partx-seller-v1", JSON.stringify({ tickets, ratings, productOverrides }));
+  }, [tickets, ratings, productOverrides, hydrated]);
 
   const value = useMemo<SellerContextValue>(() => ({
     sellerOrders,
@@ -331,17 +309,15 @@ function toSellerOrder(id: string, data: Record<string, unknown>): FirestoreSell
     quantity: Number(data.quantity ?? 1),
     fulfilment: data.fulfilment === "pickup" || data.fulfilment === "garage" ? data.fulfilment : "delivery",
     paymentStatus: data.paymentStatus === "COD" || data.paymentStatus === "Pending" ? data.paymentStatus : "Paid",
+    paymentMethod: data.paymentMethod === "upi" || data.paymentMethod === "card" || data.paymentMethod === "cod" ? data.paymentMethod : undefined,
+    paymentReference: typeof data.paymentReference === "string" ? data.paymentReference : undefined,
+    paymentVerifiedAt: typeof data.paymentVerifiedAt === "string" ? data.paymentVerifiedAt : undefined,
+    paymentMode: data.paymentMode === "live" ? "live" : "test",
     deadline: String(data.deadline ?? "Review order"),
     status: isSellerOrderStatus(data.status) ? data.status : "New",
     total: Number(data.total ?? 0),
     createdAt: data.createdAt,
   };
-}
-
-function mergeSellerOrders(live: SellerOrder[], demo: SellerOrder[]) {
-  const merged = new Map<string, SellerOrder>();
-  for (const order of [...live, ...demo]) if (!merged.has(order.id)) merged.set(order.id, order);
-  return [...merged.values()];
 }
 
 function firestoreTime(value: unknown) {

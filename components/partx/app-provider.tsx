@@ -263,6 +263,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         fulfilment,
       };
       const primaryItem = cart[0];
+      const paymentReference = payment === "cod" ? undefined : createPartXId("PAY");
       await setDoc(doc(firestore, "orders", order.id), {
         customerId: user.id,
         customer: { name: user.name, phone: user.mobile, email: user.email },
@@ -276,6 +277,9 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         total,
         fulfilment,
         paymentStatus: payment === "cod" ? "COD" : "Paid",
+        paymentMethod: payment,
+        paymentMode: "test",
+        ...(paymentReference ? { paymentReference, paymentVerifiedAt: "Test payment approved" } : {}),
         deadline: fulfilment === "pickup" ? "Ready within 45 minutes" : "Tomorrow, 11:00 AM",
         productName: cart.length > 1 ? `${primaryItem.product.name} + ${cart.length - 1} more` : primaryItem.product.name,
         partNumber: primaryItem.product.partNumber,
