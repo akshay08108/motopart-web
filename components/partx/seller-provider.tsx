@@ -76,9 +76,8 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   const alertsEnabledRef = useRef(false);
   const sellerOrdersRef = useRef<SellerOrder[]>([]);
-  const liveOrdersInitializedRef = useRef(false);
   const alertAudioRef = useRef<AudioContext | null>(null);
-  const sellerStoreId = user?.activeRole === "seller" ? user.storeIds?.[0] : undefined;
+  const sellerStoreIdsKey = user?.activeRole === "seller" ? (user.storeIds ?? []).join("|") : "";
 
   useEffect(() => {
     alertsEnabledRef.current = alertsEnabled;
@@ -94,16 +93,27 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   }, [user?.activeRole, user?.id]);
 
   useEffect(() => {
-    const storeId = sellerStoreId;
-    if (!storeId) return;
-    liveOrdersInitializedRef.current = false;
-    return onSnapshot(
+    const storeIds = sellerStoreIdsKey.split("|").filter(Boolean);
+    if (!storeIds.length) {
+      sellerOrdersRef.current = [];
+      setSellerOrders([]);
+      return;
+    }
+
+    const ordersByStore = new Map<string, FirestoreSellerOrder[]>();
+    const initializedStores = new Set<string>();
+    const refreshOrders = () => {
+      const liveOrders = [...ordersByStore.values()].flat().sort((a, b) => firestoreTime(b.createdAt) - firestoreTime(a.createdAt));
+      sellerOrdersRef.current = liveOrders;
+      setSellerOrders(liveOrders);
+    };
+
+    const unsubscribers = storeIds.map((storeId) => onSnapshot(
       query(collection(firestore, "orders"), where("storeId", "==", storeId)),
       (snapshot) => {
-        const liveOrders = snapshot.docs.map((orderDoc) => toSellerOrder(orderDoc.id, orderDoc.data())).sort((a, b) => firestoreTime(b.createdAt) - firestoreTime(a.createdAt));
-        sellerOrdersRef.current = liveOrders;
-        setSellerOrders(liveOrders);
-        if (liveOrdersInitializedRef.current) {
+        ordersByStore.set(storeId, snapshot.docs.map((orderDoc) => toSellerOrder(orderDoc.id, orderDoc.data())));
+        refreshOrders();
+        if (initializedStores.has(storeId)) {
           const incomingChange = snapshot.docChanges().find((change) => change.type === "added");
           if (incomingChange) {
             const incoming = toSellerOrder(incomingChange.doc.id, incomingChange.doc.data());
@@ -111,11 +121,17 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
             if (alertsEnabledRef.current && alertAudioRef.current) resumeAndPlayAlert(alertAudioRef.current);
           }
         } else {
-          liveOrdersInitializedRef.current = true;
+          initializedStores.add(storeId);
         }
       },
-    );
-  }, [sellerStoreId]);
+      () => {
+        ordersByStore.set(storeId, []);
+        refreshOrders();
+      },
+    ));
+
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [sellerStoreIdsKey]);
 
   useEffect(() => () => {
     const context = alertAudioRef.current;
@@ -215,7 +231,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     productOverrides,
     sellerProducts,
     addProduct: async (product, image) => {
-      if (!user || user.sellerStatus !== "approved" || !user.storeIds?.[0]) throw new Error("Only approved sellers can add products.");
+      if (!user || user.activeRole !== "seller" || !user.storeIds?.[0]) throw new Error("A seller store is required before adding products.");
       const productRef = doc(collection(firestore, "products"));
       let uploadedImage: Awaited<ReturnType<typeof uploadProductImageToCloudinary>> | undefined;
       if (image) {
@@ -238,7 +254,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       }
     },
     addProducts: async (products) => {
-      if (!user || user.sellerStatus !== "approved" || !user.storeIds?.[0]) throw new Error("Only approved sellers can import products.");
+      if (!user || user.activeRole !== "seller" || !user.storeIds?.[0]) throw new Error("A seller store is required before importing products.");
       if (!products.length) throw new Error("No valid products were found in this workbook.");
       const batch = writeBatch(firestore);
       for (const product of products) {
@@ -262,7 +278,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       });
     },
     uploadProductImage: async (productId, image, onProgress) => {
-      if (!user || user.sellerStatus !== "approved") throw new Error("Only approved sellers can upload product images.");
+      if (!user || user.activeRole !== "seller") throw new Error("Sign in as a seller to upload product images.");
       const product = sellerProducts.find((item) => item.id === productId);
       if (!product || product.sellerId !== user.id) throw new Error("You can only update products owned by your store.");
       validateProductImage(image);

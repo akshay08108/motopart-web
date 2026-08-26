@@ -28,21 +28,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const authRoute = pathname === "/login" || pathname.startsWith("/login/");
   const isCustomer = Boolean(user?.roles.includes("customer"));
   const isSeller = Boolean(user?.roles.includes("seller"));
-  const sellerPending = user?.sellerStatus === "pending";
 
   useEffect(() => {
     if (!authHydrated) return;
     if (customerRoute && !isCustomer) router.replace("/login/customer");
     if (!sellerRoute) return;
     if (!isSeller) router.replace("/login/seller");
-    else if (sellerPending && pathname !== "/seller/pending") router.replace("/seller/pending");
-    else if (!sellerPending && pathname === "/seller/pending") router.replace("/seller");
-  }, [authHydrated, customerRoute, isCustomer, isSeller, pathname, router, sellerPending, sellerRoute]);
+    else if (pathname === "/seller/pending") router.replace("/seller");
+  }, [authHydrated, customerRoute, isCustomer, isSeller, pathname, router, sellerRoute]);
 
   if (authRoute) return children;
   if (sellerRoute) {
-    if (!authHydrated || !isSeller || (sellerPending && pathname !== "/seller/pending") || (!sellerPending && pathname === "/seller/pending")) return <AuthLoading label="Opening seller workspace…"/>;
-    if (sellerPending) return children;
+    if (!authHydrated || !isSeller || pathname === "/seller/pending") return <AuthLoading label="Opening seller workspace…"/>;
     return <SellerShell>{children}</SellerShell>;
   }
   if (customerRoute && (!authHydrated || !isCustomer)) return <AuthLoading label="Opening your account…"/>;
