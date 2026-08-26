@@ -1,5 +1,5 @@
-import { SellerPendingPage } from "@/components/partx/auth-page";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return <SellerPendingPage/>;
+  redirect("/seller");
 }

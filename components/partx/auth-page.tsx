@@ -12,7 +12,7 @@ type AuthMode = "signin" | "register";
 
 const roleCopy = {
   customer: { label: "CUSTOMER ACCESS", story: <>Your garage.<br/>Your parts.<br/><em>One account.</em></>, storyDescription: "Save vehicles, compare verified stores and track every order.", heading: "Customer account", signInDescription: "Sign in to see your garage, orders and saved details.", registerDescription: "Start comparing sellers and tracking your parts in one place." },
-  seller: { label: "SELLER ACCESS", story: <>Your store.<br/>Your orders.<br/><em>One command center.</em></>, storyDescription: "Manage products, prices, packing and customer support.", heading: "Seller account", signInDescription: "Sign in to open your store dashboard and packing queue.", registerDescription: "Create your seller profile and start managing your store immediately." },
+  seller: { label: "SELLER ACCESS", story: <>Your store.<br/>Your orders.<br/><em>One command center.</em></>, storyDescription: "Manage products, prices, packing and customer support.", heading: "Seller account", signInDescription: "Sign in to open your store dashboard and packing queue.", registerDescription: "Create your store, add products and receive orders immediately." },
 } as const;
 
 export function RoleChoicePage() {
@@ -94,9 +94,9 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
           {mode === "signin" ? <div className="px-auth-options"><label><input type="checkbox" defaultChecked/>Remember me</label><button type="button" onClick={requestReset} disabled={busy}>Forgot password?</button></div> : null}
           {error ? <p className="px-auth-error" role="alert">{error}</p> : null}
           {notice ? <p className="px-auth-notice" role="status">{notice}</p> : null}
-          <button className="px-btn px-btn-red px-auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "signin" ? `Sign in as ${role}` : role === "seller" ? "Create seller store" : "Create customer account"}<Icon name="arrow"/></button>
+          <button className="px-btn px-btn-red px-auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "signin" ? `Sign in as ${role}` : role === "seller" ? "Create seller account" : "Create customer account"}<Icon name="arrow"/></button>
         </form>
-        <p className="px-auth-demo"><b>FIREBASE SECURED</b> {role === "seller" ? "New seller stores are activated immediately so products and orders can be managed right away." : "Your customer account and role are now stored securely in Firebase."}</p>
+        <p className="px-auth-demo"><b>FIREBASE SECURED</b> {role === "seller" ? "Your store opens immediately so you can add products and receive customer orders." : "Your customer account and role are now stored securely in Firebase."}</p>
       </div>
     </section>
   </main>;
@@ -105,12 +105,4 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
 function AuthStory({ role }: { role: UserRole }) {
   const copy = roleCopy[role];
   return <section className="px-auth-story"><Link href="/" className="px-auth-brand" aria-label="PartX home"><Image src="/brand/partx-dark.png" alt="" width={58} height={58} priority/><span>Part<b>X</b></span></Link><div className="px-auth-message"><span>{copy.label}</span><h1>{copy.story}</h1><p>{copy.storyDescription}</p></div><Image className="px-auth-part" src="/parts/0-v2.png" alt="Bosch brake parts" width={720} height={520} priority/><div className="px-auth-proof"><div><Icon name="check"/><span><b>Verified fitment</b>Shop confidently</span></div><div><Icon name="store"/><span><b>Compare sellers</b>You choose the price</span></div><div><Icon name="orders"/><span><b>Live tracking</b>Every order update</span></div></div></section>;
-}
-
-export function SellerPendingPage() {
-  const router = useRouter(); const { user } = usePartX();
-  useEffect(() => {
-    if (user?.roles.includes("seller")) router.replace("/seller");
-  }, [router, user]);
-  return <main className="px-seller-pending"><Link href="/" className="px-auth-mobile-brand"><Image src="/brand/partx-light.png" alt="" width={54} height={54} priority/><span>Part<b>X</b></span></Link><div><span className="px-pending-icon"><Icon name="store"/></span><h1>Your store is active</h1><p><b>{user?.storeName ?? "Your store"}</b> can publish products and receive customer orders immediately.</p><button className="px-btn px-btn-dark" onClick={() => router.replace("/seller")}><Icon name="arrow"/>Open seller dashboard</button></div></main>;
 }

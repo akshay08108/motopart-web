@@ -96,7 +96,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     const storeIds = sellerStoreIdsKey.split("|").filter(Boolean);
     if (!storeIds.length) {
       sellerOrdersRef.current = [];
-      setSellerOrders([]);
+      queueMicrotask(() => setSellerOrders([]));
       return;
     }
 
