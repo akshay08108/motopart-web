@@ -18,7 +18,7 @@ type FirestoreDocument = {
 
 export async function POST(request: Request) {
   try {
-    const session = await requireApprovedSeller(request);
+    const session = await requireSeller(request);
     const body = await readJson(request);
     const productId = typeof body.productId === "string" ? body.productId.trim() : "";
     if (!productIdPattern.test(productId)) return error("A valid product ID is required.", 400);
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const session = await requireApprovedSeller(request);
+    const session = await requireSeller(request);
     const body = await readJson(request);
     const publicId = typeof body.publicId === "string" ? body.publicId.trim() : "";
     if (!publicId.startsWith(`partx/products/${session.uid}/`)) return error("This image does not belong to your store.", 403);
@@ -72,10 +72,10 @@ export async function DELETE(request: Request) {
   }
 }
 
-async function requireApprovedSeller(request: Request) {
+async function requireSeller(request: Request) {
   const authorization = request.headers.get("authorization") ?? "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
-  if (!token) throw new UploadRouteError("Sign in as an approved seller to upload images.", 401);
+  if (!token) throw new UploadRouteError("Sign in as a seller to upload images.", 401);
 
   const identityResponse = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(firebaseWebApiKey)}`, {
     method: "POST",
@@ -93,9 +93,8 @@ async function requireApprovedSeller(request: Request) {
   });
   const profile = await profileResponse.json() as FirestoreDocument;
   const roles = profile.fields?.roles?.arrayValue?.values?.map((role) => role.stringValue).filter(Boolean) ?? [];
-  const sellerStatus = profile.fields?.sellerStatus?.stringValue;
-  if (!profileResponse.ok || !roles.includes("seller") || sellerStatus !== "approved") {
-    throw new UploadRouteError("Only approved PartX sellers can upload product images.", 403);
+  if (!profileResponse.ok || !roles.includes("seller")) {
+    throw new UploadRouteError("Only PartX seller accounts can upload product images.", 403);
   }
   return { uid };
 }
