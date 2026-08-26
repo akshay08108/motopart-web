@@ -1,2 +1,5 @@
-import { GaragePage } from "@/components/partx/account-pages";
-export default function Page() { return <GaragePage />; }
+import { GarageSearchPage } from "@/components/partx/garage-search-page";
+
+export default function Page() {
+  return <GarageSearchPage />;
+}
