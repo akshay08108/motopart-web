@@ -80,7 +80,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const stopStores = onSnapshot(collection(firestore, "stores"), (snapshot) => {
-      setFirebaseStores(snapshot.docs.map((storeDoc) => ({ id: storeDoc.id, ...storeDoc.data() } as FirebaseStoreRecord)).filter((store) => store.status === "approved"));
+      setFirebaseStores(snapshot.docs.map((storeDoc) => ({ id: storeDoc.id, ...storeDoc.data() } as FirebaseStoreRecord)).filter((store) => store.status === "approved" || store.status === "pending"));
     }, () => setFirebaseStores([]));
     const stopProducts = onSnapshot(collection(firestore, "products"), (snapshot) => {
       setFirebaseProducts(snapshot.docs.map((productDoc) => ({ id: productDoc.id, ...productDoc.data() } as SellerProduct)).filter((product) => product.status === "published" || product.status === "out-of-stock"));
@@ -200,7 +200,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   const catalog = useMemo(() => {
     const storeNames = new Map(firebaseStores.map((store) => [store.id, store.name]));
     const combined = new Map(getDemoCatalog().map((product) => [product.id, product]));
-    for (const product of firebaseProducts) combined.set(product.id, toCatalogProduct(product, storeNames.get(product.storeId) ?? "PartX verified seller", vehicles));
+    for (const product of firebaseProducts) combined.set(product.id, toCatalogProduct(product, storeNames.get(product.storeId) ?? "PartX seller", vehicles));
     return [...combined.values()];
   }, [firebaseProducts, firebaseStores, vehicles]);
 
@@ -363,7 +363,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
           mobile: input.mobile.trim(),
           roles: [input.role],
           activeRole: input.role,
-          ...(input.role === "seller" ? { sellerStatus: "pending" as const, storeIds: [storeId!], storeName: input.storeName?.trim() } : {}),
+          ...(input.role === "seller" ? { sellerStatus: "approved" as const, storeIds: [storeId!], storeName: input.storeName?.trim() } : {}),
         };
         const profileData = {
           name: profile.name,
@@ -377,7 +377,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         };
         const batch = writeBatch(firestore);
         batch.set(doc(firestore, "users", credential.user.uid), { ...profileData, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-        if (storeId) batch.set(doc(firestore, "stores", storeId), { ownerId: credential.user.uid, name: input.storeName?.trim(), status: "pending", rating: 0, ratingCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        if (storeId) batch.set(doc(firestore, "stores", storeId), { ownerId: credential.user.uid, name: input.storeName?.trim(), status: "approved", rating: 0, ratingCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
         await batch.commit();
         setUser(profile);
         return true;
@@ -414,7 +414,7 @@ function toPartnerStore(store: FirebaseStoreRecord, products: SellerProduct[], e
   return {
     id: store.id,
     name: store.name,
-    owner: store.owner ?? existing?.owner ?? "Verified PartX seller",
+    owner: store.owner ?? existing?.owner ?? "PartX seller",
     phone: store.phone ?? existing?.phone ?? "Contact through PartX",
     businessHours: store.businessHours ?? existing?.businessHours ?? "Store hours not added",
     deliveryRadiusKm: store.deliveryRadiusKm ?? existing?.deliveryRadiusKm ?? 0,
