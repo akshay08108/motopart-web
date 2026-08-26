@@ -14,10 +14,9 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function isApprovedSeller() {
+    function isSeller() {
       return signedIn()
-        && 'seller' in currentUser().roles
-        && currentUser().sellerStatus == 'approved';
+        && 'seller' in currentUser().roles;
     }
 
     function isCustomer() {
@@ -31,7 +30,7 @@ service cloud.firestore {
         && request.resource.data.roles[0] in ['customer', 'seller']
         && (
           request.resource.data.roles[0] == 'customer'
-          || request.resource.data.sellerStatus == 'pending'
+          || request.resource.data.sellerStatus in ['approved', 'pending']
         );
       allow read: if ownsUser(uid);
       allow update: if ownsUser(uid)
@@ -45,8 +44,8 @@ service cloud.firestore {
       allow read: if true;
       allow create: if signedIn()
         && request.resource.data.ownerId == request.auth.uid
-        && request.resource.data.status == 'pending';
-      allow update: if isApprovedSeller()
+        && request.resource.data.status in ['approved', 'pending'];
+      allow update: if isSeller()
         && resource.data.ownerId == request.auth.uid
         && request.resource.data.ownerId == resource.data.ownerId
         && request.resource.data.status == resource.data.status;
@@ -55,10 +54,10 @@ service cloud.firestore {
 
     match /products/{productId} {
       allow read: if true;
-      allow create: if isApprovedSeller()
+      allow create: if isSeller()
         && request.resource.data.sellerId == request.auth.uid;
       allow update: if (
-          isApprovedSeller()
+          isSeller()
           && resource.data.sellerId == request.auth.uid
         ) || (
           isCustomer()
@@ -76,7 +75,7 @@ service cloud.firestore {
             || (request.resource.data.stock > 0 && request.resource.data.status == 'published')
           )
         );
-      allow delete: if isApprovedSeller()
+      allow delete: if isSeller()
         && resource.data.sellerId == request.auth.uid;
     }
 
@@ -85,9 +84,9 @@ service cloud.firestore {
         && request.resource.data.customerId == request.auth.uid;
       allow read: if signedIn() && (
         resource.data.customerId == request.auth.uid
-        || (isApprovedSeller() && resource.data.storeId in currentUser().storeIds)
+        || (isSeller() && resource.data.storeId in currentUser().storeIds)
       );
-      allow update: if isApprovedSeller()
+      allow update: if isSeller()
         && resource.data.storeId in currentUser().storeIds;
       allow delete: if false;
     }
@@ -97,7 +96,7 @@ service cloud.firestore {
         && request.resource.data.customerId == request.auth.uid;
       allow read, update: if signedIn() && (
         resource.data.customerId == request.auth.uid
-        || (isApprovedSeller() && resource.data.storeId in currentUser().storeIds)
+        || (isSeller() && resource.data.storeId in currentUser().storeIds)
       );
       allow delete: if false;
     }
