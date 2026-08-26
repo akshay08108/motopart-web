@@ -148,7 +148,7 @@ export function GarageSearchPage() {
 
           {searchError ? <div className={styles.error}><Icon name="close"/>{searchError}</div> : null}
           {!canSearch ? <div className={styles.searchHint}><Icon name="search"/><h3>Start with your car model</h3><p>Type at least 2 letters, or choose a make above.</p></div> : null}
-          {canSearch && !searching && !searchError && !results.length ? <div className={styles.searchHint}><Icon name="car"/><h3>No matching cars found</h3><p>Try a different model spelling, make, or year.</p></div> : null}
+          {canSearch && !searching && !searchError && !results.length ? <div className={styles.searchHint}><Icon name="garage"/><h3>No matching cars found</h3><p>Try a different model spelling, make, or year.</p></div> : null}
 
           {results.length ? <div className={styles.results}>{results.map((car) => <button className={selected?.id === car.id ? styles.resultSelected : ""} key={car.id} onClick={() => setSelected(car)}><div className={styles.carThumb}><Image src="/vehicle-suv.png" alt="" width={120} height={72}/></div><div><span>{car.make.toUpperCase()}</span><h3>{car.year} {car.make} {car.model}</h3><p>{car.variant}</p><small>{car.fuel} · {car.transmission}{car.drive ? ` · ${car.drive}` : ""}</small></div><i>{selected?.id === car.id ? <Icon name="check"/> : <Icon name="chevron"/>}</i></button>)}</div> : null}
 
