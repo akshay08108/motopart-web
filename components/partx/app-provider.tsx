@@ -214,23 +214,52 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     return [...combined.values()];
   }, [firebaseProducts, firebaseStores, stores]);
 
+  const catalogById = useMemo(() => new Map(catalog.map((product) => [product.id, product])), [catalog]);
+  const storesById = useMemo(() => new Map(marketplaceStores.map((store) => [store.id, store])), [marketplaceStores]);
+  const resolvedCart = useMemo(() => cart.map((line) => {
+    const selectedStore = line.storeId ? storesById.get(line.storeId) : undefined;
+    const selectedListing = selectedStore?.listings.find((listing) => listing.productId === line.product.id)
+      ?? selectedStore?.listings.find((listing) => listing.partNumber === line.product.partNumber);
+    const selectedProduct = selectedListing ? catalogById.get(selectedListing.productId) : undefined;
+    if (!selectedStore || !selectedListing || !selectedProduct) return line;
+    return {
+      ...line,
+      product: selectedProduct,
+      storeName: selectedStore.name,
+      unitPrice: selectedListing.price,
+      quantity: Math.max(1, Math.min(line.quantity, selectedProduct.stock)),
+    };
+  }), [cart, catalogById, storesById]);
+
   const value = useMemo<AppContextValue>(() => ({
     theme,
     toggleTheme: () => setTheme((current) => current === "light" ? "dark" : "light"),
-    cart,
-    cartCount: cart.reduce((sum, line) => sum + line.quantity, 0),
-    cartTotal: cart.reduce((sum, line) => sum + (line.unitPrice ?? line.product.price) * line.quantity, 0),
+    cart: resolvedCart,
+    cartCount: resolvedCart.reduce((sum, line) => sum + line.quantity, 0),
+    cartTotal: resolvedCart.reduce((sum, line) => sum + (line.unitPrice ?? line.product.price) * line.quantity, 0),
     addToCart: (product, quantity = 1, seller) => setCart((current) => {
-      const found = current.find((line) => line.product.id === product.id);
-      const defaultStore = marketplaceStores.find((store) => store.listings.some((listing) => listing.productId === product.id || listing.partNumber === product.partNumber));
-      const defaultListing = defaultStore?.listings.find((listing) => listing.productId === product.id || listing.partNumber === product.partNumber);
+      const exactStore = marketplaceStores.find((store) => store.listings.some((listing) => listing.productId === product.id));
+      const defaultStore = exactStore ?? marketplaceStores.find((store) => store.listings.some((listing) => listing.partNumber === product.partNumber));
+      const defaultListing = defaultStore?.listings.find((listing) => listing.productId === product.id)
+        ?? defaultStore?.listings.find((listing) => listing.partNumber === product.partNumber);
       const selection = seller ?? { storeId: defaultStore?.id ?? "autohub-mumbai", storeName: defaultStore?.name ?? product.seller, price: defaultListing?.price ?? product.price };
-      if (!found) return [...current, { product, quantity, storeId: selection.storeId, storeName: selection.storeName, unitPrice: selection.price }];
-      if (found.storeId !== selection.storeId) return current.map((line) => line.product.id === product.id ? { ...line, storeId: selection.storeId, storeName: selection.storeName, unitPrice: selection.price } : line);
-      return current.map((line) => line.product.id === product.id ? { ...line, quantity: Math.min(line.quantity + quantity, product.stock), unitPrice: selection.price } : line);
+      const selectedStore = storesById.get(selection.storeId);
+      const selectedListing = selectedStore?.listings.find((listing) => listing.productId === product.id)
+        ?? selectedStore?.listings.find((listing) => listing.partNumber === product.partNumber);
+      const selectedProduct = selectedListing ? catalogById.get(selectedListing.productId) ?? product : product;
+      const found = current.find((line) => line.product.id === selectedProduct.id || line.product.partNumber === selectedProduct.partNumber);
+      if (!found) return [...current, { product: selectedProduct, quantity, storeId: selection.storeId, storeName: selection.storeName, unitPrice: selection.price }];
+      if (found.storeId !== selection.storeId) return current.map((line) => line.product.id === found.product.id ? { ...line, product: selectedProduct, storeId: selection.storeId, storeName: selection.storeName, unitPrice: selection.price } : line);
+      return current.map((line) => line.product.id === found.product.id ? { ...line, product: selectedProduct, quantity: Math.min(line.quantity + quantity, selectedProduct.stock), unitPrice: selection.price } : line);
     }),
-    setQuantity: (id, quantity) => setCart((current) => current.map((line) => line.product.id === id ? { ...line, quantity: Math.max(1, Math.min(quantity, line.product.stock)) } : line)),
-    removeFromCart: (id) => setCart((current) => current.filter((line) => line.product.id !== id)),
+    setQuantity: (id, quantity) => {
+      const partNumber = resolvedCart.find((line) => line.product.id === id)?.product.partNumber;
+      setCart((current) => current.map((line) => line.product.id === id || (partNumber && line.product.partNumber === partNumber) ? { ...line, quantity: Math.max(1, Math.min(quantity, line.product.stock)) } : line));
+    },
+    removeFromCart: (id) => {
+      const partNumber = resolvedCart.find((line) => line.product.id === id)?.product.partNumber;
+      setCart((current) => current.filter((line) => line.product.id !== id && (!partNumber || line.product.partNumber !== partNumber)));
+    },
     vehicles,
     activeVehicleId,
     setActiveVehicleId,
@@ -250,24 +279,24 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     orders,
     placeOrder: async (fulfilment, total, payment) => {
       if (!user) throw new Error("Sign in as a customer before placing an order.");
-      if (!cart.length) throw new Error("Your cart is empty.");
-      const orderStoreIds = new Set(cart.map((item) => item.storeId ?? "autohub-mumbai"));
+      if (!resolvedCart.length) throw new Error("Your cart is empty.");
+      const orderStoreIds = new Set(resolvedCart.map((item) => item.storeId ?? "autohub-mumbai"));
       if (orderStoreIds.size > 1) throw new Error("Products from different stores must be checked out separately so each seller receives the correct order.");
       const order: PartXOrder = {
         id: createPartXId("ORD"),
         trackingId: createPartXId("TRK"),
-        storeId: cart[0]?.storeId ?? "autohub-mumbai",
-        storeName: cart[0]?.storeName ?? "AutoHub Mumbai",
+        storeId: resolvedCart[0]?.storeId ?? "autohub-mumbai",
+        storeName: resolvedCart[0]?.storeName ?? "AutoHub Mumbai",
         placedAt: "Just now",
         eta: fulfilment === "pickup" ? "Ready in 45 minutes" : "Tomorrow by 11 AM",
         stage: "Confirmed",
         total,
-        items: cart,
+        items: resolvedCart,
         fulfilment,
       };
-      const primaryItem = cart[0];
+      const primaryItem = resolvedCart[0];
       const paymentReference = payment === "cod" ? undefined : createPartXId("PAY");
-      const itemQuantities = Object.fromEntries(cart.map((item) => [item.product.id, item.quantity]));
+      const itemQuantities = Object.fromEntries(resolvedCart.map((item) => [item.product.id, item.quantity]));
       const orderData = {
         customerId: user.id,
         customer: { name: user.name, phone: user.mobile, email: user.email },
@@ -285,10 +314,10 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         paymentMode: "test",
         ...(paymentReference ? { paymentReference, paymentVerifiedAt: "Test payment approved" } : {}),
         deadline: fulfilment === "pickup" ? "Ready within 45 minutes" : "Tomorrow, 11:00 AM",
-        productName: cart.length > 1 ? `${primaryItem.product.name} + ${cart.length - 1} more` : primaryItem.product.name,
+        productName: resolvedCart.length > 1 ? `${primaryItem.product.name} + ${resolvedCart.length - 1} more` : primaryItem.product.name,
         partNumber: primaryItem.product.partNumber,
-        quantity: cart.reduce((sum, item) => sum + item.quantity, 0),
-        items: cart.map((item) => ({
+        quantity: resolvedCart.reduce((sum, item) => sum + item.quantity, 0),
+        items: resolvedCart.map((item) => ({
           productId: item.product.id,
           productName: item.product.name,
           partNumber: item.product.partNumber,
@@ -302,11 +331,11 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         updatedAt: serverTimestamp(),
       };
       await runTransaction(firestore, async (transaction) => {
-        const productRefs = cart.map((item) => doc(firestore, "products", item.product.id));
+        const productRefs = resolvedCart.map((item) => doc(firestore, "products", item.product.id));
         const productSnapshots = await Promise.all(productRefs.map((productRef) => transaction.get(productRef)));
         productSnapshots.forEach((productSnapshot, index) => {
           if (!productSnapshot.exists()) return;
-          const line = cart[index];
+          const line = resolvedCart[index];
           const productData = productSnapshot.data();
           if (productData.storeId !== order.storeId) throw new Error(`${line.product.name} is no longer assigned to the selected store.`);
           const currentStock = Number(productData.stock ?? 0);
@@ -391,7 +420,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       try { await sendPasswordResetEmail(firebaseAuth, email.trim()); return true; } catch { return false; }
     },
     signOut: async () => { setUser(null); await firebaseSignOut(firebaseAuth); },
-  }), [theme, cart, vehicles, activeVehicleId, location, garages, marketplaceStores, catalog, orders, liveOrderUpdate, user, hydrated, firebaseHydrated]);
+  }), [theme, resolvedCart, vehicles, activeVehicleId, location, garages, marketplaceStores, catalog, catalogById, storesById, orders, liveOrderUpdate, user, hydrated, firebaseHydrated]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

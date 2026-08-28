@@ -69,6 +69,7 @@ export function SellerTicketsPage() {
 export function SellerProductsPage() {
   const { productOverrides, updateProduct, sellerProducts, addProduct, addProducts, updateSellerProduct, uploadProductImage } = useSeller();
   const products = getDemoCatalog();
+  const [catalogView, setCatalogView] = useState<"inventory" | "demo">("inventory");
   const [adding, setAdding] = useState(false);
   const [spreadsheet, setSpreadsheet] = useState<ProductSpreadsheet | null>(null);
   const [readingSpreadsheet, setReadingSpreadsheet] = useState(false);
@@ -94,14 +95,17 @@ export function SellerProductsPage() {
       </div>
     </div>
     {message ? <div className="sx-product-success" role="status"><Icon name="check"/>{message}</div> : null}
-    <section className="sx-panel">
+    <div className="sx-catalog-tabs" role="tablist" aria-label="Product catalogue view">
+      <button type="button" role="tab" aria-selected={catalogView === "inventory"} className={catalogView === "inventory" ? "active" : ""} onClick={() => setCatalogView("inventory")}>My products <span>{sellerProducts.length}</span></button>
+      <button type="button" role="tab" aria-selected={catalogView === "demo"} className={catalogView === "demo" ? "active" : ""} onClick={() => setCatalogView("demo")}>Demo catalogue <span>{products.length}</span></button>
+    </div>
+    {catalogView === "inventory" ? <section className="sx-panel">
       <PanelHead title={`Your Firebase products (${sellerProducts.length})`}/>
       {sellerProducts.length ? <div className="sx-product-table"><div className="sx-product-table-head"><span>Product</span><span>Part number</span><span>Your price</span><span>Stock</span><span>Status</span><span>Action</span></div>{sellerProducts.map((product) => <SellerProductEditor key={`${product.id}-${product.sellingPrice}-${product.stock}`} product={product} save={updateSellerProduct} uploadImage={uploadProductImage}/>)}</div> : <div className="sx-product-empty"><span><Icon name="box"/></span><h2>No products added yet</h2><p>Add your first part with its price, stock and vehicle compatibility.</p><button className="sx-primary" onClick={() => setAdding(true)}>Add your first product</button></div>}
-    </section>
-    <section className="sx-panel sx-demo-products">
+    </section> : <section className="sx-panel">
       <PanelHead title="Demo catalogue pricing"/>
       <div className="sx-product-table"><div className="sx-product-table-head"><span>Product</span><span>Part number</span><span>Your price</span><span>Stock</span><span>Status</span><span>Action</span></div>{products.map((product) => <ProductEditor key={product.id} product={product} current={productOverrides[product.partNumber] ?? {price:product.price,stock:product.stock}} save={updateProduct}/>)}</div>
-    </section>
+    </section>}
     {adding ? <AddProductDialog existingProducts={sellerProducts} close={() => setAdding(false)} submit={async (product, image) => { await addProduct(product, image); setAdding(false); setMessage(`${product.name} was published${image ? " with its product image" : ""} to your store.`); }}/> : null}
     {spreadsheet ? <SpreadsheetImportDialog spreadsheet={spreadsheet} close={() => setSpreadsheet(null)} submit={async () => { await addProducts(spreadsheet.products); setSpreadsheet(null); setMessage(`${spreadsheet.products.length} products were imported into your Firebase inventory.`); }}/> : null}
   </>;
