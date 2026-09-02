@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { Garage, Vehicle } from "@/lib/types";
 import { usePartX } from "./app-provider";
@@ -39,12 +40,7 @@ export function GarageSearchPage() {
   const canSearch = query.trim().length >= 2 || Boolean(make);
 
   useEffect(() => {
-    if (!vehicleOpen || !canSearch) {
-      setResults([]);
-      setSearching(false);
-      setSearchError("");
-      return;
-    }
+    if (!vehicleOpen || !canSearch) return;
 
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
@@ -127,7 +123,7 @@ export function GarageSearchPage() {
     {activeVehicle ? <section className={styles.activeHero}>
       <div className={styles.activeImage}><Image src="/vehicle-suv.png" alt="" width={360} height={200}/></div>
       <div><span>ACTIVE VEHICLE</span><h2>{activeVehicle.year} {activeVehicle.make} {activeVehicle.model}</h2><p>{activeVehicle.variant} · {activeVehicle.fuel} · {activeVehicle.transmission}</p>{activeVehicle.registration ? <small>{activeVehicle.registration}</small> : null}</div>
-      <a className="px-btn px-btn-dark" href="/shop">Shop compatible parts <Icon name="arrow"/></a>
+      <Link className="px-btn px-btn-dark" href="/shop">Shop compatible parts <Icon name="arrow"/></Link>
     </section> : null}
 
     <div className="px-dashboard-grid">

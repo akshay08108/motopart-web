@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import type { NewSellerProduct, SellerOrder, SellerOrderStatus, SellerProduct } from "@/lib/types";
+import type { NewSellerProduct, SellerOrder, SellerOrderStatus, SellerProduct, StorePaymentSettings } from "@/lib/types";
 import { getDemoCatalog } from "@/lib/demo-data";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
@@ -13,7 +13,7 @@ const packStatuses: SellerOrderStatus[] = ["New", "Accepted", "Packing"];
 const nextStatus: Partial<Record<SellerOrderStatus, SellerOrderStatus>> = { New: "Accepted", Accepted: "Packing", Packing: "Packed", Packed: "Dispatched", Dispatched: "Delivered" };
 
 export function SellerDashboardPage() {
-  const { sellerOrders, tickets, ratings, productOverrides } = useSeller();
+  const { sellerOrders, paymentVerifications, tickets, ratings, productOverrides } = useSeller();
   const { user } = usePartX();
   const storeId = user?.storeIds?.[0];
   const storeRatings = ratings.filter((rating) => rating.storeId === storeId);
@@ -25,6 +25,7 @@ export function SellerDashboardPage() {
     <SellerTitle title="Seller command center" subtitle="Overview of your store operations" />
     <div className="sx-stats">
       <Stat href="/seller/orders" icon="cart" label="New orders" value={sellerOrders.filter((order) => order.status === "New").length} action="View orders"/>
+      <Stat href="/seller/payments" icon="orders" label="Payments to verify" value={paymentVerifications.filter((order) => order.paymentStatus === "PAYMENT_SUBMITTED").length} action="Review payments"/>
       <Stat href="/seller/packing" icon="box" label="To pack" value={toPack.length} action="Go to packing queue"/>
       <Stat href="/seller/tickets" icon="ticket" label="Open tickets" value={openTickets.length} action="View tickets"/>
       <Stat href="/seller/reviews" icon="star" label="Store rating" value={rating.count ? `${rating.average.toFixed(1)} / 5` : "New"} action="View reviews"/>
@@ -44,6 +45,25 @@ export function SellerOrdersPage() {
   const { sellerOrders } = useSeller(); const [filter, setFilter] = useState("All");
   const shown = filter === "All" ? sellerOrders : sellerOrders.filter((order) => order.status === filter);
   return <><SellerTitle title="Seller orders" subtitle="Receive, prepare and complete every order assigned to your store"/><div className="sx-toolbar"><div className="sx-tabs">{["All","New","Packing","Packed","Dispatched","Delivered"].map((item) => <button className={filter === item ? "active" : ""} onClick={() => setFilter(item)} key={item}>{item}</button>)}</div><label className="sx-search"><Icon name="search"/><input placeholder="Search order, tracking ID or customer"/></label></div><section className="sx-panel"><SellerOrderTable orders={shown} all/></section></>;
+}
+
+export function SellerPaymentsPage() {
+  const { paymentVerifications, confirmPayment, markPaymentNotFound } = useSeller();
+  const [workingId, setWorkingId] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const act = async (orderId: string, action: "confirm" | "missing") => {
+    setWorkingId(orderId); setMessage(""); setError("");
+    try {
+      if (action === "confirm") await confirmPayment(orderId); else await markPaymentNotFound(orderId);
+      setMessage(action === "confirm" ? `${orderId} is paid and has moved to the fulfilment queue.` : `${orderId} was marked payment not found. The customer can correct the UTR.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The payment could not be updated.");
+    } finally {
+      setWorkingId("");
+    }
+  };
+  return <><SellerTitle title="Payments awaiting verification" subtitle="Confirm direct UPI receipts before orders enter the packing queue"/>{message ? <div className="sx-product-success" role="status"><Icon name="check"/>{message}</div> : null}{error ? <p className="sx-form-error" role="alert">{error}</p> : null}<section className="sx-payment-verification-list">{paymentVerifications.map((order) => <article className="sx-panel" key={order.id}><header><div><span>PARTX ORDER</span><h2>{order.id}</h2><p>{order.paymentSubmittedAt ?? order.placedAt}</p></div><Status status={order.paymentStatus === "VERIFICATION_FAILED" ? "Payment not found" : "Awaiting verification"}/></header><div className="sx-payment-amount"><span>Amount customer says they paid</span><strong>₹{order.total.toLocaleString("en-IN")}</strong><small>Direct to {order.sellerUpiNameSnapshot ?? order.storeName}</small></div><dl><div><dt>UPI reference / UTR</dt><dd>{order.paymentReference ?? "Not submitted"}</dd></div><div><dt>Customer</dt><dd>{order.customer.name}<small>{order.customer.phone}</small></dd></div><div><dt>Order</dt><dd>{order.productName}<small>{order.quantity} item{order.quantity === 1 ? "" : "s"} · {labelFulfilment(order.fulfilment)}</small></dd></div></dl>{order.paymentStatus === "PAYMENT_SUBMITTED" ? <footer><button className="sx-secondary" disabled={workingId === order.id} onClick={() => void act(order.id,"missing")}>Payment not found</button><button className="sx-primary" disabled={workingId === order.id} onClick={() => void act(order.id,"confirm")}>{workingId === order.id ? "Updating…" : "Confirm payment received"}</button></footer> : <footer><span>Waiting for the customer to submit a corrected reference.</span></footer>}</article>)}{!paymentVerifications.length ? <div className="sx-panel sx-payment-empty"><Icon name="check"/><h2>No payments waiting</h2><p>Submitted UPI references for this store will appear here in real time.</p></div> : null}</section></>;
 }
 
 export function SellerPackingPage() {
@@ -121,9 +141,26 @@ export function SellerReviewsPage() {
 }
 
 export function SellerSettingsPage() {
-  const [saved,setSaved] = useState(false);
+  const [profileSaved,setProfileSaved] = useState(false);
+  const [paymentSaved, setPaymentSaved] = useState(false);
+  const [savingPayment, setSavingPayment] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
   const { user } = usePartX();
-  return <><SellerTitle title="Store settings" subtitle="Manage seller identity, hours, fulfilment and notification preferences"/><form className="sx-panel sx-settings" onSubmit={(event)=>{event.preventDefault();setSaved(true);}}><div className="sx-form-grid"><label>Store name<input defaultValue={user?.storeName ?? "Your store"}/></label><label>Seller owner<input defaultValue={user?.name ?? "Store owner"}/></label><label>Phone<input defaultValue={user?.mobile ?? ""}/></label><label>GSTIN<input placeholder="Add GSTIN"/></label><label>Business hours<input defaultValue="9:00 AM – 9:00 PM"/></label><label>Delivery radius<input defaultValue="8 km"/></label></div><label>Store address<textarea placeholder="Add your store address"/></label><label className="sx-check"><input type="checkbox" defaultChecked/>Receive new-order and urgent-ticket browser alerts</label><button className="sx-primary" type="submit">{saved?"Settings saved":"Save store settings"}</button><p>Your seller account can add products and receive orders immediately.</p></form></>;
+  const { paymentSettings, savePaymentSettings } = useSeller();
+  const defaults: StorePaymentSettings = paymentSettings ?? { upiId: "", upiDisplayName: user?.storeName ?? "", upiEnabled: false, codEnabled: true };
+  const savePayments = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setPaymentError(""); setSavingPayment(true);
+    const data = new FormData(event.currentTarget);
+    try {
+      await savePaymentSettings({ upiId: String(data.get("upiId") ?? ""), upiDisplayName: String(data.get("upiDisplayName") ?? ""), upiEnabled: data.get("upiEnabled") === "on", codEnabled: data.get("codEnabled") === "on" });
+      setPaymentSaved(true);
+    } catch (reason) {
+      setPaymentError(reason instanceof Error ? reason.message : "Payment settings could not be saved.");
+    } finally {
+      setSavingPayment(false);
+    }
+  };
+  return <><SellerTitle title="Store settings" subtitle="Manage seller identity, hours, fulfilment and payment preferences"/><div className="sx-settings-grid"><form className="sx-panel sx-settings" onSubmit={(event)=>{event.preventDefault();setProfileSaved(true);}}><PanelHead title="Store profile"/><div className="sx-form-grid"><label>Store name<input defaultValue={user?.storeName ?? "Your store"}/></label><label>Seller owner<input defaultValue={user?.name ?? "Store owner"}/></label><label>Phone<input defaultValue={user?.mobile ?? ""}/></label><label>GSTIN<input placeholder="Add GSTIN"/></label><label>Business hours<input defaultValue="9:00 AM – 9:00 PM"/></label><label>Delivery radius<input defaultValue="8 km"/></label></div><label>Store address<textarea placeholder="Add your store address"/></label><label className="sx-check"><input type="checkbox" defaultChecked/>Receive new-order and urgent-ticket browser alerts</label><button className="sx-primary" type="submit">{profileSaved?"Settings saved":"Save store settings"}</button><p>Your seller account can add products and receive orders immediately.</p></form><form className="sx-panel sx-settings sx-payment-settings" key={`${defaults.upiId}-${defaults.upiEnabled}-${defaults.codEnabled}`} onSubmit={(event) => void savePayments(event)}><PanelHead title="Payment settings"/><p>Customers pay your store directly. PartX currently charges 0% commission and does not hold the payment.</p><label>UPI ID<input name="upiId" defaultValue={defaults.upiId} placeholder="store@bank" autoComplete="off"/></label><label>UPI account / display name<input name="upiDisplayName" defaultValue={defaults.upiDisplayName} placeholder="Name customers see in their UPI app"/></label><label className="sx-check"><input name="upiEnabled" type="checkbox" defaultChecked={defaults.upiEnabled}/>Enable direct UPI payments</label><label className="sx-check"><input name="codEnabled" type="checkbox" defaultChecked={defaults.codEnabled}/>Enable cash on delivery</label>{paymentError ? <p className="sx-form-error" role="alert">{paymentError}</p> : null}<button className="sx-primary" type="submit" disabled={savingPayment}>{savingPayment ? "Saving…" : paymentSaved ? "Payment settings saved" : "Save payment settings"}</button><small>PartX never asks for or stores your UPI PIN. Your UPI details are snapshotted on each payment attempt.</small></form></div></>;
 }
 
 function SellerOrderTable({ orders, all=false }: { orders: SellerOrder[]; all?: boolean }) {
@@ -131,8 +168,10 @@ function SellerOrderTable({ orders, all=false }: { orders: SellerOrder[]; all?: 
 }
 
 function paymentLabel(order: SellerOrder) {
-  if (order.paymentStatus === "COD") return "Collect on delivery";
-  if (order.paymentStatus === "Pending") return "Payment pending";
+  if (order.paymentStatus === "COD" || order.paymentStatus === "PAYMENT_DUE") return "Collect on delivery";
+  if (order.paymentStatus === "Pending" || order.paymentStatus === "PENDING") return "Payment pending";
+  if (order.paymentStatus === "PAYMENT_SUBMITTED") return "Verify UPI payment";
+  if (order.paymentStatus === "VERIFICATION_FAILED") return "Payment not found";
   return order.paymentMode === "live" ? "Payment verified" : "Test payment";
 }
 

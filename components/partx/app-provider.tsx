@@ -3,11 +3,12 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createUserWithEmailAndPassword, deleteUser, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut as firebaseSignOut, updateProfile } from "firebase/auth";
 import { collection, doc, getDoc, onSnapshot, query, runTransaction, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore";
-import type { AppLocation, CartLine, CustomerUser, Garage, Order, OrderStage, PartnerStore, PaymentMethod, Product, SellerProduct, UserRole, Vehicle } from "@/lib/types";
+import type { AppLocation, CartLine, CustomerUser, Garage, Order, OrderStage, PartnerStore, PaymentMethod, PaymentOrderStatus, Product, SellerPaymentStatus, SellerProduct, StorePaymentSettings, UserRole, Vehicle } from "@/lib/types";
 import { activeOrder, getDemoCatalog, vehicles as initialVehicles } from "@/lib/demo-data";
 import { firebaseAuth, firestore } from "@/lib/firebase";
 import { demoGarages, demoLocation, demoStores } from "@/lib/marketplace-data";
 import { createPartXId } from "@/lib/seller-data";
+import { createPaymentOrderId, developmentPaymentSettings, isValidUtr, normalizeUtr, paymentExpiresAt } from "@/lib/upi-payments";
 
 export type PartXOrder = Order & {
   items?: CartLine[];
@@ -15,6 +16,14 @@ export type PartXOrder = Order & {
   trackingId?: string;
   storeId?: string;
   storeName?: string;
+  paymentMethod?: PaymentMethod;
+  paymentStatus?: SellerPaymentStatus;
+  orderStatus?: PaymentOrderStatus;
+  paymentReference?: string;
+  sellerUpiIdSnapshot?: string;
+  sellerUpiNameSnapshot?: string;
+  paymentSubmittedAt?: string;
+  expiresAt?: Date;
 };
 
 export type CartSellerSelection = { storeId: string; storeName: string; price: number };
@@ -44,7 +53,9 @@ type AppContextValue = {
   addStore: (store: PartnerStore) => void;
   submitStoreRating: (storeId: string, stars: number) => void;
   orders: PartXOrder[];
-  placeOrder: (fulfilment: PartXOrder["fulfilment"], total: number, payment: PaymentMethod) => Promise<PartXOrder>;
+  placeOrder: (fulfilment: PartXOrder["fulfilment"], payment: PaymentMethod, attemptId?: string) => Promise<PartXOrder>;
+  submitUpiReference: (orderId: string, reference: string) => Promise<void>;
+  cancelPayment: (orderId: string) => Promise<void>;
   updateOrderStage: (orderId: string, stage: OrderStage) => void;
   liveOrderUpdate: { orderId: string; stage: OrderStage } | null;
   user: CustomerUser | null;
@@ -109,6 +120,24 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       },
     );
   }, [isCustomer, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !isCustomer) return;
+    const pending = orders.filter((order) => order.paymentStatus === "PENDING" && order.expiresAt);
+    if (!pending.length) return;
+    const nextExpiry = Math.min(...pending.map((order) => order.expiresAt!.getTime()));
+    const expire = async () => {
+      const expired = pending.filter((order) => order.expiresAt!.getTime() <= Date.now());
+      await Promise.all(expired.map((order) => updateDoc(doc(firestore, "orders", order.id), {
+        paymentStatus: "PAYMENT_EXPIRED",
+        orderStatus: "PAYMENT_EXPIRED",
+        updatedAt: serverTimestamp(),
+      }).catch(() => undefined)));
+    };
+    const delay = Math.max(0, Math.min(nextExpiry - Date.now(), 2_147_000_000));
+    const timer = window.setTimeout(() => void expire(), delay);
+    return () => window.clearTimeout(timer);
+  }, [isCustomer, orders, user?.id]);
 
   useEffect(() => {
     const hydrate = () => {
@@ -277,28 +306,46 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       return { ...store, rating: Number(((store.rating * count + stars) / (count + 1)).toFixed(1)), ratingCount: count + 1 };
     })),
     orders,
-    placeOrder: async (fulfilment, total, payment) => {
+    placeOrder: async (fulfilment, payment, attemptId) => {
       if (!user) throw new Error("Sign in as a customer before placing an order.");
       if (!resolvedCart.length) throw new Error("Your cart is empty.");
       const orderStoreIds = new Set(resolvedCart.map((item) => item.storeId ?? "autohub-mumbai"));
       if (orderStoreIds.size > 1) throw new Error("Products from different stores must be checked out separately so each seller receives the correct order.");
+      const storeId = resolvedCart[0]?.storeId ?? "autohub-mumbai";
+      const selectedStore = storesById.get(storeId);
+      if (!selectedStore) throw new Error("The selected store is no longer available.");
+      const paymentSettings = selectedStore.paymentSettings;
+      if (payment === "upi" && (!paymentSettings?.upiEnabled || !paymentSettings.upiId)) throw new Error(`${selectedStore.name} has not enabled UPI payments.`);
+      if (payment === "cod" && !paymentSettings?.codEnabled) throw new Error(`${selectedStore.name} has not enabled cash on delivery.`);
+      const subtotal = resolvedCart.reduce((sum, line) => sum + (line.unitPrice ?? line.product.price) * line.quantity, 0);
+      const deliveryCharge = fulfilment === "delivery" && subtotal < 999 ? 99 : 0;
+      const discount = 0;
+      const totalAmount = subtotal + deliveryCharge - discount;
+      const orderId = attemptId ?? createPaymentOrderId();
+      const expiresAt = payment === "upi" ? paymentExpiresAt() : undefined;
       const order: PartXOrder = {
-        id: createPartXId("ORD"),
+        id: orderId,
         trackingId: createPartXId("TRK"),
-        storeId: resolvedCart[0]?.storeId ?? "autohub-mumbai",
-        storeName: resolvedCart[0]?.storeName ?? "AutoHub Mumbai",
+        storeId,
+        storeName: selectedStore.name,
         placedAt: "Just now",
-        eta: fulfilment === "pickup" ? "Ready in 45 minutes" : "Tomorrow by 11 AM",
+        eta: payment === "upi" ? "Waiting for payment verification" : fulfilment === "pickup" ? "Ready in 45 minutes" : "Tomorrow by 11 AM",
         stage: "Confirmed",
-        total,
+        total: totalAmount,
         items: resolvedCart,
         fulfilment,
+        paymentMethod: payment,
+        paymentStatus: payment === "upi" ? "PENDING" : "PAYMENT_DUE",
+        orderStatus: payment === "upi" ? "PAYMENT_PENDING" : "PLACED",
+        sellerUpiIdSnapshot: payment === "upi" ? paymentSettings?.upiId : undefined,
+        sellerUpiNameSnapshot: payment === "upi" ? paymentSettings?.upiDisplayName : undefined,
+        expiresAt,
       };
       const primaryItem = resolvedCart[0];
-      const paymentReference = payment === "cod" ? undefined : createPartXId("PAY");
       const itemQuantities = Object.fromEntries(resolvedCart.map((item) => [item.product.id, item.quantity]));
       const orderData = {
         customerId: user.id,
+        sellerId: selectedStore.sellerId ?? "",
         customer: { name: user.name, phone: user.mobile, email: user.email },
         trackingId: order.trackingId,
         storeId: order.storeId,
@@ -307,12 +354,22 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         eta: order.eta,
         stage: order.stage,
         status: "New",
-        total,
+        subtotal,
+        deliveryCharge,
+        discount,
+        total: totalAmount,
+        totalAmount,
+        currency: "INR",
         fulfilment,
-        paymentStatus: payment === "cod" ? "COD" : "Paid",
+        paymentStatus: order.paymentStatus,
         paymentMethod: payment,
-        paymentMode: "test",
-        ...(paymentReference ? { paymentReference, paymentVerifiedAt: "Test payment approved" } : {}),
+        paymentMode: "live",
+        orderStatus: order.orderStatus,
+        ...(payment === "upi" ? {
+          sellerUpiIdSnapshot: paymentSettings!.upiId.trim(),
+          sellerUpiNameSnapshot: paymentSettings!.upiDisplayName.trim(),
+          expiresAt,
+        } : {}),
         deadline: fulfilment === "pickup" ? "Ready within 45 minutes" : "Tomorrow, 11:00 AM",
         productName: resolvedCart.length > 1 ? `${primaryItem.product.name} + ${resolvedCart.length - 1} more` : primaryItem.product.name,
         partNumber: primaryItem.product.partNumber,
@@ -330,7 +387,18 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
-      await runTransaction(firestore, async (transaction) => {
+      const savedData = await runTransaction(firestore, async (transaction) => {
+        const orderRef = doc(firestore, "orders", order.id);
+        const existingOrder = await transaction.get(orderRef);
+        if (existingOrder.exists()) {
+          const data = existingOrder.data();
+          if (data.customerId !== user.id) throw new Error("This payment attempt belongs to another customer.");
+          const existingExpiry = firestoreDate(data.expiresAt);
+          if (data.paymentStatus !== "PENDING" || (existingExpiry && existingExpiry.getTime() <= Date.now())) {
+            throw new Error("SAVED_PAYMENT_ATTEMPT_INACTIVE");
+          }
+          return data;
+        }
         const productRefs = resolvedCart.map((item) => doc(firestore, "products", item.product.id));
         const productSnapshots = await Promise.all(productRefs.map((productRef) => transaction.get(productRef)));
         productSnapshots.forEach((productSnapshot, index) => {
@@ -340,19 +408,69 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
           if (productData.storeId !== order.storeId) throw new Error(`${line.product.name} is no longer assigned to the selected store.`);
           const currentStock = Number(productData.stock ?? 0);
           if (currentStock < line.quantity) throw new Error(`Only ${currentStock} unit${currentStock === 1 ? " is" : "s are"} left for ${line.product.name}. Update your cart and try again.`);
-          const nextStock = currentStock - line.quantity;
-          transaction.update(productRefs[index], {
-            stock: nextStock,
-            status: nextStock > 0 ? "published" : "out-of-stock",
-            lastOrderId: order.id,
+          if (payment === "cod") {
+            const nextStock = currentStock - line.quantity;
+            transaction.update(productRefs[index], {
+              stock: nextStock,
+              status: nextStock > 0 ? "published" : "out-of-stock",
+              lastOrderId: order.id,
+              updatedAt: serverTimestamp(),
+            });
+          }
+        });
+        transaction.set(orderRef, orderData);
+        return orderData;
+      });
+      const savedOrder = toCustomerOrder(order.id, savedData as Record<string, unknown>);
+      setOrders((current) => [savedOrder, ...current.filter((item) => item.id !== savedOrder.id)]);
+      if (payment === "cod") setCart([]);
+      return savedOrder;
+    },
+    submitUpiReference: async (orderId, reference) => {
+      if (!user) throw new Error("Sign in before submitting a payment reference.");
+      if (!isValidUtr(reference)) throw new Error("Enter a valid 6–40 character UPI transaction reference or UTR.");
+      const normalizedReference = normalizeUtr(reference);
+      await runTransaction(firestore, async (transaction) => {
+        const orderRef = doc(firestore, "orders", orderId);
+        const referenceRef = doc(firestore, "paymentReferences", normalizedReference);
+        const [orderSnapshot, referenceSnapshot] = await Promise.all([transaction.get(orderRef), transaction.get(referenceRef)]);
+        if (!orderSnapshot.exists()) throw new Error("The pending payment order could not be found.");
+        const data = orderSnapshot.data();
+        if (data.customerId !== user.id) throw new Error("This payment attempt belongs to another customer.");
+        if (data.paymentMethod !== "upi") throw new Error("This order does not use UPI.");
+        if (!new Set(["PENDING", "VERIFICATION_FAILED"]).has(String(data.paymentStatus))) throw new Error("This payment attempt cannot accept another reference.");
+        const expiry = firestoreDate(data.expiresAt);
+        if (expiry && expiry.getTime() <= Date.now()) throw new Error("This payment attempt has expired. Start a new payment from checkout.");
+        if (referenceSnapshot.exists() && referenceSnapshot.data().orderId !== orderId) throw new Error("This UTR is already attached to another order.");
+        if (referenceSnapshot.exists()) {
+          transaction.update(referenceRef, { status: "PAYMENT_SUBMITTED", updatedAt: serverTimestamp() });
+        } else {
+          transaction.set(referenceRef, {
+            reference: normalizedReference,
+            orderId,
+            customerId: user.id,
+            storeId: String(data.storeId ?? ""),
+            status: "PAYMENT_SUBMITTED",
+            createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
+        }
+        transaction.update(orderRef, {
+          upiTransactionReference: normalizedReference,
+          paymentReference: normalizedReference,
+          paymentStatus: "PAYMENT_SUBMITTED",
+          orderStatus: "PAYMENT_VERIFICATION_PENDING",
+          paymentSubmittedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         });
-        transaction.set(doc(firestore, "orders", order.id), orderData);
       });
-      setOrders((current) => [order, ...current.filter((item) => item.id !== order.id)]);
+      setOrders((current) => current.map((item) => item.id === orderId ? { ...item, paymentReference: normalizedReference, paymentStatus: "PAYMENT_SUBMITTED", orderStatus: "PAYMENT_VERIFICATION_PENDING", paymentSubmittedAt: "Just now", eta: "Payment verification in progress" } : item));
       setCart([]);
-      return order;
+    },
+    cancelPayment: async (orderId) => {
+      if (!user) throw new Error("Sign in before cancelling a payment attempt.");
+      await updateDoc(doc(firestore, "orders", orderId), { paymentStatus: "PAYMENT_CANCELLED", orderStatus: "PAYMENT_CANCELLED", updatedAt: serverTimestamp() });
+      setOrders((current) => current.map((item) => item.id === orderId ? { ...item, paymentStatus: "PAYMENT_CANCELLED", orderStatus: "PAYMENT_CANCELLED" } : item));
     },
     updateOrderStage: (orderId, stage) => {
       setOrders((current) => current.map((order) => order.id === orderId ? { ...order, stage, eta: stage === "Delivered" ? "Delivered just now" : order.eta } : order));
@@ -437,11 +555,13 @@ type FirebaseStoreRecord = {
   businessHours?: string;
   deliveryRadiusKm?: number;
   address?: string;
+  paymentSettings?: StorePaymentSettings;
 };
 
 function toPartnerStore(store: FirebaseStoreRecord, products: SellerProduct[], existing?: PartnerStore): PartnerStore {
   return {
     id: store.id,
+    sellerId: store.ownerId,
     name: store.name,
     owner: store.owner ?? existing?.owner ?? "PartX seller",
     phone: store.phone ?? existing?.phone ?? "Contact through PartX",
@@ -451,6 +571,7 @@ function toPartnerStore(store: FirebaseStoreRecord, products: SellerProduct[], e
     ratingCount: store.ratingCount ?? existing?.ratingCount ?? 0,
     distanceKm: existing?.distanceKm ?? 0,
     location: existing?.location ?? { id: `${store.id}-location`, label: "Store", address: store.address ?? "Location will be confirmed at checkout" },
+    paymentSettings: store.paymentSettings ?? developmentPaymentSettings(store.name) ?? existing?.paymentSettings,
     listings: products.map((product) => ({
       id: product.id,
       productId: product.id,
@@ -496,6 +617,21 @@ function stableImageIndex(value: string) {
 }
 
 function toCustomerOrder(id: string, data: Record<string, unknown>): PartXOrder {
+  const items = Array.isArray(data.items) ? data.items.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const line = item as Record<string, unknown>;
+    const unitPrice = Number(line.unitPrice ?? 0);
+    return [{
+      product: {
+        id: String(line.productId ?? ""), name: String(line.productName ?? "Order item"), partNumber: String(line.partNumber ?? ""),
+        brand: "PARTX", oemNumber: String(line.partNumber ?? ""), kind: "OEM-equivalent" as const, price: unitPrice,
+        listPrice: unitPrice, rating: 0, reviews: 0, category: "Other", imageIndex: 0, compatibleVehicleIds: [], stock: 0,
+        deliveryLabel: "Order item", warranty: "See product details", seller: String(line.storeName ?? data.storeName ?? "PartX seller"),
+      },
+      quantity: Number(line.quantity ?? 1), storeId: String(line.storeId ?? data.storeId ?? ""),
+      storeName: String(line.storeName ?? data.storeName ?? "PartX seller"), unitPrice,
+    }];
+  }) : undefined;
   return {
     id,
     trackingId: String(data.trackingId ?? "PX-TRK-PENDING"),
@@ -504,9 +640,32 @@ function toCustomerOrder(id: string, data: Record<string, unknown>): PartXOrder 
     placedAt: String(data.placedAt ?? "Just now"),
     eta: String(data.eta ?? "Delivery estimate pending"),
     stage: isOrderStage(data.stage) ? data.stage : "Confirmed",
-    total: Number(data.total ?? 0),
+    total: Number(data.totalAmount ?? data.total ?? 0),
+    items,
     fulfilment: data.fulfilment === "pickup" || data.fulfilment === "garage" ? data.fulfilment : "delivery",
+    paymentMethod: data.paymentMethod === "upi" || data.paymentMethod === "cod" ? data.paymentMethod : undefined,
+    paymentStatus: isSellerPaymentStatus(data.paymentStatus) ? data.paymentStatus : undefined,
+    orderStatus: isPaymentOrderStatus(data.orderStatus) ? data.orderStatus : undefined,
+    paymentReference: typeof data.upiTransactionReference === "string" ? data.upiTransactionReference : typeof data.paymentReference === "string" ? data.paymentReference : undefined,
+    sellerUpiIdSnapshot: typeof data.sellerUpiIdSnapshot === "string" ? data.sellerUpiIdSnapshot : undefined,
+    sellerUpiNameSnapshot: typeof data.sellerUpiNameSnapshot === "string" ? data.sellerUpiNameSnapshot : undefined,
+    paymentSubmittedAt: data.paymentSubmittedAt ? "Submitted" : undefined,
+    expiresAt: firestoreDate(data.expiresAt),
   };
+}
+
+function firestoreDate(value: unknown) {
+  if (value instanceof Date) return value;
+  if (value && typeof value === "object" && "toDate" in value && typeof value.toDate === "function") return value.toDate();
+  return undefined;
+}
+
+function isSellerPaymentStatus(value: unknown): value is SellerPaymentStatus {
+  return value === "Paid" || value === "Pending" || value === "COD" || value === "PENDING" || value === "PAYMENT_SUBMITTED" || value === "PAID" || value === "VERIFICATION_FAILED" || value === "PAYMENT_DUE" || value === "PAYMENT_EXPIRED" || value === "PAYMENT_CANCELLED";
+}
+
+function isPaymentOrderStatus(value: unknown): value is PaymentOrderStatus {
+  return value === "PAYMENT_PENDING" || value === "PAYMENT_VERIFICATION_PENDING" || value === "PLACED" || value === "PAYMENT_EXPIRED" || value === "PAYMENT_CANCELLED";
 }
 
 function isOrderStage(value: unknown): value is OrderStage {

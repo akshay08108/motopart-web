@@ -23,6 +23,24 @@ service cloud.firestore {
       return signedIn() && 'customer' in currentUser().roles;
     }
 
+    function ownsStore(storeId) {
+      return isSeller()
+        && get(/databases/$(database)/documents/stores/$(storeId)).data.ownerId == request.auth.uid;
+    }
+
+    function validPaymentSettings(settings) {
+      return settings is map
+        && settings.upiId is string
+        && settings.upiDisplayName is string
+        && settings.upiEnabled is bool
+        && settings.codEnabled is bool
+        && (settings.upiEnabled || settings.codEnabled)
+        && (!settings.upiEnabled || (
+          settings.upiId.matches('^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9.-]{1,63}$')
+          && settings.upiDisplayName.size() > 0
+        ));
+    }
+
     match /users/{uid} {
       allow create: if ownsUser(uid)
         && request.resource.data.roles.size() == 1
@@ -48,7 +66,12 @@ service cloud.firestore {
       allow update: if isSeller()
         && resource.data.ownerId == request.auth.uid
         && request.resource.data.ownerId == resource.data.ownerId
-        && request.resource.data.status == resource.data.status;
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'owner', 'phone', 'gstin', 'businessHours', 'deliveryRadiusKm',
+          'address', 'paymentSettings', 'updatedAt'
+        ])
+        && (!request.resource.data.keys().hasAny(['paymentSettings']) || validPaymentSettings(request.resource.data.paymentSettings));
       allow delete: if false;
     }
 
@@ -80,14 +103,154 @@ service cloud.firestore {
     }
 
     match /orders/{orderId} {
-      allow create: if signedIn()
-        && request.resource.data.customerId == request.auth.uid;
+      allow create: if isCustomer()
+        && request.resource.data.customerId == request.auth.uid
+        && request.resource.data.storeId is string
+        && request.resource.data.sellerId is string
+        && request.resource.data.subtotal is number
+        && request.resource.data.deliveryCharge is number
+        && request.resource.data.discount is number
+        && request.resource.data.totalAmount is number
+        && request.resource.data.totalAmount == request.resource.data.subtotal + request.resource.data.deliveryCharge - request.resource.data.discount
+        && request.resource.data.total == request.resource.data.totalAmount
+        && request.resource.data.totalAmount > 0
+        && request.resource.data.currency == 'INR'
+        && request.resource.data.paymentMethod in ['upi', 'cod']
+        && (
+          (
+            request.resource.data.paymentMethod == 'upi'
+            && request.resource.data.paymentStatus == 'PENDING'
+            && request.resource.data.orderStatus == 'PAYMENT_PENDING'
+            && request.resource.data.sellerUpiIdSnapshot is string
+            && request.resource.data.sellerUpiNameSnapshot is string
+            && request.resource.data.expiresAt is timestamp
+            && request.resource.data.expiresAt > request.time
+            && get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.ownerId == request.resource.data.sellerId
+            && validPaymentSettings(get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.paymentSettings)
+            && get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.paymentSettings.upiEnabled == true
+            && request.resource.data.sellerUpiIdSnapshot == get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.paymentSettings.upiId
+            && request.resource.data.sellerUpiNameSnapshot == get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.paymentSettings.upiDisplayName
+          )
+          || (
+            request.resource.data.paymentMethod == 'cod'
+            && request.resource.data.paymentStatus == 'PAYMENT_DUE'
+            && request.resource.data.orderStatus == 'PLACED'
+            && (
+              (
+                get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.ownerId == request.resource.data.sellerId
+                && get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.paymentSettings.codEnabled == true
+              )
+              || (
+                request.resource.data.sellerId == ''
+                && request.resource.data.storeId in ['autohub-mumbai', 'prime-spares', 'motorworks']
+              )
+            )
+          )
+        )
+        && !request.resource.data.keys().hasAny(['paymentVerifiedBy', 'paymentVerifiedAt', 'upiTransactionReference']);
       allow read: if signedIn() && (
         resource.data.customerId == request.auth.uid
-        || (isSeller() && resource.data.storeId in currentUser().storeIds)
+        || (ownsStore(resource.data.storeId) && resource.data.sellerId == request.auth.uid)
       );
-      allow update: if isSeller()
-        && resource.data.storeId in currentUser().storeIds;
+      allow update: if (
+        isCustomer()
+        && resource.data.customerId == request.auth.uid
+        && request.resource.data.customerId == resource.data.customerId
+        && request.resource.data.storeId == resource.data.storeId
+        && request.resource.data.sellerId == resource.data.sellerId
+        && request.resource.data.totalAmount == resource.data.totalAmount
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'upiTransactionReference', 'paymentReference', 'paymentStatus', 'orderStatus',
+          'paymentSubmittedAt', 'updatedAt'
+        ])
+        && request.resource.data.upiTransactionReference is string
+        && request.resource.data.upiTransactionReference.matches('^[A-Z0-9]{6,40}$')
+        && request.resource.data.paymentReference == request.resource.data.upiTransactionReference
+        && resource.data.paymentMethod == 'upi'
+        && resource.data.paymentStatus in ['PENDING', 'VERIFICATION_FAILED']
+        && request.resource.data.paymentStatus == 'PAYMENT_SUBMITTED'
+        && request.resource.data.orderStatus == 'PAYMENT_VERIFICATION_PENDING'
+        && request.time < resource.data.expiresAt
+        && getAfter(/databases/$(database)/documents/paymentReferences/$(request.resource.data.upiTransactionReference)).data.orderId == orderId
+        && getAfter(/databases/$(database)/documents/paymentReferences/$(request.resource.data.upiTransactionReference)).data.customerId == request.auth.uid
+      ) || (
+        isCustomer()
+        && resource.data.customerId == request.auth.uid
+        && resource.data.paymentMethod == 'upi'
+        && resource.data.paymentStatus == 'PENDING'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'orderStatus', 'updatedAt'])
+        && (
+          (request.resource.data.paymentStatus == 'PAYMENT_CANCELLED' && request.resource.data.orderStatus == 'PAYMENT_CANCELLED')
+          || (request.resource.data.paymentStatus == 'PAYMENT_EXPIRED' && request.resource.data.orderStatus == 'PAYMENT_EXPIRED' && request.time >= resource.data.expiresAt)
+        )
+      ) || (
+        ownsStore(resource.data.storeId)
+        && resource.data.sellerId == request.auth.uid
+        && resource.data.paymentMethod == 'upi'
+        && resource.data.paymentStatus == 'PAYMENT_SUBMITTED'
+        && request.resource.data.paymentStatus == 'PAID'
+        && request.resource.data.orderStatus == 'PLACED'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'paymentStatus', 'orderStatus', 'status', 'stage', 'eta',
+          'paymentVerifiedBy', 'paymentVerifiedAt', 'updatedAt'
+        ])
+        && request.resource.data.paymentVerifiedBy == request.auth.uid
+        && request.resource.data.paymentVerifiedAt is timestamp
+        && getAfter(/databases/$(database)/documents/paymentReferences/$(resource.data.upiTransactionReference)).data.orderId == orderId
+        && getAfter(/databases/$(database)/documents/paymentReferences/$(resource.data.upiTransactionReference)).data.status == 'PAID'
+      ) || (
+        ownsStore(resource.data.storeId)
+        && resource.data.sellerId == request.auth.uid
+        && resource.data.paymentStatus == 'PAYMENT_SUBMITTED'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'orderStatus', 'updatedAt'])
+        && request.resource.data.paymentStatus == 'VERIFICATION_FAILED'
+        && request.resource.data.orderStatus == 'PAYMENT_VERIFICATION_PENDING'
+      ) || (
+        ownsStore(resource.data.storeId)
+        && resource.data.sellerId == request.auth.uid
+        && (!resource.data.keys().hasAny(['orderStatus']) || resource.data.orderStatus == 'PLACED')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'stage', 'eta', 'updatedAt'])
+      );
+      allow delete: if false;
+    }
+
+    match /paymentReferences/{referenceId} {
+      allow create: if isCustomer()
+        && request.resource.data.reference == referenceId
+        && referenceId.matches('^[A-Z0-9]{6,40}$')
+        && request.resource.data.customerId == request.auth.uid
+        && request.resource.data.status == 'PAYMENT_SUBMITTED'
+        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.customerId == request.auth.uid
+        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.storeId == request.resource.data.storeId
+        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.upiTransactionReference == referenceId;
+      allow read: if signedIn() && (
+        resource.data.customerId == request.auth.uid
+        || ownsStore(resource.data.storeId)
+      );
+      allow update: if (
+        isCustomer()
+        && resource.data.customerId == request.auth.uid
+        && resource.data.status == 'VERIFICATION_FAILED'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && request.resource.data.status == 'PAYMENT_SUBMITTED'
+        && getAfter(/databases/$(database)/documents/orders/$(resource.data.orderId)).data.customerId == request.auth.uid
+        && getAfter(/databases/$(database)/documents/orders/$(resource.data.orderId)).data.upiTransactionReference == referenceId
+        && getAfter(/databases/$(database)/documents/orders/$(resource.data.orderId)).data.paymentStatus == 'PAYMENT_SUBMITTED'
+      ) || (
+        ownsStore(resource.data.storeId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'paymentVerifiedBy', 'paymentVerifiedAt', 'updatedAt'
+        ])
+        && request.resource.data.status in ['PAID', 'VERIFICATION_FAILED']
+        && (
+          request.resource.data.status == 'VERIFICATION_FAILED'
+          || (
+            request.resource.data.paymentVerifiedBy == request.auth.uid
+            && request.resource.data.paymentVerifiedAt is timestamp
+            && getAfter(/databases/$(database)/documents/orders/$(resource.data.orderId)).data.paymentStatus == 'PAID'
+          )
+        )
+      );
       allow delete: if false;
     }
 

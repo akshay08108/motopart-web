@@ -9,20 +9,21 @@ import { usePartX } from "./app-provider";
 import { useSeller } from "./seller-provider";
 
 const sellerNav = [
-  ["/seller", "grid", "Dashboard"], ["/seller/orders", "orders", "Orders"], ["/seller/packing", "box", "Packing Queue"], ["/seller/tickets", "ticket", "Tickets"], ["/seller/products", "package", "Products & Prices"], ["/seller/reviews", "star", "Reviews"], ["/seller/settings", "settings", "Store Settings"],
+  ["/seller", "grid", "Dashboard"], ["/seller/orders", "orders", "Orders"], ["/seller/payments", "orders", "Payments"], ["/seller/packing", "box", "Packing Queue"], ["/seller/tickets", "ticket", "Tickets"], ["/seller/products", "package", "Products & Prices"], ["/seller/reviews", "star", "Reviews"], ["/seller/settings", "settings", "Store Settings"],
 ] as const;
 
 export function SellerShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, signOut } = usePartX();
-  const { tickets, sellerOrders, alertsEnabled, activeAlert, enableAlerts, dismissAlert } = useSeller();
+  const { tickets, sellerOrders, paymentVerifications, alertsEnabled, activeAlert, enableAlerts, dismissAlert } = useSeller();
   const [menuOpen, setMenuOpen] = useState(false);
   const openTickets = tickets.filter((ticket) => ticket.status === "Open").length;
   const newOrders = sellerOrders.filter((order) => order.status === "New").length;
   const toPack = sellerOrders.filter((order) => ["New", "Accepted", "Packing"].includes(order.status)).length;
+  const paymentsToVerify = paymentVerifications.filter((order) => order.paymentStatus === "PAYMENT_SUBMITTED").length;
   const active = (href: string) => href === "/seller" ? pathname === href : pathname.startsWith(href);
-  const countFor = (href: string) => href.endsWith("orders") ? newOrders : href.endsWith("packing") ? toPack : href.endsWith("tickets") ? openTickets : 0;
+  const countFor = (href: string) => href.endsWith("orders") ? newOrders : href.endsWith("payments") ? paymentsToVerify : href.endsWith("packing") ? toPack : href.endsWith("tickets") ? openTickets : 0;
 
   useEffect(() => {
     if (!activeAlert) return;
@@ -48,7 +49,7 @@ export function SellerShell({ children }: { children: React.ReactNode }) {
       </header>
       <main className="sx-main">{children}</main>
     </div>
-    {activeAlert ? <div className="sx-alert-toast" role="status" aria-live="assertive"><Icon name="bell"/><div><b>{activeAlert.kind === "order" ? "New order received" : "Urgent ticket received"}</b><strong>{activeAlert.kind === "order" ? activeAlert.order.id : activeAlert.ticket.id}</strong><span>{activeAlert.kind === "order" ? `${activeAlert.order.productName} · ${activeAlert.order.fulfilment}` : `${activeAlert.ticket.issue} · ${activeAlert.ticket.orderId}`}</span></div><button onClick={dismissAlert} aria-label="Dismiss alert"><Icon name="close"/></button></div> : null}
+    {activeAlert ? <div className="sx-alert-toast" role="status" aria-live="assertive"><Icon name="bell"/><div><b>{activeAlert.kind === "order" ? "New order received" : activeAlert.kind === "payment" ? "UPI payment needs verification" : "Urgent ticket received"}</b><strong>{activeAlert.kind === "ticket" ? activeAlert.ticket.id : activeAlert.order.id}</strong><span>{activeAlert.kind === "ticket" ? `${activeAlert.ticket.issue} · ${activeAlert.ticket.orderId}` : activeAlert.kind === "payment" ? `₹${activeAlert.order.total.toLocaleString("en-IN")} · Ref ${activeAlert.order.paymentReference}` : `${activeAlert.order.productName} · ${activeAlert.order.fulfilment}`}</span></div><button onClick={dismissAlert} aria-label="Dismiss alert"><Icon name="close"/></button></div> : null}
     <nav className="sx-mobile-nav" aria-label="Seller mobile navigation">{sellerNav.slice(0, 5).map(([href, icon, label]) => <Link className={active(href) ? "active" : ""} href={href} key={href}><Icon name={icon}/><span>{label === "Packing Queue" ? "Packing" : label.replace("Products & Prices", "Products")}</span>{countFor(href) > 0 ? <em>{countFor(href)}</em> : null}</Link>)}</nav>
   </div>;
 }

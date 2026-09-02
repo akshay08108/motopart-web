@@ -1,18 +1,21 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { collection, doc, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
-import type { NewSellerProduct, SellerOrder, SellerOrderStatus, SellerProduct, SellerTicket, StoreRating } from "@/lib/types";
+import { collection, doc, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
+import type { NewSellerProduct, SellerOrder, SellerOrderStatus, SellerPaymentStatus, SellerProduct, SellerTicket, StorePaymentSettings, StoreRating } from "@/lib/types";
 import { createPartXId, sellerTicketsSeed, storeRatingsSeed } from "@/lib/seller-data";
 import { deleteCloudinaryProductImage, uploadProductImageToCloudinary } from "@/lib/cloudinary-client";
 import { firestore } from "@/lib/firebase";
 import { usePartX } from "./app-provider";
+import { isValidUpiId } from "@/lib/upi-payments";
 
 type NewTicket = Pick<SellerTicket, "orderId" | "issue" | "message"> & { customer?: SellerTicket["customer"] };
-type SellerAlert = { kind: "order"; order: SellerOrder } | { kind: "ticket"; ticket: SellerTicket };
+type SellerAlert = { kind: "order"; order: SellerOrder } | { kind: "payment"; order: SellerOrder } | { kind: "ticket"; ticket: SellerTicket };
 
 type SellerContextValue = {
   sellerOrders: SellerOrder[];
+  paymentVerifications: SellerOrder[];
+  paymentSettings: StorePaymentSettings | null;
   tickets: SellerTicket[];
   ratings: StoreRating[];
   alertsEnabled: boolean;
@@ -20,6 +23,9 @@ type SellerContextValue = {
   enableAlerts: () => void;
   dismissAlert: () => void;
   updateOrderStatus: (orderId: string, status: SellerOrderStatus) => Promise<void>;
+  savePaymentSettings: (settings: StorePaymentSettings) => Promise<void>;
+  confirmPayment: (orderId: string) => Promise<void>;
+  markPaymentNotFound: (orderId: string) => Promise<void>;
   addTicket: (ticket: NewTicket) => SellerTicket;
   resolveTicket: (ticketId: string, internalNote: string) => void;
   addRating: (rating: Omit<StoreRating, "id" | "createdAt" | "verified">) => StoreRating;
@@ -65,6 +71,8 @@ function resumeAndPlayAlert(context: AudioContext) {
 export function SellerProvider({ children }: { children: React.ReactNode }) {
   const { updateOrderStage, user } = usePartX();
   const [sellerOrders, setSellerOrders] = useState<SellerOrder[]>([]);
+  const [paymentVerifications, setPaymentVerifications] = useState<SellerOrder[]>([]);
+  const [paymentSettings, setPaymentSettings] = useState<StorePaymentSettings | null>(null);
   const [tickets, setTickets] = useState<SellerTicket[]>(sellerTicketsSeed);
   const [ratings, setRatings] = useState<StoreRating[]>(storeRatingsSeed);
   const [alertsEnabled, setAlertsEnabled] = useState(false);
@@ -93,10 +101,25 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   }, [user?.activeRole, user?.id]);
 
   useEffect(() => {
+    const storeId = sellerStoreIdsKey.split("|")[0];
+    if (!storeId) return;
+    const storeName = user?.storeName ?? "";
+    return onSnapshot(doc(firestore, "stores", storeId), (snapshot) => {
+      const settings = snapshot.data()?.paymentSettings;
+      setPaymentSettings(settings && typeof settings === "object" ? {
+        upiId: String(settings.upiId ?? ""),
+        upiDisplayName: String(settings.upiDisplayName ?? storeName),
+        upiEnabled: settings.upiEnabled === true,
+        codEnabled: settings.codEnabled === true,
+      } : { upiId: "", upiDisplayName: storeName, upiEnabled: false, codEnabled: true });
+    }, () => setPaymentSettings(null));
+  }, [sellerStoreIdsKey, user?.storeName]);
+
+  useEffect(() => {
     const storeIds = sellerStoreIdsKey.split("|").filter(Boolean);
     if (!storeIds.length) {
       sellerOrdersRef.current = [];
-      queueMicrotask(() => setSellerOrders([]));
+      queueMicrotask(() => { setSellerOrders([]); setPaymentVerifications([]); });
       return;
     }
 
@@ -104,21 +127,24 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     const initializedStores = new Set<string>();
     const refreshOrders = () => {
       const liveOrders = [...ordersByStore.values()].flat().sort((a, b) => firestoreTime(b.createdAt) - firestoreTime(a.createdAt));
-      sellerOrdersRef.current = liveOrders;
-      setSellerOrders(liveOrders);
+      const fulfilmentOrders = liveOrders.filter(isFulfilmentOrder);
+      sellerOrdersRef.current = fulfilmentOrders;
+      setSellerOrders(fulfilmentOrders);
+      setPaymentVerifications(liveOrders.filter((order) => order.paymentStatus === "PAYMENT_SUBMITTED" || order.paymentStatus === "VERIFICATION_FAILED"));
     };
 
     const unsubscribers = storeIds.map((storeId) => onSnapshot(
-      query(collection(firestore, "orders"), where("storeId", "==", storeId)),
+      query(collection(firestore, "orders"), where("storeId", "==", storeId), where("sellerId", "==", user!.id)),
       (snapshot) => {
         ordersByStore.set(storeId, snapshot.docs.map((orderDoc) => toSellerOrder(orderDoc.id, orderDoc.data())));
         refreshOrders();
         if (initializedStores.has(storeId)) {
-          const incomingChange = snapshot.docChanges().find((change) => change.type === "added");
+          const incomingChange = snapshot.docChanges().find((change) => change.type === "added" || (change.type === "modified" && change.doc.data().paymentStatus === "PAYMENT_SUBMITTED"));
           if (incomingChange) {
             const incoming = toSellerOrder(incomingChange.doc.id, incomingChange.doc.data());
-            setActiveAlert({ kind: "order", order: incoming });
-            if (alertsEnabledRef.current && alertAudioRef.current) resumeAndPlayAlert(alertAudioRef.current);
+            if (isFulfilmentOrder(incoming)) setActiveAlert({ kind: "order", order: incoming });
+            else if (incoming.paymentStatus === "PAYMENT_SUBMITTED") setActiveAlert({ kind: "payment", order: incoming });
+            if ((isFulfilmentOrder(incoming) || incoming.paymentStatus === "PAYMENT_SUBMITTED") && alertsEnabledRef.current && alertAudioRef.current) resumeAndPlayAlert(alertAudioRef.current);
           }
         } else {
           initializedStores.add(storeId);
@@ -131,7 +157,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     ));
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
-  }, [sellerStoreIdsKey]);
+  }, [sellerStoreIdsKey, user]);
 
   useEffect(() => () => {
     const context = alertAudioRef.current;
@@ -179,6 +205,8 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<SellerContextValue>(() => ({
     sellerOrders,
+    paymentVerifications,
+    paymentSettings,
     tickets,
     ratings,
     alertsEnabled,
@@ -193,6 +221,69 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       resumeAndPlayAlert(alertAudioRef.current);
     },
     dismissAlert: () => setActiveAlert(null),
+    savePaymentSettings: async (settings) => {
+      const storeId = user?.storeIds?.[0];
+      if (!user || user.activeRole !== "seller" || !storeId) throw new Error("A seller store is required before saving payment settings.");
+      const normalized = { ...settings, upiId: settings.upiId.trim(), upiDisplayName: settings.upiDisplayName.trim() };
+      if (normalized.upiEnabled && !isValidUpiId(normalized.upiId)) throw new Error("Enter a valid UPI ID such as store@bank.");
+      if (normalized.upiEnabled && !normalized.upiDisplayName) throw new Error("Add the UPI account or display name.");
+      if (!normalized.upiEnabled && !normalized.codEnabled) throw new Error("Enable at least one payment method.");
+      await updateDoc(doc(firestore, "stores", storeId), { paymentSettings: normalized, updatedAt: serverTimestamp() });
+      setPaymentSettings(normalized);
+    },
+    confirmPayment: async (orderId) => {
+      if (!user || user.activeRole !== "seller") throw new Error("Sign in as a seller to verify payments.");
+      await runTransaction(firestore, async (transaction) => {
+        const orderRef = doc(firestore, "orders", orderId);
+        const orderSnapshot = await transaction.get(orderRef);
+        if (!orderSnapshot.exists()) throw new Error("The payment order could not be found.");
+        const data = orderSnapshot.data();
+        if (!user.storeIds?.includes(String(data.storeId ?? ""))) throw new Error("You cannot verify another seller's payment.");
+        if (data.paymentStatus !== "PAYMENT_SUBMITTED") throw new Error("This payment is not awaiting verification.");
+        const reference = String(data.upiTransactionReference ?? "");
+        if (!reference) throw new Error("The customer has not submitted a UTR.");
+        const referenceRef = doc(firestore, "paymentReferences", reference);
+        const referenceSnapshot = await transaction.get(referenceRef);
+        if (!referenceSnapshot.exists() || referenceSnapshot.data().orderId !== orderId) throw new Error("The submitted UTR record is missing or belongs to another order.");
+        if (referenceSnapshot.data().status === "PAID" && referenceSnapshot.data().orderId !== orderId) throw new Error("This UTR has already been used for another paid order.");
+        const items = Array.isArray(data.items) ? data.items.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object") : [];
+        const productRefs = items.map((item) => doc(firestore, "products", String(item.productId ?? "")));
+        const productSnapshots = await Promise.all(productRefs.map((productRef) => transaction.get(productRef)));
+        productSnapshots.forEach((productSnapshot, index) => {
+          if (!productSnapshot.exists()) throw new Error("An ordered product is no longer available.");
+          const productData = productSnapshot.data();
+          const quantity = Number(items[index].quantity ?? 0);
+          const currentStock = Number(productData.stock ?? 0);
+          if (productData.storeId !== data.storeId) throw new Error("An ordered product no longer belongs to this store.");
+          if (!Number.isInteger(quantity) || quantity <= 0 || currentStock < quantity) throw new Error(`Insufficient stock for ${String(items[index].productName ?? "an order item")}.`);
+        });
+        productSnapshots.forEach((productSnapshot, index) => {
+          const quantity = Number(items[index].quantity);
+          const nextStock = Number(productSnapshot.data()?.stock ?? 0) - quantity;
+          transaction.update(productRefs[index], { stock: nextStock, status: nextStock > 0 ? "published" : "out-of-stock", lastOrderId: orderId, updatedAt: serverTimestamp() });
+        });
+        transaction.update(referenceRef, { status: "PAID", paymentVerifiedBy: user.id, paymentVerifiedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        transaction.update(orderRef, {
+          paymentStatus: "PAID", orderStatus: "PLACED", status: "New", stage: "Confirmed",
+          eta: data.fulfilment === "pickup" ? "Ready in 45 minutes" : "Tomorrow by 11 AM",
+          paymentVerifiedBy: user.id, paymentVerifiedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+        });
+      });
+    },
+    markPaymentNotFound: async (orderId) => {
+      if (!user || user.activeRole !== "seller") throw new Error("Sign in as a seller to review payments.");
+      await runTransaction(firestore, async (transaction) => {
+        const orderRef = doc(firestore, "orders", orderId);
+        const orderSnapshot = await transaction.get(orderRef);
+        if (!orderSnapshot.exists()) throw new Error("The payment order could not be found.");
+        const data = orderSnapshot.data();
+        if (!user.storeIds?.includes(String(data.storeId ?? ""))) throw new Error("You cannot review another seller's payment.");
+        if (data.paymentStatus !== "PAYMENT_SUBMITTED") throw new Error("This payment is not awaiting verification.");
+        const reference = String(data.upiTransactionReference ?? "");
+        if (reference) transaction.update(doc(firestore, "paymentReferences", reference), { status: "VERIFICATION_FAILED", updatedAt: serverTimestamp() });
+        transaction.update(orderRef, { paymentStatus: "VERIFICATION_FAILED", orderStatus: "PAYMENT_VERIFICATION_PENDING", updatedAt: serverTimestamp() });
+      });
+    },
     updateOrderStatus: async (orderId, status) => {
       setSellerOrders((current) => current.map((order) => order.id === orderId ? { ...order, status } : order));
       const order = sellerOrdersRef.current.find((item) => item.id === orderId);
@@ -291,7 +382,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       }
       if (product.imagePublicId) await deleteCloudinaryProductImage(product.imagePublicId).catch(() => undefined);
     },
-  }), [sellerOrders, tickets, ratings, alertsEnabled, activeAlert, productOverrides, sellerProducts, updateOrderStage, user]);
+  }), [sellerOrders, paymentVerifications, paymentSettings, tickets, ratings, alertsEnabled, activeAlert, productOverrides, sellerProducts, updateOrderStage, user]);
 
   return <SellerContext.Provider value={value}>{children}</SellerContext.Provider>;
 }
@@ -322,11 +413,17 @@ function toSellerOrder(id: string, data: Record<string, unknown>): FirestoreSell
     partNumber: String(data.partNumber ?? ""),
     quantity: Number(data.quantity ?? 1),
     fulfilment: data.fulfilment === "pickup" || data.fulfilment === "garage" ? data.fulfilment : "delivery",
-    paymentStatus: data.paymentStatus === "COD" || data.paymentStatus === "Pending" ? data.paymentStatus : "Paid",
-    paymentMethod: data.paymentMethod === "upi" || data.paymentMethod === "card" || data.paymentMethod === "cod" ? data.paymentMethod : undefined,
-    paymentReference: typeof data.paymentReference === "string" ? data.paymentReference : undefined,
-    paymentVerifiedAt: typeof data.paymentVerifiedAt === "string" ? data.paymentVerifiedAt : undefined,
+    paymentStatus: isSellerPaymentStatus(data.paymentStatus) ? data.paymentStatus : "Paid",
+    paymentMethod: data.paymentMethod === "upi" || data.paymentMethod === "cod" ? data.paymentMethod : undefined,
+    paymentReference: typeof data.upiTransactionReference === "string" ? data.upiTransactionReference : typeof data.paymentReference === "string" ? data.paymentReference : undefined,
+    paymentVerifiedAt: data.paymentVerifiedAt ? "Verified" : undefined,
+    paymentVerifiedBy: typeof data.paymentVerifiedBy === "string" ? data.paymentVerifiedBy : undefined,
     paymentMode: data.paymentMode === "live" ? "live" : "test",
+    orderStatus: data.orderStatus === "PAYMENT_PENDING" || data.orderStatus === "PAYMENT_VERIFICATION_PENDING" || data.orderStatus === "PLACED" || data.orderStatus === "PAYMENT_EXPIRED" || data.orderStatus === "PAYMENT_CANCELLED" ? data.orderStatus : undefined,
+    sellerUpiIdSnapshot: typeof data.sellerUpiIdSnapshot === "string" ? data.sellerUpiIdSnapshot : undefined,
+    sellerUpiNameSnapshot: typeof data.sellerUpiNameSnapshot === "string" ? data.sellerUpiNameSnapshot : undefined,
+    paymentSubmittedAt: data.paymentSubmittedAt ? "Submitted" : undefined,
+    expiresAt: firestoreDate(data.expiresAt),
     deadline: String(data.deadline ?? "Review order"),
     status: isSellerOrderStatus(data.status) ? data.status : "New",
     total: Number(data.total ?? 0),
@@ -341,4 +438,18 @@ function firestoreTime(value: unknown) {
 
 function isSellerOrderStatus(value: unknown): value is SellerOrderStatus {
   return value === "New" || value === "Accepted" || value === "Packing" || value === "Packed" || value === "Dispatched" || value === "Delivered";
+}
+
+function isSellerPaymentStatus(value: unknown): value is SellerPaymentStatus {
+  return value === "Paid" || value === "Pending" || value === "COD" || value === "PENDING" || value === "PAYMENT_SUBMITTED" || value === "PAID" || value === "VERIFICATION_FAILED" || value === "PAYMENT_DUE" || value === "PAYMENT_EXPIRED" || value === "PAYMENT_CANCELLED";
+}
+
+function isFulfilmentOrder(order: SellerOrder) {
+  return !order.orderStatus || order.orderStatus === "PLACED" || order.paymentStatus === "Paid" || order.paymentStatus === "COD";
+}
+
+function firestoreDate(value: unknown) {
+  if (value instanceof Date) return value;
+  if (value && typeof value === "object" && "toDate" in value && typeof value.toDate === "function") return value.toDate();
+  return undefined;
 }

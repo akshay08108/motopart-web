@@ -121,6 +121,7 @@ export type StoreListing = {
 
 export type PartnerStore = {
   id: string;
+  sellerId?: string;
   name: string;
   owner: string;
   phone: string;
@@ -132,6 +133,14 @@ export type PartnerStore = {
   distanceKm: number;
   location: AppLocation;
   listings: StoreListing[];
+  paymentSettings?: StorePaymentSettings;
+};
+
+export type StorePaymentSettings = {
+  upiId: string;
+  upiDisplayName: string;
+  upiEnabled: boolean;
+  codEnabled: boolean;
 };
 
 export type SellerOrderStatus = "New" | "Accepted" | "Packing" | "Packed" | "Dispatched" | "Delivered";
@@ -153,11 +162,17 @@ export type SellerOrder = {
   partNumber: string;
   quantity: number;
   fulfilment: FulfilmentMode;
-  paymentStatus: "Paid" | "Pending" | "COD";
+  paymentStatus: SellerPaymentStatus;
   paymentMethod?: PaymentMethod;
   paymentReference?: string;
   paymentVerifiedAt?: string;
+  paymentVerifiedBy?: string;
   paymentMode?: "test" | "live";
+  orderStatus?: PaymentOrderStatus;
+  sellerUpiIdSnapshot?: string;
+  sellerUpiNameSnapshot?: string;
+  paymentSubmittedAt?: string;
+  expiresAt?: Date;
   deadline: string;
   status: SellerOrderStatus;
   total: number;
@@ -193,6 +208,8 @@ export type StoreRating = {
 
 export type FulfilmentMode = "delivery" | "pickup" | "garage";
 export type PaymentMethod = "upi" | "card" | "cod";
+export type SellerPaymentStatus = "Paid" | "Pending" | "COD" | "PENDING" | "PAYMENT_SUBMITTED" | "PAID" | "VERIFICATION_FAILED" | "PAYMENT_DUE" | "PAYMENT_EXPIRED" | "PAYMENT_CANCELLED";
+export type PaymentOrderStatus = "PAYMENT_PENDING" | "PAYMENT_VERIFICATION_PENDING" | "PLACED" | "PAYMENT_EXPIRED" | "PAYMENT_CANCELLED";
 
 export type Offer = {
   code: string;
