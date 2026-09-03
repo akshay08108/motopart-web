@@ -5,7 +5,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { doc, setDoc, Timestamp } from "firebase/firestore";
+import { doc, runTransaction, serverTimestamp, setDoc, Timestamp } from "firebase/firestore";
 
 const projectId = "demo-partx-rules";
 let environment;
@@ -90,4 +90,32 @@ test("customer can create an ARR-style pending UPI order", async () => {
 test("seller cannot use customer checkout to create an order", async () => {
   const database = environment.authenticatedContext("seller-1").firestore();
   await assertFails(setDoc(doc(database, "orders", "PRTX-TEST-SELLER"), pendingUpiOrder("seller-1")));
+});
+
+test("customer can submit a new UTR without reading a nonexistent reference", async () => {
+  const database = environment.authenticatedContext("customer-1").firestore();
+  const orderRef = doc(database, "orders", "PRTX-TEST-REFERENCE");
+  await assertSucceeds(setDoc(orderRef, pendingUpiOrder()));
+
+  await assertSucceeds(runTransaction(database, async (transaction) => {
+    const orderSnapshot = await transaction.get(orderRef);
+    const reference = "UTR123456789";
+    transaction.set(doc(database, "paymentReferences", reference), {
+      reference,
+      orderId: orderRef.id,
+      customerId: "customer-1",
+      storeId: orderSnapshot.data().storeId,
+      status: "PAYMENT_SUBMITTED",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    transaction.update(orderRef, {
+      upiTransactionReference: reference,
+      paymentReference: reference,
+      paymentStatus: "PAYMENT_SUBMITTED",
+      orderStatus: "PAYMENT_VERIFICATION_PENDING",
+      paymentSubmittedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }));
 });

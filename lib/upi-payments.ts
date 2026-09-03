@@ -24,9 +24,29 @@ export function createUpiUri(input: { upiId: string; displayName: string; amount
     pn: input.displayName.trim(),
     am: input.amount.toFixed(2),
     cu: "INR",
+    tr: input.orderId,
     tn: `PartX Order ${input.orderId}`,
   });
   return `upi://pay?${params.toString()}`;
+}
+
+export function createAndroidUpiIntent(upiUri: string, packageName: string) {
+  const query = upiUri.startsWith("upi://pay?") ? upiUri.slice("upi://pay?".length) : "";
+  if (!query || !/^[a-zA-Z0-9._]+$/.test(packageName)) return upiUri;
+  return `intent://pay?${query}#Intent;scheme=upi;package=${packageName};end`;
+}
+
+const IOS_UPI_SCHEMES: Record<string, string> = {
+  "com.google.android.apps.nbu.paisa.user": "gpay",
+  "com.phonepe.app": "phonepe",
+  "net.one97.paytm": "paytmmp",
+  "in.org.npci.upiapp": "bhim",
+};
+
+export function createIosUpiLink(upiUri: string, packageName: string) {
+  const query = upiUri.startsWith("upi://pay?") ? upiUri.slice("upi://pay?".length) : "";
+  const scheme = IOS_UPI_SCHEMES[packageName];
+  return query && scheme ? `${scheme}://upi/pay?${query}` : upiUri;
 }
 
 export function createPaymentOrderId(now = new Date(), random = Math.random) {

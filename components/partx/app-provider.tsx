@@ -435,7 +435,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       await runTransaction(firestore, async (transaction) => {
         const orderRef = doc(firestore, "orders", orderId);
         const referenceRef = doc(firestore, "paymentReferences", normalizedReference);
-        const [orderSnapshot, referenceSnapshot] = await Promise.all([transaction.get(orderRef), transaction.get(referenceRef)]);
+        const orderSnapshot = await transaction.get(orderRef);
         if (!orderSnapshot.exists()) throw new Error("The pending payment order could not be found.");
         const data = orderSnapshot.data();
         if (data.customerId !== user.id) throw new Error("This payment attempt belongs to another customer.");
@@ -443,20 +443,15 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         if (!new Set(["PENDING", "VERIFICATION_FAILED"]).has(String(data.paymentStatus))) throw new Error("This payment attempt cannot accept another reference.");
         const expiry = firestoreDate(data.expiresAt);
         if (expiry && expiry.getTime() <= Date.now()) throw new Error("This payment attempt has expired. Start a new payment from checkout.");
-        if (referenceSnapshot.exists() && referenceSnapshot.data().orderId !== orderId) throw new Error("This UTR is already attached to another order.");
-        if (referenceSnapshot.exists()) {
-          transaction.update(referenceRef, { status: "PAYMENT_SUBMITTED", updatedAt: serverTimestamp() });
-        } else {
-          transaction.set(referenceRef, {
-            reference: normalizedReference,
-            orderId,
-            customerId: user.id,
-            storeId: String(data.storeId ?? ""),
-            status: "PAYMENT_SUBMITTED",
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        }
+        transaction.set(referenceRef, {
+          reference: normalizedReference,
+          orderId,
+          customerId: user.id,
+          storeId: String(data.storeId ?? ""),
+          status: "PAYMENT_SUBMITTED",
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
         transaction.update(orderRef, {
           upiTransactionReference: normalizedReference,
           paymentReference: normalizedReference,

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useState } from "react";
 import type { FulfilmentMode, Garage, PartnerStore, PaymentMethod, Vehicle } from "@/lib/types";
 import { QRCodeSVG } from "qrcode.react";
-import { createUpiUri, isValidUpiId, isValidUtr } from "@/lib/upi-payments";
+import { createAndroidUpiIntent, createIosUpiLink, createUpiUri, isValidUpiId, isValidUtr } from "@/lib/upi-payments";
 import { usePartX, type PartXOrder } from "./app-provider";
 import { Icon } from "./icons";
 import { useSeller } from "./seller-provider";
@@ -56,7 +56,6 @@ export function CheckoutPage() {
   const [checkoutError, setCheckoutError] = useState("");
   const [attempt, setAttempt] = useState<Awaited<ReturnType<typeof placeOrder>> | null>(null);
   const [showQr, setShowQr] = useState(false);
-  const [paymentLaunched, setPaymentLaunched] = useState(false);
   const [transactionReference, setTransactionReference] = useState("");
   const delivery = fulfilment === "delivery" && cartTotal < 999 ? 99 : 0;
   const selectedStore = stores.find((store) => store.id === cart[0]?.storeId) ?? stores[0];
@@ -97,10 +96,14 @@ export function CheckoutPage() {
       setProcessing(false);
     }
   };
-  const launchUpi = () => {
+  const launchUpi = (packageName?: string) => {
     if (!upiUri) return;
-    setPaymentLaunched(true);
-    window.location.href = upiUri;
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    const isIos = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const target = packageName && isAndroid
+      ? createAndroidUpiIntent(upiUri, packageName)
+      : packageName && isIos ? createIosUpiLink(upiUri, packageName) : upiUri;
+    window.location.href = target;
   };
   const submitReference = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -111,7 +114,10 @@ export function CheckoutPage() {
       sessionStorage.removeItem(attemptKey);
       router.push(`/orders/${attempt.id}?payment=submitted`);
     } catch (reason) {
-      setCheckoutError(reason instanceof Error ? reason.message : "The payment reference could not be submitted.");
+      const code = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "";
+      setCheckoutError(code === "permission-denied"
+        ? "This UTR could not be submitted. It may already be attached to another order. Check the number and try again."
+        : reason instanceof Error ? reason.message : "The payment reference could not be submitted.");
       setProcessing(false);
     }
   };
@@ -121,7 +127,7 @@ export function CheckoutPage() {
     try {
       await cancelPayment(attempt.id);
       sessionStorage.removeItem(attemptKey);
-      setAttempt(null); setShowQr(false); setPaymentLaunched(false); setTransactionReference("");
+      setAttempt(null); setShowQr(false); setTransactionReference("");
     } catch (reason) {
       setCheckoutError(reason instanceof Error ? reason.message : "The payment attempt could not be cancelled.");
     } finally {
@@ -130,7 +136,7 @@ export function CheckoutPage() {
   };
   return <div className="px-page px-container"><Link className="px-back-link" href="/cart"><Icon name="back"/>Back to cart</Link><div className="px-page-title"><span>SECURE CHECKOUT</span><h1>Choose how you receive it</h1><p>Pay the selected seller directly by UPI or choose cash on delivery.</p></div>
     <div className="px-checkout-layout"><div className="px-checkout-main"><section className="px-panel"><div className="px-step-title"><b>1</b><div><span>FULFILMENT</span><h2>Delivery, pickup or garage</h2></div></div><div className="px-choice-grid">{(["delivery", "pickup", "garage"] as FulfilmentMode[]).map((mode) => <button className={fulfilment === mode ? "active" : ""} onClick={() => setFulfilment(mode)} key={mode}><Icon name={mode === "delivery" ? "pin" : mode === "pickup" ? "orders" : "garage"}/><b>{mode === "delivery" ? "Deliver to me" : mode === "pickup" ? "Self pickup" : "Send to garage"}</b><span>{mode === "delivery" ? location.address : mode === "pickup" ? `${selectedStore.name} · ${selectedStore.distanceKm} km` : garages[0]?.name ?? "Add a garage first"}</span></button>)}</div></section>
-      <section className="px-panel"><div className="px-step-title"><b>2</b><div><span>PAYMENT</span><h2>Pay the seller directly</h2></div></div>{enabledMethods.length ? <div className="px-payment-row">{enabledMethods.map((method) => <button className={selectedPayment === method ? "active" : ""} disabled={Boolean(attempt)} onClick={() => setPayment(method)} key={method}>{method === "upi" ? "UPI" : "Cash on delivery"}</button>)}</div> : <div className="px-payment-unavailable" role="alert">{selectedStore.name} has not enabled UPI or cash on delivery. Contact the seller before ordering.</div>}{selectedPayment === "upi" && !attempt ? <div className="px-upi"><b>Direct seller payment</b><span>Your payment goes to {selectedStore.name}. PartX does not collect or hold the money.</span></div> : null}{attempt && upiUri ? <div className="px-upi-payment"><div className="px-upi-heading"><span>PAYMENT ATTEMPT {attempt.id}</span><h3>Paying ₹{attempt.total.toLocaleString("en-IN")} to {attempt.sellerUpiNameSnapshot}</h3><p>UPI ID <b>{attempt.sellerUpiIdSnapshot}</b><button type="button" onClick={() => navigator.clipboard?.writeText(attempt.sellerUpiIdSnapshot ?? "")}><Icon name="copy"/>Copy</button></p></div>{showQr ? <div className="px-upi-qr"><QRCodeSVG value={upiUri} size={210} level="M" marginSize={2}/><small>Exact amount · INR · Reference {attempt.id}</small></div> : null}<div className="px-upi-actions"><button type="button" className="px-btn px-btn-red" onClick={launchUpi}>Pay ₹{attempt.total.toLocaleString("en-IN")}<Icon name="arrow"/></button><button type="button" className="px-btn px-btn-outline" onClick={() => setShowQr((shown) => !shown)}>{showQr ? "Hide QR code" : "Show QR code"}</button></div>{paymentLaunched ? <form className="px-utr-form" onSubmit={submitReference}><h3>Have you completed the payment?</h3><p>Returning from a UPI app does not confirm payment. Enter the transaction reference so {selectedStore.name} can verify receipt.</p><label>UPI Transaction ID / UTR / Reference Number<input value={transactionReference} onChange={(event) => setTransactionReference(event.target.value.toUpperCase())} autoComplete="off" required placeholder="Enter 6–40 letters or numbers"/></label><div><button className="px-btn px-btn-red" type="submit" disabled={processing}>{processing ? "Submitting…" : "Yes, I have paid"}</button><button className="px-btn px-btn-outline" type="button" onClick={launchUpi}>Try payment again</button><button className="px-link-button" type="button" onClick={() => void cancel()}>Cancel</button></div><small>Never enter your UPI PIN in PartX. Paying again may result in a duplicate payment.</small></form> : null}</div> : null}</section></div>
+      <section className="px-panel"><div className="px-step-title"><b>2</b><div><span>PAYMENT</span><h2>Pay the seller directly</h2></div></div>{enabledMethods.length ? <div className="px-payment-row">{enabledMethods.map((method) => <button className={selectedPayment === method ? "active" : ""} disabled={Boolean(attempt)} onClick={() => setPayment(method)} key={method}>{method === "upi" ? "UPI" : "Cash on delivery"}</button>)}</div> : <div className="px-payment-unavailable" role="alert">{selectedStore.name} has not enabled UPI or cash on delivery. Contact the seller before ordering.</div>}{selectedPayment === "upi" && !attempt ? <div className="px-upi"><b>Direct seller payment</b><span>Your payment goes to {selectedStore.name}. PartX does not collect or hold the money.</span></div> : null}{attempt && upiUri ? <div className="px-upi-payment"><div className="px-upi-heading"><span>PAYMENT ATTEMPT {attempt.id}</span><h3>Paying ₹{attempt.total.toLocaleString("en-IN")} to {attempt.sellerUpiNameSnapshot}</h3><p>UPI ID <b>{attempt.sellerUpiIdSnapshot}</b><button type="button" onClick={() => navigator.clipboard?.writeText(attempt.sellerUpiIdSnapshot ?? "")}><Icon name="copy"/>Copy</button></p></div>{showQr ? <div className="px-upi-qr"><QRCodeSVG value={upiUri} size={210} level="M" marginSize={2}/><small>Exact amount · INR · Reference {attempt.id}</small></div> : null}<div className="px-upi-apps"><b>Choose a UPI app</b><div><button type="button" onClick={() => launchUpi("com.google.android.apps.nbu.paisa.user")}>Google Pay</button><button type="button" onClick={() => launchUpi("com.phonepe.app")}>PhonePe</button><button type="button" onClick={() => launchUpi("net.one97.paytm")}>Paytm</button><button type="button" onClick={() => launchUpi("in.org.npci.upiapp")}>BHIM</button></div><small>Choose a specific app to avoid WhatsApp. If it is not installed, try another app or scan the QR code.</small></div><div className="px-upi-actions"><button type="button" className="px-btn px-btn-red" onClick={() => launchUpi()}>Other UPI app <Icon name="arrow"/></button><button type="button" className="px-btn px-btn-outline" onClick={() => setShowQr((shown) => !shown)}>{showQr ? "Hide QR code" : "Show QR code"}</button></div><form className="px-utr-form" onSubmit={submitReference}><h3>Already paid?</h3><p>Copy the UPI transaction ID, UTR or reference from your payment app and submit it here. The seller will verify receipt.</p><label>UPI Transaction ID / UTR / Reference Number<input value={transactionReference} onChange={(event) => setTransactionReference(event.target.value.toUpperCase())} autoComplete="off" inputMode="text" required placeholder="Enter 6–40 letters or numbers"/></label><div><button className="px-btn px-btn-red" type="submit" disabled={processing}>{processing ? "Submitting…" : "Submit payment reference"}</button><button className="px-btn px-btn-outline" type="button" onClick={() => launchUpi()}>Try another UPI app</button><button className="px-link-button" type="button" onClick={() => void cancel()}>Cancel</button></div><small>Never enter your UPI PIN in PartX. Paying again may result in a duplicate payment.</small></form></div> : null}</section></div>
       <aside className="px-summary"><span>ORDER SUMMARY</span><h2>{cart.length} item{cart.length > 1 ? "s" : ""}</h2><div className="px-checkout-products">{cart.map(({ product, quantity, unitPrice }) => <div key={product.id}><Image src={product.imageUrl ?? `/parts/${product.imageIndex}-v2.png`} alt={product.name} width={72} height={58}/><span><b>{product.name}</b><small>{product.partNumber} · Qty {quantity}</small></span><strong>₹{((unitPrice ?? product.price) * quantity).toLocaleString("en-IN")}</strong></div>)}</div><p className="px-summary-seller"><Icon name="store"/>Seller: <b>{cart[0]?.storeName ?? cart[0]?.product.seller}</b></p><dl><div><dt>Subtotal</dt><dd>₹{cartTotal.toLocaleString("en-IN")}</dd></div><div><dt>Delivery</dt><dd>{delivery ? `₹${delivery}` : "FREE"}</dd></div><div><dt>Discount</dt><dd>₹0</dd></div><div className="total"><dt>Total amount</dt><dd>₹{total.toLocaleString("en-IN")}</dd></div></dl>{checkoutError ? <p className="px-checkout-error" role="alert">{checkoutError}</p> : null}{!attempt ? <button className="px-btn px-btn-red px-btn-large" onClick={() => void startPayment()} disabled={processing || !selectedPayment}>{processing ? "Creating order…" : selectedPayment === "cod" ? `Place COD order · ₹${total.toLocaleString("en-IN")}` : `Continue with UPI · ₹${total.toLocaleString("en-IN")}`}<Icon name="arrow"/></button> : <div className="px-payment-pending-note"><b>Order not confirmed yet</b><span>Submit your UTR, then wait for the seller to verify the payment.</span></div>}<small>PartX charges 0% commission and does not hold this payment.</small></aside></div>
   </div>;
 }
