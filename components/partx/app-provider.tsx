@@ -389,15 +389,17 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       };
       const savedData = await runTransaction(firestore, async (transaction) => {
         const orderRef = doc(firestore, "orders", order.id);
-        const existingOrder = await transaction.get(orderRef);
-        if (existingOrder.exists()) {
-          const data = existingOrder.data();
-          if (data.customerId !== user.id) throw new Error("This payment attempt belongs to another customer.");
-          const existingExpiry = firestoreDate(data.expiresAt);
-          if (data.paymentStatus !== "PENDING" || (existingExpiry && existingExpiry.getTime() <= Date.now())) {
-            throw new Error("SAVED_PAYMENT_ATTEMPT_INACTIVE");
+        if (attemptId) {
+          const existingOrder = await transaction.get(orderRef);
+          if (existingOrder.exists()) {
+            const data = existingOrder.data();
+            if (data.customerId !== user.id) throw new Error("This payment attempt belongs to another customer.");
+            const existingExpiry = firestoreDate(data.expiresAt);
+            if (data.paymentStatus !== "PENDING" || (existingExpiry && existingExpiry.getTime() <= Date.now())) {
+              throw new Error("SAVED_PAYMENT_ATTEMPT_INACTIVE");
+            }
+            return data;
           }
-          return data;
         }
         const productRefs = resolvedCart.map((item) => doc(firestore, "products", item.product.id));
         const productSnapshots = await Promise.all(productRefs.map((productRef) => transaction.get(productRef)));
