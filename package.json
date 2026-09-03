@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:rules": "node --test tests/firestore.rules.test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.2.7",
@@ -20,6 +21,7 @@
     "read-excel-file": "^9.3.10"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@types/node": "^22.18.1",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",

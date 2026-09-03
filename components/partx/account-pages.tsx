@@ -49,7 +49,7 @@ export function CartPage() {
 
 export function CheckoutPage() {
   const router = useRouter();
-  const { cart, cartTotal, location, garages, stores, placeOrder, submitUpiReference, cancelPayment } = usePartX();
+  const { cart, cartTotal, location, garages, stores, placeOrder, submitUpiReference, cancelPayment, user } = usePartX();
   const [fulfilment, setFulfilment] = useState<FulfilmentMode>("delivery");
   const [payment, setPayment] = useState<PaymentMethod>("upi");
   const [processing, setProcessing] = useState(false);
@@ -66,7 +66,7 @@ export function CheckoutPage() {
   const selectedPayment = enabledMethods.includes(payment) ? payment : enabledMethods[0];
   const upiUri = attempt?.sellerUpiIdSnapshot && attempt.sellerUpiNameSnapshot && isValidUpiId(attempt.sellerUpiIdSnapshot) ? createUpiUri({ upiId: attempt.sellerUpiIdSnapshot, displayName: attempt.sellerUpiNameSnapshot, amount: attempt.total, orderId: attempt.id }) : "";
   if (!cart.length) return <div className="px-page px-container"><div className="px-empty"><h1>No items to checkout</h1><p>Add a part before starting checkout.</p><Link href="/shop" className="px-btn px-btn-red">Shop parts</Link></div></div>;
-  const attemptKey = `partx-payment-attempt:${selectedStore.id}:${fulfilment}:${cart.map((line) => `${line.product.id}-${line.quantity}`).join("|")}`;
+  const attemptKey = `partx-payment-attempt:${user?.id ?? "guest"}:${selectedStore.id}:${fulfilment}:${cart.map((line) => `${line.product.id}-${line.quantity}`).join("|")}`;
   const startPayment = async () => {
     if (!selectedPayment) { setCheckoutError(`${selectedStore.name} has not enabled a payment method yet.`); return; }
     setProcessing(true); setCheckoutError("");
@@ -76,7 +76,8 @@ export function CheckoutPage() {
       try {
         order = await placeOrder(fulfilment, selectedPayment, savedAttemptId);
       } catch (reason) {
-        if (savedAttemptId && reason instanceof Error && reason.message === "SAVED_PAYMENT_ATTEMPT_INACTIVE") {
+        const errorCode = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "";
+        if (savedAttemptId && reason instanceof Error && (reason.message === "SAVED_PAYMENT_ATTEMPT_INACTIVE" || errorCode === "permission-denied")) {
           sessionStorage.removeItem(attemptKey);
           order = await placeOrder(fulfilment, selectedPayment);
         } else {
