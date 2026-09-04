@@ -403,9 +403,15 @@ type FirestoreSellerOrder = SellerOrder & { createdAt?: unknown };
 
 function toSellerOrder(id: string, data: Record<string, unknown>): FirestoreSellerOrder {
   const customer = data.customer && typeof data.customer === "object" ? data.customer as Record<string, unknown> : {};
+  const items = Array.isArray(data.items) ? data.items : [];
+  const primaryItem = items[0] && typeof items[0] === "object" ? items[0] as Record<string, unknown> : {};
+  const imageIndex = Number(primaryItem.imageIndex ?? data.imageIndex);
   return {
     id,
     trackingId: String(data.trackingId ?? "PX-TRK-PENDING"),
+    productId: typeof primaryItem.productId === "string" ? primaryItem.productId : typeof data.productId === "string" ? data.productId : undefined,
+    imageUrl: typeof primaryItem.imageUrl === "string" && primaryItem.imageUrl ? primaryItem.imageUrl : typeof data.imageUrl === "string" && data.imageUrl ? data.imageUrl : undefined,
+    imageIndex: Number.isInteger(imageIndex) ? imageIndex : undefined,
     storeId: String(data.storeId ?? ""),
     storeName: String(data.storeName ?? "PartX seller"),
     customer: { name: String(customer.name ?? "Customer"), phone: String(customer.phone ?? ""), email: String(customer.email ?? "") },

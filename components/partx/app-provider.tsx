@@ -403,13 +403,18 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
           expiresAt,
         } : {}),
         deadline: fulfilment === "pickup" ? "Ready within 45 minutes" : "Tomorrow, 11:00 AM",
+        productId: primaryItem.product.id,
         productName: resolvedCart.length > 1 ? `${primaryItem.product.name} + ${resolvedCart.length - 1} more` : primaryItem.product.name,
         partNumber: primaryItem.product.partNumber,
+        imageUrl: primaryItem.product.imageUrl ?? null,
+        imageIndex: primaryItem.product.imageIndex,
         quantity: resolvedCart.reduce((sum, item) => sum + item.quantity, 0),
         items: resolvedCart.map((item) => ({
           productId: item.product.id,
           productName: item.product.name,
           partNumber: item.product.partNumber,
+          imageUrl: item.product.imageUrl ?? null,
+          imageIndex: item.product.imageIndex,
           quantity: item.quantity,
           unitPrice: item.unitPrice ?? item.product.price,
           storeId: item.storeId ?? order.storeId,
@@ -657,11 +662,13 @@ function toCustomerOrder(id: string, data: Record<string, unknown>): PartXOrder 
     if (!item || typeof item !== "object") return [];
     const line = item as Record<string, unknown>;
     const unitPrice = Number(line.unitPrice ?? 0);
+    const imageIndex = Number(line.imageIndex ?? 0);
     return [{
       product: {
         id: String(line.productId ?? ""), name: String(line.productName ?? "Order item"), partNumber: String(line.partNumber ?? ""),
         brand: "PARTX", oemNumber: String(line.partNumber ?? ""), kind: "OEM-equivalent" as const, price: unitPrice,
-        listPrice: unitPrice, rating: 0, reviews: 0, category: "Other", imageIndex: 0, compatibleVehicleIds: [], stock: 0,
+        listPrice: unitPrice, rating: 0, reviews: 0, category: "Other", imageIndex: Number.isInteger(imageIndex) ? imageIndex : 0,
+        imageUrl: typeof line.imageUrl === "string" && line.imageUrl ? line.imageUrl : undefined, compatibleVehicleIds: [], stock: 0,
         deliveryLabel: "Order item", warranty: "See product details", seller: String(line.storeName ?? data.storeName ?? "PartX seller"),
       },
       quantity: Number(line.quantity ?? 1), storeId: String(line.storeId ?? data.storeId ?? ""),

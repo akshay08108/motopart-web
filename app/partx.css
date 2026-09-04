@@ -520,7 +520,7 @@ body:has(.px-auth), body:has(.px-seller-pending) { padding-bottom: 0; }
   body { padding-bottom: 68px; }.px-header-actions .px-icon-button:nth-child(2), .px-cart-button { display: none; }
   .px-ticker { height: 30px; font-size: 9px; }.px-ticker > span { min-width: 92px; }
   .px-hero-copy { padding-top: 38px; }.px-hero h1 { letter-spacing: -2px; }.px-hero-copy > p { font-size: 15px; }.px-hero-facts { gap: 10px 16px; }
-  .px-hero-visual { min-height: 280px; }.px-vehicle-chip { left: 0; right: 0; min-width: 0; }.px-hero-ring { top: 10%; left: 25%; width: 50%; border-width: 11px; }
+  .px-hero-visual { min-height: 78px; margin-top: 14px; }.px-hero-visual > img, .px-hero-ring { display: none; }.px-vehicle-chip { position: relative; left: 0; right: 0; bottom: auto; min-width: 0; }
   .px-section-head { align-items: start; }.px-section-head h2 { font-size: 27px; }.px-section-head > a { white-space: nowrap; }
   .px-category-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }.px-category-card > div { height: 100px; }.px-category-card span { display: none; }
   .px-product-grid, .px-shop-grid { grid-template-columns: 1fr 1fr; gap: 9px; }.px-product-image { height: 148px; }.px-product-body { padding: 12px; }.px-product-body h3 { min-height: 57px; font-size: 13px; }.px-product-price strong { font-size: 17px; }.px-product-delivery { min-height: 26px; }.px-product-body .px-btn { padding: 0 7px; font-size: 11px; }

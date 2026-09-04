@@ -154,6 +154,9 @@ export type SellerCustomer = {
 export type SellerOrder = {
   id: string;
   trackingId: string;
+  productId?: string;
+  imageUrl?: string;
+  imageIndex?: number;
   storeId?: string;
   storeName?: string;
   customer: SellerCustomer;
