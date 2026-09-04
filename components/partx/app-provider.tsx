@@ -126,7 +126,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!user?.id || !isCustomer) return;
-    const pending = orders.filter((order) => order.paymentStatus === "PENDING" && order.expiresAt);
+    const pending = orders.filter((order) => order.paymentStatus === "PENDING" && order.expiresAt instanceof Date && Number.isFinite(order.expiresAt.getTime()));
     if (!pending.length) return;
     const nextExpiry = Math.min(...pending.map((order) => order.expiresAt!.getTime()));
     const expire = async () => {
@@ -149,21 +149,29 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       const savedCart = readBrowserStorage("local", "partx-cart-v1");
       const savedOrders = readBrowserStorage("local", "partx-orders-v1") ?? readBrowserStorage("local", "motopart-orders-v1");
       const savedProfile = readBrowserStorage("local", "partx-profile-v1");
-      try { if (savedCart) setCart(JSON.parse(savedCart)); } catch {}
+      try {
+        if (savedCart) {
+          const restoredCart = JSON.parse(savedCart);
+          if (Array.isArray(restoredCart)) setCart(restoredCart);
+        }
+      } catch {}
       try {
         if (savedOrders) {
-          const restored: PartXOrder[] = JSON.parse(savedOrders);
-          setOrders(restored.some((order) => order.id === deliveredOrder.id) ? restored : [...restored, deliveredOrder]);
+          const storedOrders = JSON.parse(savedOrders);
+          if (Array.isArray(storedOrders)) {
+            const restored = storedOrders.flatMap(restoreStoredOrder);
+            setOrders(restored.some((order) => order.id === deliveredOrder.id) ? restored : [...restored, deliveredOrder]);
+          }
         }
       } catch {}
       try {
         if (savedProfile) {
           const profile = JSON.parse(savedProfile);
-          if (profile.vehicles) setVehicles(profile.vehicles);
-          if (profile.activeVehicleId) setActiveVehicleId(profile.activeVehicleId);
-          if (profile.location) setLocation(profile.location);
-          if (profile.garages) setGarages(profile.garages);
-          if (profile.stores) setStores(profile.stores.map((saved: PartnerStore) => {
+          if (Array.isArray(profile.vehicles)) setVehicles(profile.vehicles);
+          if (typeof profile.activeVehicleId === "string") setActiveVehicleId(profile.activeVehicleId);
+          if (profile.location && typeof profile.location === "object" && typeof profile.location.address === "string") setLocation(profile.location);
+          if (Array.isArray(profile.garages)) setGarages(profile.garages);
+          if (Array.isArray(profile.stores)) setStores(profile.stores.map((saved: PartnerStore) => {
             const seed = demoStores.find((store) => store.id === saved.id);
             if (!seed || (saved.ratingCount ?? 0) >= (seed.ratingCount ?? 0)) return saved;
             return { ...saved, rating: seed.rating, ratingCount: seed.ratingCount };
@@ -685,7 +693,18 @@ function toCustomerOrder(id: string, data: Record<string, unknown>): PartXOrder 
 function firestoreDate(value: unknown) {
   if (value instanceof Date) return value;
   if (value && typeof value === "object" && "toDate" in value && typeof value.toDate === "function") return value.toDate();
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value);
+    if (Number.isFinite(date.getTime())) return date;
+  }
   return undefined;
+}
+
+function restoreStoredOrder(value: unknown): PartXOrder[] {
+  if (!value || typeof value !== "object") return [];
+  const order = value as PartXOrder;
+  if (typeof order.id !== "string" || typeof order.total !== "number" || !isOrderStage(order.stage)) return [];
+  return [{ ...order, expiresAt: firestoreDate(order.expiresAt) }];
 }
 
 function isSellerPaymentStatus(value: unknown): value is SellerPaymentStatus {
