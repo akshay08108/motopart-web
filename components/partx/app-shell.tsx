@@ -85,5 +85,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function AuthLoading({ label }: { label: string }) {
-  return <div className="px-auth-loading"><Image src="/brand/partx-light.png" alt="PartX" width={62} height={62}/><span>{label}</span></div>;
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSlow(true), 6_000);
+    return () => window.clearTimeout(timer);
+  }, []);
+  return <div className="px-auth-loading"><Image src="/brand/partx-light.png" alt="PartX" width={62} height={62}/><span>{label}</span>{slow ? <><small>This is taking longer than expected. Check your connection and try again.</small><button type="button" onClick={() => window.location.reload()}>Retry</button></> : null}</div>;
 }

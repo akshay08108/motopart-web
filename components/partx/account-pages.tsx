@@ -10,6 +10,7 @@ import { createAndroidUpiIntent, createIosUpiLink, createUpiUri, isValidUpiId, i
 import { usePartX, type PartXOrder } from "./app-provider";
 import { Icon } from "./icons";
 import { useSeller } from "./seller-provider";
+import { readBrowserStorage, removeBrowserStorage, writeBrowserStorage } from "@/lib/browser-storage";
 
 export function GaragePage() {
   const { vehicles, activeVehicleId, setActiveVehicleId, addVehicle, location, setLocation, garages, addGarage } = usePartX();
@@ -70,14 +71,14 @@ export function CheckoutPage() {
     if (!selectedPayment) { setCheckoutError(`${selectedStore.name} has not enabled a payment method yet.`); return; }
     setProcessing(true); setCheckoutError("");
     try {
-      const savedAttemptId = selectedPayment === "upi" ? sessionStorage.getItem(attemptKey) ?? undefined : undefined;
+      const savedAttemptId = selectedPayment === "upi" ? readBrowserStorage("session", attemptKey) ?? undefined : undefined;
       let order;
       try {
         order = await placeOrder(fulfilment, selectedPayment, savedAttemptId);
       } catch (reason) {
         const errorCode = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "";
         if (savedAttemptId && reason instanceof Error && (reason.message === "SAVED_PAYMENT_ATTEMPT_INACTIVE" || errorCode === "permission-denied")) {
-          sessionStorage.removeItem(attemptKey);
+          removeBrowserStorage("session", attemptKey);
           order = await placeOrder(fulfilment, selectedPayment);
         } else {
           throw reason;
@@ -87,7 +88,7 @@ export function CheckoutPage() {
         router.push(`/orders/${order.id}?placed=1&payment=cod`);
         return;
       }
-      sessionStorage.setItem(attemptKey, order.id);
+      writeBrowserStorage("session", attemptKey, order.id);
       setAttempt(order);
       setShowQr(true);
     } catch (reason) {
@@ -111,7 +112,7 @@ export function CheckoutPage() {
     setProcessing(true); setCheckoutError("");
     try {
       await submitUpiReference(attempt.id, transactionReference);
-      sessionStorage.removeItem(attemptKey);
+      removeBrowserStorage("session", attemptKey);
       router.push(`/orders/${attempt.id}?payment=submitted`);
     } catch (reason) {
       const code = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "";
@@ -126,7 +127,7 @@ export function CheckoutPage() {
     setProcessing(true); setCheckoutError("");
     try {
       await cancelPayment(attempt.id);
-      sessionStorage.removeItem(attemptKey);
+      removeBrowserStorage("session", attemptKey);
       setAttempt(null); setShowQr(false); setTransactionReference("");
     } catch (reason) {
       setCheckoutError(reason instanceof Error ? reason.message : "The payment attempt could not be cancelled.");

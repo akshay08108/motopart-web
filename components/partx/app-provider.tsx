@@ -9,6 +9,9 @@ import { firebaseAuth, firestore } from "@/lib/firebase";
 import { demoGarages, demoLocation, demoStores } from "@/lib/marketplace-data";
 import { createPartXId } from "@/lib/seller-data";
 import { createPaymentOrderId, developmentPaymentSettings, isValidUtr, normalizeUtr, paymentExpiresAt } from "@/lib/upi-payments";
+import { readBrowserStorage, removeBrowserStorage, writeBrowserStorage } from "@/lib/browser-storage";
+
+const AUTH_PROFILE_CACHE_KEY = "partx-firebase-profile-v1";
 
 export type PartXOrder = Order & {
   items?: CartLine[];
@@ -141,11 +144,11 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const hydrate = () => {
-      const savedTheme = localStorage.getItem("partx-theme") ?? localStorage.getItem("motopart-theme");
+      const savedTheme = readBrowserStorage("local", "partx-theme") ?? readBrowserStorage("local", "motopart-theme");
       if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
-      const savedCart = localStorage.getItem("partx-cart-v1");
-      const savedOrders = localStorage.getItem("partx-orders-v1") ?? localStorage.getItem("motopart-orders-v1");
-      const savedProfile = localStorage.getItem("partx-profile-v1");
+      const savedCart = readBrowserStorage("local", "partx-cart-v1");
+      const savedOrders = readBrowserStorage("local", "partx-orders-v1") ?? readBrowserStorage("local", "motopart-orders-v1");
+      const savedProfile = readBrowserStorage("local", "partx-profile-v1");
       try { if (savedCart) setCart(JSON.parse(savedCart)); } catch {}
       try {
         if (savedOrders) {
@@ -167,7 +170,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
           }));
         }
       } catch {}
-      localStorage.removeItem("partx-auth-v1");
+      removeBrowserStorage("local", "partx-auth-v1");
       setHydrated(true);
     };
     queueMicrotask(hydrate);
@@ -175,25 +178,46 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let stopProfile = () => {};
+    let profileTimeout: number | undefined;
+    const clearProfileTimeout = () => {
+      if (profileTimeout !== undefined) window.clearTimeout(profileTimeout);
+      profileTimeout = undefined;
+    };
     const stopAuth = onAuthStateChanged(firebaseAuth, (authUser) => {
       stopProfile();
+      clearProfileTimeout();
       if (!authUser) {
         setUser(null);
+        removeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY);
         setFirebaseHydrated(true);
         return;
       }
+      const cachedUser = readCachedFirebaseUser(authUser.uid, authUser.email ?? "");
+      if (cachedUser) {
+        setUser(cachedUser);
+        setFirebaseHydrated(true);
+      } else {
+        setFirebaseHydrated(false);
+        profileTimeout = window.setTimeout(() => setFirebaseHydrated(true), 10_000);
+      }
       stopProfile = onSnapshot(doc(firestore, "users", authUser.uid), (snapshot) => {
-        setUser(snapshot.exists() ? parseFirebaseUser(authUser.uid, authUser.email ?? "", snapshot.data()) : null);
+        clearProfileTimeout();
+        const profile = snapshot.exists() ? parseFirebaseUser(authUser.uid, authUser.email ?? "", snapshot.data()) : null;
+        setUser(profile);
+        if (profile) writeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY, JSON.stringify(profile));
+        else removeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY);
         setFirebaseHydrated(true);
       }, () => {
-        setUser(null);
+        clearProfileTimeout();
+        if (!cachedUser) setUser(null);
         setFirebaseHydrated(true);
       });
     }, () => {
+      clearProfileTimeout();
       setUser(null);
       setFirebaseHydrated(true);
     });
-    return () => { stopProfile(); stopAuth(); };
+    return () => { clearProfileTimeout(); stopProfile(); stopAuth(); };
   }, []);
 
   useEffect(() => {
@@ -216,14 +240,14 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    if (hydrated) localStorage.setItem("partx-theme", theme);
+    if (hydrated) writeBrowserStorage("local", "partx-theme", theme);
   }, [theme, hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem("partx-cart-v1", JSON.stringify(cart));
-    localStorage.setItem("partx-orders-v1", JSON.stringify(orders));
-    localStorage.setItem("partx-profile-v1", JSON.stringify({ vehicles, activeVehicleId, location, garages, stores }));
+    writeBrowserStorage("local", "partx-cart-v1", JSON.stringify(cart));
+    writeBrowserStorage("local", "partx-orders-v1", JSON.stringify(orders));
+    writeBrowserStorage("local", "partx-profile-v1", JSON.stringify({ vehicles, activeVehicleId, location, garages, stores }));
   }, [cart, orders, vehicles, activeVehicleId, location, garages, stores, hydrated]);
 
   const catalog = useMemo(() => {
@@ -487,7 +511,9 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
           return false;
         }
         await updateDoc(doc(firestore, "users", credential.user.uid), { activeRole: role, updatedAt: serverTimestamp() });
-        setUser({ ...profile, activeRole: role });
+        const activeProfile = { ...profile, activeRole: role };
+        setUser(activeProfile);
+        writeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY, JSON.stringify(activeProfile));
         return true;
       } catch {
         return false;
@@ -524,6 +550,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         if (storeId) batch.set(doc(firestore, "stores", storeId), { ownerId: credential.user.uid, name: input.storeName?.trim(), status: "approved", rating: 0, ratingCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
         await batch.commit();
         setUser(profile);
+        writeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY, JSON.stringify(profile));
         return true;
       } catch {
         if (credential?.user) await deleteUser(credential.user).catch(() => undefined);
@@ -534,7 +561,11 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       if (!email.includes("@")) return false;
       try { await sendPasswordResetEmail(firebaseAuth, email.trim()); return true; } catch { return false; }
     },
-    signOut: async () => { setUser(null); await firebaseSignOut(firebaseAuth); },
+    signOut: async () => {
+      setUser(null);
+      removeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY);
+      await firebaseSignOut(firebaseAuth);
+    },
   }), [theme, resolvedCart, vehicles, activeVehicleId, location, garages, marketplaceStores, catalog, catalogById, storesById, orders, liveOrderUpdate, user, hydrated, firebaseHydrated]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
@@ -685,6 +716,18 @@ function parseFirebaseUser(uid: string, authEmail: string, data: Record<string, 
     storeIds: Array.isArray(data.storeIds) ? data.storeIds.filter((id): id is string => typeof id === "string") : undefined,
     storeName: typeof data.storeName === "string" ? data.storeName : undefined,
   };
+}
+
+function readCachedFirebaseUser(uid: string, authEmail: string) {
+  const cached = readBrowserStorage("local", AUTH_PROFILE_CACHE_KEY);
+  if (!cached) return null;
+  try {
+    const data = JSON.parse(cached) as Record<string, unknown>;
+    if (data.id !== uid) return null;
+    return parseFirebaseUser(uid, authEmail, data);
+  } catch {
+    return null;
+  }
 }
 
 export function usePartX() {

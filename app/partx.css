@@ -423,7 +423,9 @@ body:has(.px-auth), body:has(.px-seller-pending) { padding-bottom: 0; }
 .px-seller-pending dt { color: #7a8088; font-size: 9px; font-weight: 800; text-transform: uppercase; }
 .px-seller-pending dd { margin: 0; font-size: 11px; font-weight: 850; }
 .px-seller-pending .px-btn { margin: 0 auto; }
-.px-auth-loading { display: grid; min-height: 100svh; place-items: center; align-content: center; gap: 12px; background: var(--px-bg); color: var(--px-muted); font-size: 12px; }
+.px-auth-loading { display: grid; min-height: 100svh; place-items: center; align-content: center; gap: 12px; padding: 24px; background: var(--px-bg); color: var(--px-muted); font-size: 12px; text-align: center; }
+.px-auth-loading small { max-width: 320px; font-size: 13px; line-height: 1.5; }
+.px-auth-loading button { min-width: 112px; min-height: 44px; border: 1px solid var(--px-line); background: var(--px-card); color: var(--px-text); font: inherit; font-weight: 800; cursor: pointer; }
 .px-ticket-success { display: flex; align-items: center; gap: 8px; margin: 0; color: #16834a; font-size: 12px; font-weight: 800; }
 .px-ticket-success svg { width: 18px; }
 .px-rating-dialog { width: min(560px,100%); }

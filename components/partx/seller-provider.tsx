@@ -8,6 +8,7 @@ import { deleteCloudinaryProductImage, uploadProductImageToCloudinary } from "@/
 import { firestore } from "@/lib/firebase";
 import { usePartX } from "./app-provider";
 import { isValidUpiId } from "@/lib/upi-payments";
+import { readBrowserStorage, writeBrowserStorage } from "@/lib/browser-storage";
 
 type NewTicket = Pick<SellerTicket, "orderId" | "issue" | "message"> & { customer?: SellerTicket["customer"] };
 type SellerAlert = { kind: "order"; order: SellerOrder } | { kind: "payment"; order: SellerOrder } | { kind: "ticket"; ticket: SellerTicket };
@@ -172,7 +173,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     queueMicrotask(() => {
       try {
-        const saved = localStorage.getItem("partx-seller-v1");
+        const saved = readBrowserStorage("local", "partx-seller-v1");
         if (saved) {
           const value = JSON.parse(saved);
           if (value.tickets) setTickets(value.tickets);
@@ -200,7 +201,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem("partx-seller-v1", JSON.stringify({ tickets, ratings, productOverrides }));
+    writeBrowserStorage("local", "partx-seller-v1", JSON.stringify({ tickets, ratings, productOverrides }));
   }, [tickets, ratings, productOverrides, hydrated]);
 
   const value = useMemo<SellerContextValue>(() => ({
