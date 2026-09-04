@@ -10,7 +10,15 @@ import { Icon } from "./icons";
 import { ProductCard } from "./product-card";
 
 const categories = [
-  ["Brakes", 0, "Brake pads & discs"], ["Filters", 1, "Air, oil & cabin"], ["Batteries", 2, "Batteries & charging"], ["Engine", 3, "Plugs & engine parts"], ["Accessories", 4, "Wipers & essentials"], ["Fluids", 5, "Oils & lubricants"],
+  { name: "Brakes", image: "/categories/0-v2.png", description: "Pads, discs & calipers", href: "/shop?category=Brakes" },
+  { name: "Filters", image: "/categories/1-v2.png", description: "Air, oil & cabin filters", href: "/shop?category=Filters" },
+  { name: "Batteries", image: "/categories/2-v2.png", description: "Starting & charging", href: "/shop?category=Batteries" },
+  { name: "Electrical & lighting", image: "/categories/3-v2.png", description: "Headlamps, bulbs & electrics", href: "/shop?category=Electrical" },
+  { name: "Suspension", image: "/categories/4-v2.png", description: "Struts, shocks & springs", href: "/shop?category=Suspension" },
+  { name: "Engine", image: "/categories/5-v2.png", description: "Engine & service parts", href: "/shop?category=Engine" },
+  { name: "Ignition", image: "/parts/3-v2.png", description: "Spark plugs, coils & leads", href: "/shop?q=spark%20plug" },
+  { name: "Wipers", image: "/parts/4-v2.png", description: "Blades, arms & washers", href: "/shop?q=wiper" },
+  { name: "Oil filters", image: "/parts/5-v2.png", description: "Spin-on & cartridge filters", href: "/shop?q=oil%20filter" },
 ] as const;
 
 export function HomePage() {
@@ -45,7 +53,7 @@ export function HomePage() {
     <section className="px-section px-categories-section">
       <div className="px-container">
         <div className="px-section-head"><div><span>SHOP BY SYSTEM</span><h2>Popular categories</h2></div><Link href="/shop">View all parts <Icon name="arrow"/></Link></div>
-        <div className="px-category-grid">{categories.map(([name, image, description]) => <Link href={`/shop?category=${name}`} className="px-category-card" key={name}><div><Image src={`/categories/${image}-v2.png`} alt="" width={360} height={260}/></div><b>{name}</b><span>{description}</span><Icon name="arrow"/></Link>)}</div>
+        <div className="px-category-grid">{categories.map((category) => <Link href={category.href} className="px-category-card" key={category.name}><div><Image src={category.image} alt={`${category.name} auto parts`} width={360} height={260}/></div><b>{category.name}</b><span>{category.description}</span><Icon name="arrow"/></Link>)}</div>
       </div>
     </section>
 

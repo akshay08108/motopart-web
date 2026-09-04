@@ -99,7 +99,7 @@ button, select { cursor: pointer; }
 .px-section-head h2, .px-subsection h2, .px-panel h2, .px-summary h2, .px-cart-lines h2, .px-order-list h2, .px-support-aside h2 { margin: 5px 0 0; font-family: "Roboto Condensed Variable", sans-serif; font-size: 34px; font-weight: 900; line-height: 1.05; text-transform: uppercase; }
 .px-section-head > a { display: inline-flex; align-items: center; gap: 8px; color: var(--px-muted); font-size: 12px; font-weight: 800; }
 .px-section-head svg { width: 17px; color: var(--px-red); }
-.px-category-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
+.px-category-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .px-category-card { position: relative; min-width: 0; padding: 12px 12px 18px; border: 1px solid var(--px-line); background: var(--px-card); transition: .2s ease; }
 .px-category-card:hover { transform: translateY(-5px); border-color: var(--px-red); box-shadow: var(--px-shadow); }
 .px-category-card > div { display: grid; place-items: center; height: 126px; margin-bottom: 12px; overflow: hidden; background: var(--px-surface); }

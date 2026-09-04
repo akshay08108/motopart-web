@@ -17,7 +17,7 @@ export function ShopPage() {
   const [sort, setSort] = useState("recommended");
   const [storeSort, setStoreSort] = useState("rated");
   const { vehicles, activeVehicleId, catalog, stores } = usePartX();
-  const categories = useMemo(() => ["All", ...preferredCategories.filter((item) => catalog.some((product) => product.category === item)), ...[...new Set(catalog.map((product) => product.category))].filter((item) => !preferredCategories.includes(item))], [catalog]);
+  const categories = useMemo(() => ["All", ...preferredCategories, ...[...new Set(catalog.map((product) => product.category))].filter((item) => !preferredCategories.includes(item))], [catalog]);
   const [category, setCategory] = useState(initialCategory);
   const activeCategory = categories.includes(category) ? category : "All";
   const vehicle = vehicles.find((item) => item.id === activeVehicleId);
