@@ -143,6 +143,16 @@ export type StorePaymentSettings = {
   codEnabled: boolean;
 };
 
+export type LiveAnnouncement = {
+  id: string;
+  type: "arrival" | "seller";
+  text: string;
+  sellerId: string;
+  storeId: string;
+  storeName: string;
+  active: boolean;
+};
+
 export type SellerOrderStatus = "New" | "Accepted" | "Packing" | "Packed" | "Dispatched" | "Delivered";
 
 export type SellerCustomer = {

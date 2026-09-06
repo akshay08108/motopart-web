@@ -1,8 +1,8 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { collection, doc, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
-import type { NewSellerProduct, SellerOrder, SellerOrderStatus, SellerPaymentStatus, SellerProduct, SellerTicket, StorePaymentSettings, StoreRating } from "@/lib/types";
+import { collection, deleteDoc, doc, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
+import type { LiveAnnouncement, NewSellerProduct, SellerOrder, SellerOrderStatus, SellerPaymentStatus, SellerProduct, SellerTicket, StorePaymentSettings, StoreRating } from "@/lib/types";
 import { createPartXId, sellerTicketsSeed, storeRatingsSeed } from "@/lib/seller-data";
 import { deleteCloudinaryProductImage, uploadProductImageToCloudinary } from "@/lib/cloudinary-client";
 import { firestore } from "@/lib/firebase";
@@ -17,6 +17,7 @@ type SellerContextValue = {
   sellerOrders: SellerOrder[];
   paymentVerifications: SellerOrder[];
   paymentSettings: StorePaymentSettings | null;
+  announcements: LiveAnnouncement[];
   tickets: SellerTicket[];
   ratings: StoreRating[];
   alertsEnabled: boolean;
@@ -25,6 +26,9 @@ type SellerContextValue = {
   dismissAlert: () => void;
   updateOrderStatus: (orderId: string, status: SellerOrderStatus) => Promise<void>;
   savePaymentSettings: (settings: StorePaymentSettings) => Promise<void>;
+  addAnnouncement: (type: LiveAnnouncement["type"], text: string) => Promise<void>;
+  setAnnouncementActive: (announcementId: string, active: boolean) => Promise<void>;
+  removeAnnouncement: (announcementId: string) => Promise<void>;
   confirmPayment: (orderId: string) => Promise<void>;
   markPaymentNotFound: (orderId: string) => Promise<void>;
   addTicket: (ticket: NewTicket) => SellerTicket;
@@ -74,6 +78,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   const [sellerOrders, setSellerOrders] = useState<SellerOrder[]>([]);
   const [paymentVerifications, setPaymentVerifications] = useState<SellerOrder[]>([]);
   const [paymentSettings, setPaymentSettings] = useState<StorePaymentSettings | null>(null);
+  const [announcements, setAnnouncements] = useState<LiveAnnouncement[]>([]);
   const [tickets, setTickets] = useState<SellerTicket[]>(sellerTicketsSeed);
   const [ratings, setRatings] = useState<StoreRating[]>(storeRatingsSeed);
   const [alertsEnabled, setAlertsEnabled] = useState(false);
@@ -98,6 +103,18 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       query(collection(firestore, "products"), where("sellerId", "==", user.id)),
       (snapshot) => setSellerProducts(snapshot.docs.map((productDoc) => ({ id: productDoc.id, ...productDoc.data() } as SellerProduct))),
       () => setSellerProducts([]),
+    );
+  }, [user?.activeRole, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || user.activeRole !== "seller") {
+      queueMicrotask(() => setAnnouncements([]));
+      return;
+    }
+    return onSnapshot(
+      query(collection(firestore, "announcements"), where("sellerId", "==", user.id)),
+      (snapshot) => setAnnouncements(snapshot.docs.map((announcementDoc) => ({ id: announcementDoc.id, ...announcementDoc.data() } as LiveAnnouncement))),
+      () => setAnnouncements([]),
     );
   }, [user?.activeRole, user?.id]);
 
@@ -135,7 +152,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     };
 
     const unsubscribers = storeIds.map((storeId) => onSnapshot(
-      query(collection(firestore, "orders"), where("storeId", "==", storeId), where("sellerId", "==", user!.id)),
+      query(collection(firestore, "orders"), where("storeId", "==", storeId)),
       (snapshot) => {
         ordersByStore.set(storeId, snapshot.docs.map((orderDoc) => toSellerOrder(orderDoc.id, orderDoc.data())));
         refreshOrders();
@@ -208,6 +225,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     sellerOrders,
     paymentVerifications,
     paymentSettings,
+    announcements,
     tickets,
     ratings,
     alertsEnabled,
@@ -231,6 +249,25 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       if (!normalized.upiEnabled && !normalized.codEnabled) throw new Error("Enable at least one payment method.");
       await updateDoc(doc(firestore, "stores", storeId), { paymentSettings: normalized, updatedAt: serverTimestamp() });
       setPaymentSettings(normalized);
+    },
+    addAnnouncement: async (type, text) => {
+      const storeId = user?.storeIds?.[0];
+      const normalizedText = text.trim().replace(/\s+/g, " ");
+      if (!user || user.activeRole !== "seller" || !storeId) throw new Error("A seller store is required before publishing an update.");
+      if (normalizedText.length < 5 || normalizedText.length > 100) throw new Error("Write an update between 5 and 100 characters.");
+      await setDoc(doc(collection(firestore, "announcements")), {
+        type, text: normalizedText, sellerId: user.id, storeId,
+        storeName: user.storeName ?? "PartX seller", active: true,
+        createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+      });
+    },
+    setAnnouncementActive: async (announcementId, active) => {
+      if (!announcements.some((announcement) => announcement.id === announcementId)) throw new Error("You can only manage your store announcements.");
+      await updateDoc(doc(firestore, "announcements", announcementId), { active, updatedAt: serverTimestamp() });
+    },
+    removeAnnouncement: async (announcementId) => {
+      if (!announcements.some((announcement) => announcement.id === announcementId)) throw new Error("You can only remove your store announcements.");
+      await deleteDoc(doc(firestore, "announcements", announcementId));
     },
     confirmPayment: async (orderId) => {
       if (!user || user.activeRole !== "seller") throw new Error("Sign in as a seller to verify payments.");
@@ -383,7 +420,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       }
       if (product.imagePublicId) await deleteCloudinaryProductImage(product.imagePublicId).catch(() => undefined);
     },
-  }), [sellerOrders, paymentVerifications, paymentSettings, tickets, ratings, alertsEnabled, activeAlert, productOverrides, sellerProducts, updateOrderStage, user]);
+  }), [sellerOrders, paymentVerifications, paymentSettings, announcements, tickets, ratings, alertsEnabled, activeAlert, productOverrides, sellerProducts, updateOrderStage, user]);
 
   return <SellerContext.Provider value={value}>{children}</SellerContext.Provider>;
 }

@@ -3,8 +3,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createUserWithEmailAndPassword, deleteUser, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut as firebaseSignOut, updateProfile } from "firebase/auth";
 import { collection, doc, getDoc, onSnapshot, query, runTransaction, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore";
-import type { AppLocation, CartLine, CustomerUser, Garage, Order, OrderStage, PartnerStore, PaymentMethod, PaymentOrderStatus, Product, SellerPaymentStatus, SellerProduct, StorePaymentSettings, UserRole, Vehicle } from "@/lib/types";
-import { activeOrder, getDemoCatalog, vehicles as initialVehicles } from "@/lib/demo-data";
+import type { AppLocation, CartLine, CustomerUser, Garage, LiveAnnouncement, Order, OrderStage, PartnerStore, PaymentMethod, PaymentOrderStatus, Product, SellerPaymentStatus, SellerProduct, StorePaymentSettings, UserRole, Vehicle } from "@/lib/types";
+import { getDemoCatalog, vehicles as initialVehicles } from "@/lib/demo-data";
 import { firebaseAuth, firestore } from "@/lib/firebase";
 import { demoGarages, demoLocation, demoStores } from "@/lib/marketplace-data";
 import { createPartXId } from "@/lib/seller-data";
@@ -32,8 +32,6 @@ export type PartXOrder = Order & {
 export type CartSellerSelection = { storeId: string; storeName: string; price: number };
 export type RegisterInput = { name: string; email: string; mobile: string; password: string; role: UserRole; storeName?: string };
 
-const deliveredOrder: PartXOrder = { id: "PX-ORD-260820-J4F2", trackingId: "PX-TRK-8C4H2M", storeId: "autohub-mumbai", storeName: "AutoHub Mumbai", placedAt: "20 Aug, 4:18 PM", eta: "Delivered 21 Aug, 11:42 AM", stage: "Delivered", total: 1299, fulfilment: "delivery" };
-
 type AppContextValue = {
   theme: "light" | "dark";
   toggleTheme: () => void;
@@ -52,6 +50,7 @@ type AppContextValue = {
   garages: Garage[];
   addGarage: (garage: Garage) => void;
   stores: PartnerStore[];
+  announcements: LiveAnnouncement[];
   catalog: Product[];
   addStore: (store: PartnerStore) => void;
   submitStoreRating: (storeId: string, stars: number) => void;
@@ -81,12 +80,13 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   const [stores, setStores] = useState<PartnerStore[]>(demoStores);
   const [firebaseStores, setFirebaseStores] = useState<FirebaseStoreRecord[]>([]);
   const [firebaseProducts, setFirebaseProducts] = useState<SellerProduct[]>([]);
-  const [orders, setOrders] = useState<PartXOrder[]>([activeOrder, deliveredOrder]);
+  const [announcements, setAnnouncements] = useState<LiveAnnouncement[]>([]);
+  const [orders, setOrders] = useState<PartXOrder[]>([]);
   const [liveOrderUpdate, setLiveOrderUpdate] = useState<{ orderId: string; stage: OrderStage } | null>(null);
   const [user, setUser] = useState<CustomerUser | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [firebaseHydrated, setFirebaseHydrated] = useState(false);
-  const ordersRef = useRef<PartXOrder[]>([activeOrder, deliveredOrder]);
+  const ordersRef = useRef<PartXOrder[]>([]);
 
   useEffect(() => {
     ordersRef.current = orders;
@@ -99,27 +99,34 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     const stopProducts = onSnapshot(collection(firestore, "products"), (snapshot) => {
       setFirebaseProducts(snapshot.docs.map((productDoc) => ({ id: productDoc.id, ...productDoc.data() } as SellerProduct)).filter((product) => product.status === "published" || product.status === "out-of-stock"));
     }, () => setFirebaseProducts([]));
-    return () => { stopStores(); stopProducts(); };
+    const stopAnnouncements = onSnapshot(collection(firestore, "announcements"), (snapshot) => {
+      setAnnouncements(snapshot.docs.map((announcementDoc) => ({ id: announcementDoc.id, ...announcementDoc.data() } as LiveAnnouncement)).filter((announcement) => announcement.active && announcement.text.trim()));
+    }, () => setAnnouncements([]));
+    return () => { stopStores(); stopProducts(); stopAnnouncements(); };
   }, []);
 
   const isCustomer = user?.roles.includes("customer") ?? false;
 
   useEffect(() => {
     if (!user?.id || !isCustomer) return;
+    ordersRef.current = [];
+    queueMicrotask(() => setOrders([]));
     return onSnapshot(
       query(collection(firestore, "orders"), where("customerId", "==", user.id)),
       (snapshot) => {
         const liveOrders = snapshot.docs.map((orderDoc) => toCustomerOrder(orderDoc.id, orderDoc.data()));
-        const liveIds = new Set(liveOrders.map((order) => order.id));
         const previous = ordersRef.current;
         const changed = liveOrders.find((nextOrder) => {
           const current = previous.find((order) => order.id === nextOrder.id);
           return current && current.stage !== nextOrder.stage;
         });
-        const merged = [...liveOrders, ...previous.filter((order) => !liveIds.has(order.id))];
-        ordersRef.current = merged;
-        setOrders(merged);
+        ordersRef.current = liveOrders;
+        setOrders(liveOrders);
         if (changed) setLiveOrderUpdate({ orderId: changed.id, stage: changed.stage });
+      },
+      () => {
+        ordersRef.current = [];
+        setOrders([]);
       },
     );
   }, [isCustomer, user?.id]);
@@ -147,21 +154,11 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       const savedTheme = readBrowserStorage("local", "partx-theme") ?? readBrowserStorage("local", "motopart-theme");
       if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
       const savedCart = readBrowserStorage("local", "partx-cart-v1");
-      const savedOrders = readBrowserStorage("local", "partx-orders-v1") ?? readBrowserStorage("local", "motopart-orders-v1");
       const savedProfile = readBrowserStorage("local", "partx-profile-v1");
       try {
         if (savedCart) {
           const restoredCart = JSON.parse(savedCart);
           if (Array.isArray(restoredCart)) setCart(restoredCart);
-        }
-      } catch {}
-      try {
-        if (savedOrders) {
-          const storedOrders = JSON.parse(savedOrders);
-          if (Array.isArray(storedOrders)) {
-            const restored = storedOrders.flatMap(restoreStoredOrder);
-            setOrders(restored.some((order) => order.id === deliveredOrder.id) ? restored : [...restored, deliveredOrder]);
-          }
         }
       } catch {}
       try {
@@ -179,6 +176,8 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         }
       } catch {}
       removeBrowserStorage("local", "partx-auth-v1");
+      removeBrowserStorage("local", "partx-orders-v1");
+      removeBrowserStorage("local", "motopart-orders-v1");
       setHydrated(true);
     };
     queueMicrotask(hydrate);
@@ -229,24 +228,6 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const syncCustomerOrders = (event: StorageEvent) => {
-      if (event.key !== "partx-orders-v1" || !event.newValue) return;
-      try {
-        const incoming = JSON.parse(event.newValue) as PartXOrder[];
-        const changed = incoming.find((nextOrder) => {
-          const current = ordersRef.current.find((order) => order.id === nextOrder.id);
-          return current && current.stage !== nextOrder.stage;
-        });
-        ordersRef.current = incoming;
-        setOrders(incoming);
-        if (changed) setLiveOrderUpdate({ orderId: changed.id, stage: changed.stage });
-      } catch {}
-    };
-    window.addEventListener("storage", syncCustomerOrders);
-    return () => window.removeEventListener("storage", syncCustomerOrders);
-  }, []);
-
-  useEffect(() => {
     document.documentElement.dataset.theme = theme;
     if (hydrated) writeBrowserStorage("local", "partx-theme", theme);
   }, [theme, hydrated]);
@@ -254,9 +235,8 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!hydrated) return;
     writeBrowserStorage("local", "partx-cart-v1", JSON.stringify(cart));
-    writeBrowserStorage("local", "partx-orders-v1", JSON.stringify(orders));
     writeBrowserStorage("local", "partx-profile-v1", JSON.stringify({ vehicles, activeVehicleId, location, garages, stores }));
-  }, [cart, orders, vehicles, activeVehicleId, location, garages, stores, hydrated]);
+  }, [cart, vehicles, activeVehicleId, location, garages, stores, hydrated]);
 
   const catalog = useMemo(() => {
     const storeNames = new Map(firebaseStores.map((store) => [store.id, store.name]));
@@ -330,6 +310,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     garages,
     addGarage: (garage) => setGarages((current) => [...current, garage]),
     stores: marketplaceStores,
+    announcements,
     catalog,
     addStore: (store) => setStores((current) => [...current, store]),
     submitStoreRating: (storeId, stars) => setStores((current) => current.map((store) => {
@@ -467,7 +448,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     },
     submitUpiReference: async (orderId, reference) => {
       if (!user) throw new Error("Sign in before submitting a payment reference.");
-      if (!isValidUtr(reference)) throw new Error("Enter a valid 6–40 character UPI transaction reference or UTR.");
+      if (!isValidUtr(reference)) throw new Error("Enter the 12–35 digit bank UTR shown after a successful UPI payment.");
       const normalizedReference = normalizeUtr(reference);
       await runTransaction(firestore, async (transaction) => {
         const orderRef = doc(firestore, "orders", orderId);
@@ -579,7 +560,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       removeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY);
       await firebaseSignOut(firebaseAuth);
     },
-  }), [theme, resolvedCart, vehicles, activeVehicleId, location, garages, marketplaceStores, catalog, catalogById, storesById, orders, liveOrderUpdate, user, hydrated, firebaseHydrated]);
+  }), [theme, resolvedCart, vehicles, activeVehicleId, location, garages, marketplaceStores, announcements, catalog, catalogById, storesById, orders, liveOrderUpdate, user, hydrated, firebaseHydrated]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
@@ -705,13 +686,6 @@ function firestoreDate(value: unknown) {
     if (Number.isFinite(date.getTime())) return date;
   }
   return undefined;
-}
-
-function restoreStoredOrder(value: unknown): PartXOrder[] {
-  if (!value || typeof value !== "object") return [];
-  const order = value as PartXOrder;
-  if (typeof order.id !== "string" || typeof order.total !== "number" || !isOrderStage(order.stage)) return [];
-  return [{ ...order, expiresAt: firestoreDate(order.expiresAt) }];
 }
 
 function isSellerPaymentStatus(value: unknown): value is SellerPaymentStatus {

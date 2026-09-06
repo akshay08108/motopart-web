@@ -12,10 +12,16 @@ const nav = [
   ["/", "Home"], ["/shop", "Shop Parts"], ["/garage", "My Garage"], ["/orders", "Orders"], ["/offers", "Offers"],
 ];
 
+const fallbackAnnouncements = [
+  { id: "arrival-mg", text: "MG Hector parts now available" },
+  { id: "arrival-bmw", text: "BMW air filters back in stock" },
+  { id: "seller-new", text: "New PartX sellers joining soon" },
+] as const;
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { theme, toggleTheme, cartCount, user, authHydrated } = usePartX();
+  const { theme, toggleTheme, cartCount, announcements, user, authHydrated } = usePartX();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const submit = (event: FormEvent) => {
@@ -28,6 +34,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const authRoute = pathname === "/login" || pathname.startsWith("/login/");
   const isCustomer = Boolean(user?.roles.includes("customer"));
   const isSeller = Boolean(user?.roles.includes("seller"));
+  const liveUpdates = announcements.length ? [...announcements, ...fallbackAnnouncements] : fallbackAnnouncements;
 
   useEffect(() => {
     if (!authHydrated) return;
@@ -67,7 +74,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     </header>
-    <div className="px-ticker" aria-label="Latest parts"><span>LATEST PARTS</span><div><b>MG Hector parts now available</b><i/>BMW air filters back in stock<i/>New Bosch brake range added<i/>Free delivery above ₹999</div></div>
+    <div className="px-ticker" aria-label="Latest parts and sellers"><span>LIVE UPDATES</span><div>{liveUpdates.map((announcement, index) => <span className="px-ticker-item" key={announcement.id}><b>{announcement.text}</b>{index < liveUpdates.length - 1 ? <i/> : null}</span>)}</div></div>
     <main>{children}</main>
     <footer className="px-footer">
       <div className="px-container px-footer-grid">
@@ -90,5 +97,5 @@ function AuthLoading({ label }: { label: string }) {
     const timer = window.setTimeout(() => setSlow(true), 6_000);
     return () => window.clearTimeout(timer);
   }, []);
-  return <div className="px-auth-loading"><Image src="/brand/partx-light.png" alt="PartX" width={62} height={62}/><span>{label}</span>{slow ? <><small>This is taking longer than expected. Check your connection and try again.</small><button type="button" onClick={() => window.location.reload()}>Retry</button></> : null}</div>;
+  return <div className="px-auth-loading"><Image src="/brand/partx-light.png" alt="PartX" width={62} height={62} priority/><span>{label}</span>{slow ? <><small>This is taking longer than expected. Check your connection and try again.</small><button type="button" onClick={() => window.location.reload()}>Retry</button></> : null}</div>;
 }

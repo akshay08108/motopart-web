@@ -2,7 +2,7 @@ import type { StorePaymentSettings } from "./types";
 
 export const PAYMENT_EXPIRY_MINUTES = 15;
 export const UPI_ID_PATTERN = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9.-]{1,63}$/;
-export const UTR_PATTERN = /^[A-Z0-9]{6,40}$/;
+export const UTR_PATTERN = /^\d{12,35}$/;
 
 export function isValidUpiId(value: string) {
   return UPI_ID_PATTERN.test(value.trim());
@@ -26,6 +26,7 @@ export function createUpiUri(input: { upiId: string; displayName: string; amount
     cu: "INR",
     tr: input.orderId,
     tn: `PartX Order ${input.orderId}`,
+    url: `https://motopart-web.vercel.app/orders/${encodeURIComponent(input.orderId)}`,
   });
   return `upi://pay?${params.toString()}`;
 }

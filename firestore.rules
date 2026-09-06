@@ -150,7 +150,7 @@ service cloud.firestore {
         && !request.resource.data.keys().hasAny(['paymentVerifiedBy', 'paymentVerifiedAt', 'upiTransactionReference']);
       allow read: if signedIn() && (
         resource.data.customerId == request.auth.uid
-        || (ownsStore(resource.data.storeId) && resource.data.sellerId == request.auth.uid)
+        || ownsStore(resource.data.storeId)
       );
       allow update: if (
         isCustomer()
@@ -164,7 +164,7 @@ service cloud.firestore {
           'paymentSubmittedAt', 'updatedAt'
         ])
         && request.resource.data.upiTransactionReference is string
-        && request.resource.data.upiTransactionReference.matches('^[A-Z0-9]{6,40}$')
+        && request.resource.data.upiTransactionReference.matches('^[0-9]{12,35}$')
         && request.resource.data.paymentReference == request.resource.data.upiTransactionReference
         && resource.data.paymentMethod == 'upi'
         && resource.data.paymentStatus in ['PENDING', 'VERIFICATION_FAILED']
@@ -185,7 +185,6 @@ service cloud.firestore {
         )
       ) || (
         ownsStore(resource.data.storeId)
-        && resource.data.sellerId == request.auth.uid
         && resource.data.paymentMethod == 'upi'
         && resource.data.paymentStatus == 'PAYMENT_SUBMITTED'
         && request.resource.data.paymentStatus == 'PAID'
@@ -200,14 +199,12 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/paymentReferences/$(resource.data.upiTransactionReference)).data.status == 'PAID'
       ) || (
         ownsStore(resource.data.storeId)
-        && resource.data.sellerId == request.auth.uid
         && resource.data.paymentStatus == 'PAYMENT_SUBMITTED'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'orderStatus', 'updatedAt'])
         && request.resource.data.paymentStatus == 'VERIFICATION_FAILED'
         && request.resource.data.orderStatus == 'PAYMENT_VERIFICATION_PENDING'
       ) || (
         ownsStore(resource.data.storeId)
-        && resource.data.sellerId == request.auth.uid
         && (!resource.data.keys().hasAny(['orderStatus']) || resource.data.orderStatus == 'PLACED')
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'stage', 'eta', 'updatedAt'])
       );
@@ -217,7 +214,7 @@ service cloud.firestore {
     match /paymentReferences/{referenceId} {
       allow create: if isCustomer()
         && request.resource.data.reference == referenceId
-        && referenceId.matches('^[A-Z0-9]{6,40}$')
+        && referenceId.matches('^[0-9]{12,35}$')
         && request.resource.data.customerId == request.auth.uid
         && request.resource.data.status == 'PAYMENT_SUBMITTED'
         && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.customerId == request.auth.uid
@@ -262,6 +259,32 @@ service cloud.firestore {
         || (isSeller() && resource.data.storeId in currentUser().storeIds)
       );
       allow delete: if false;
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow create: if isSeller()
+        && request.resource.data.sellerId == request.auth.uid
+        && request.resource.data.storeId in currentUser().storeIds
+        && ownsStore(request.resource.data.storeId)
+        && request.resource.data.type in ['arrival', 'seller']
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 5
+        && request.resource.data.text.size() <= 100
+        && request.resource.data.active is bool;
+      allow update: if isSeller()
+        && resource.data.sellerId == request.auth.uid
+        && ownsStore(resource.data.storeId)
+        && request.resource.data.sellerId == resource.data.sellerId
+        && request.resource.data.storeId == resource.data.storeId
+        && request.resource.data.type in ['arrival', 'seller']
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 5
+        && request.resource.data.text.size() <= 100
+        && request.resource.data.active is bool;
+      allow delete: if isSeller()
+        && resource.data.sellerId == request.auth.uid
+        && ownsStore(resource.data.storeId);
     }
 
     match /{document=**} {

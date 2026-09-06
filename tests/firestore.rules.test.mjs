@@ -5,7 +5,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { doc, runTransaction, serverTimestamp, setDoc, Timestamp } from "firebase/firestore";
+import { deleteDoc, doc, getDoc, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc } from "firebase/firestore";
 
 const projectId = "demo-partx-rules";
 let environment;
@@ -99,7 +99,7 @@ test("customer can submit a new UTR without reading a nonexistent reference", as
 
   await assertSucceeds(runTransaction(database, async (transaction) => {
     const orderSnapshot = await transaction.get(orderRef);
-    const reference = "UTR123456789";
+    const reference = "423456789012";
     transaction.set(doc(database, "paymentReferences", reference), {
       reference,
       orderId: orderRef.id,
@@ -117,5 +117,44 @@ test("customer can submit a new UTR without reading a nonexistent reference", as
       paymentSubmittedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+  }));
+});
+
+test("seller can read a legacy store order even when sellerId is missing", async () => {
+  await environment.withSecurityRulesDisabled(async (context) => {
+    const legacyOrder = pendingUpiOrder();
+    delete legacyOrder.sellerId;
+    await setDoc(doc(context.firestore(), "orders", "PRTX-LEGACY-STORE"), legacyOrder);
+  });
+  const database = environment.authenticatedContext("seller-1").firestore();
+  await assertSucceeds(getDoc(doc(database, "orders", "PRTX-LEGACY-STORE")));
+});
+
+test("seller can publish, unpublish and remove a store announcement", async () => {
+  const database = environment.authenticatedContext("seller-1").firestore();
+  const announcementRef = doc(database, "announcements", "announcement-1");
+  await assertSucceeds(setDoc(announcementRef, {
+    type: "arrival",
+    text: "BMW X1 air filters now available",
+    sellerId: "seller-1",
+    storeId: "store-1",
+    storeName: "ARR Autostore",
+    active: true,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(announcementRef, { active: false, updatedAt: serverTimestamp() }));
+  await assertSucceeds(deleteDoc(announcementRef));
+});
+
+test("customer cannot publish a seller announcement", async () => {
+  const database = environment.authenticatedContext("customer-1").firestore();
+  await assertFails(setDoc(doc(database, "announcements", "forged-announcement"), {
+    type: "seller",
+    text: "Untrusted seller joining soon",
+    sellerId: "customer-1",
+    storeId: "store-1",
+    storeName: "Wrong store",
+    active: true,
   }));
 });

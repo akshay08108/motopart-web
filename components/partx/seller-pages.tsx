@@ -13,14 +13,14 @@ const packStatuses: SellerOrderStatus[] = ["New", "Accepted", "Packing"];
 const nextStatus: Partial<Record<SellerOrderStatus, SellerOrderStatus>> = { New: "Accepted", Accepted: "Packing", Packing: "Packed", Packed: "Dispatched", Dispatched: "Delivered" };
 
 export function SellerDashboardPage() {
-  const { sellerOrders, paymentVerifications, tickets, ratings, productOverrides } = useSeller();
+  const { sellerOrders, paymentVerifications, tickets, ratings, sellerProducts } = useSeller();
   const { user } = usePartX();
   const storeId = user?.storeIds?.[0];
   const storeRatings = ratings.filter((rating) => rating.storeId === storeId);
   const rating = ratingSummary(storeRatings);
   const openTickets = tickets.filter((ticket) => ticket.status === "Open");
   const toPack = sellerOrders.filter((order) => packStatuses.includes(order.status));
-  const lowStock = Object.entries(productOverrides).filter(([, item]) => item.stock < 5);
+  const lowStock = sellerProducts.filter((product) => product.stock < 5).toSorted((a, b) => a.stock - b.stock);
   return <>
     <SellerTitle title="Seller command center" subtitle="Overview of your store operations" />
     <div className="sx-stats">
@@ -35,7 +35,7 @@ export function SellerDashboardPage() {
       <section className="sx-panel sx-attention"><PanelHead title="Needs attention" href="/seller/tickets" link="View all tickets"/>{openTickets.slice(0, 1).map((ticket) => <article key={ticket.id}><div><b>{ticket.id}</b><span>{ticket.priority}</span></div><small>Order ID</small><strong>{ticket.orderId}</strong><small>Issue</small><h3>{ticket.issue}</h3><small>Customer</small><b>{ticket.customer.name}</b><p>{ticket.createdAt}</p><Link className="sx-primary" href={`/seller/tickets?ticket=${ticket.id}`}>Review ticket</Link></article>)}</section>
     </div>
     <div className="sx-lower-grid">
-      <section className="sx-panel"><PanelHead title="Stock needs attention" href="/seller/products" link="View all products"/><div className="sx-stock-list">{lowStock.map(([partNumber, item]) => <div key={partNumber}><b>{getDemoCatalog().find((product) => product.partNumber === partNumber)?.name ?? partNumber}</b><span>{partNumber}</span><strong>{item.stock} units</strong><em>{item.stock === 0 ? "Out of stock" : "Low stock"}</em><Link href="/seller/products">Update stock</Link></div>)}</div></section>
+      <section className="sx-panel"><PanelHead title="Stock needs attention" href="/seller/products" link="View all products"/><div className="sx-stock-list">{lowStock.map((product) => <div key={product.id}><b>{product.name}</b><span>{product.partNumber}</span><strong>{product.stock} units</strong><em>{product.stock === 0 ? "Out of stock" : "Low stock"}</em><Link href="/seller/products">Update stock</Link></div>)}{!lowStock.length ? <p className="sx-stock-clear"><Icon name="check"/>All Firebase inventory has at least 5 units.</p> : null}</div></section>
       <section className="sx-panel sx-rating-summary"><PanelHead title="Verified ratings" href="/seller/reviews" link="View all reviews"/><div><strong>{rating.count ? rating.average.toFixed(1) : "New"}{rating.count ? <small>/ 5</small> : null}</strong><div className="sx-stars">{rating.stars}</div><span>{rating.count ? `Based on ${rating.count} verified ${rating.count === 1 ? "review" : "reviews"}` : "No verified ratings yet"}</span></div><div className="sx-rating-bars">{rating.distribution.map(({ star, percentage }) => <div key={star}><b>{star} ★</b><i><span style={{width:`${percentage}%`}}/></i><em>{percentage}%</em></div>)}</div><small>{user?.storeName ?? "Your store"} ratings only</small></section>
     </div>
   </>;
@@ -145,8 +145,11 @@ export function SellerSettingsPage() {
   const [paymentSaved, setPaymentSaved] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+  const [announcementMessage, setAnnouncementMessage] = useState("");
+  const [announcementError, setAnnouncementError] = useState("");
+  const [savingAnnouncement, setSavingAnnouncement] = useState(false);
   const { user } = usePartX();
-  const { paymentSettings, savePaymentSettings } = useSeller();
+  const { paymentSettings, announcements, savePaymentSettings, addAnnouncement, setAnnouncementActive, removeAnnouncement } = useSeller();
   const defaults: StorePaymentSettings = paymentSettings ?? { upiId: "", upiDisplayName: user?.storeName ?? "", upiEnabled: false, codEnabled: true };
   const savePayments = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setPaymentError(""); setSavingPayment(true);
@@ -160,7 +163,37 @@ export function SellerSettingsPage() {
       setSavingPayment(false);
     }
   };
-  return <><SellerTitle title="Store settings" subtitle="Manage seller identity, hours, fulfilment and payment preferences"/><div className="sx-settings-grid"><form className="sx-panel sx-settings" onSubmit={(event)=>{event.preventDefault();setProfileSaved(true);}}><PanelHead title="Store profile"/><div className="sx-form-grid"><label>Store name<input defaultValue={user?.storeName ?? "Your store"}/></label><label>Seller owner<input defaultValue={user?.name ?? "Store owner"}/></label><label>Phone<input defaultValue={user?.mobile ?? ""}/></label><label>GSTIN<input placeholder="Add GSTIN"/></label><label>Business hours<input defaultValue="9:00 AM – 9:00 PM"/></label><label>Delivery radius<input defaultValue="8 km"/></label></div><label>Store address<textarea placeholder="Add your store address"/></label><label className="sx-check"><input type="checkbox" defaultChecked/>Receive new-order and urgent-ticket browser alerts</label><button className="sx-primary" type="submit">{profileSaved?"Settings saved":"Save store settings"}</button><p>Your seller account can add products and receive orders immediately.</p></form><form className="sx-panel sx-settings sx-payment-settings" key={`${defaults.upiId}-${defaults.upiEnabled}-${defaults.codEnabled}`} onSubmit={(event) => void savePayments(event)}><PanelHead title="Payment settings"/><p>Customers pay your store directly. PartX currently charges 0% commission and does not hold the payment.</p><label>UPI ID<input name="upiId" defaultValue={defaults.upiId} placeholder="store@bank" autoComplete="off"/></label><label>UPI account / display name<input name="upiDisplayName" defaultValue={defaults.upiDisplayName} placeholder="Name customers see in their UPI app"/></label><label className="sx-check"><input name="upiEnabled" type="checkbox" defaultChecked={defaults.upiEnabled}/>Enable direct UPI payments</label><label className="sx-check"><input name="codEnabled" type="checkbox" defaultChecked={defaults.codEnabled}/>Enable cash on delivery</label>{paymentError ? <p className="sx-form-error" role="alert">{paymentError}</p> : null}<button className="sx-primary" type="submit" disabled={savingPayment}>{savingPayment ? "Saving…" : paymentSaved ? "Payment settings saved" : "Save payment settings"}</button><small>PartX never asks for or stores your UPI PIN. Your UPI details are snapshotted on each payment attempt.</small></form></div></>;
+  const publishAnnouncement = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setAnnouncementError(""); setAnnouncementMessage(""); setSavingAnnouncement(true);
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    try {
+      await addAnnouncement(data.get("type") === "seller" ? "seller" : "arrival", String(data.get("text") ?? ""));
+      form.reset();
+      setAnnouncementMessage("Live banner update published.");
+    } catch (reason) {
+      setAnnouncementError(reason instanceof Error ? reason.message : "The live update could not be published.");
+    } finally {
+      setSavingAnnouncement(false);
+    }
+  };
+  return <>
+    <SellerTitle title="Store settings" subtitle="Manage seller identity, hours, fulfilment and payment preferences"/>
+    <div className="sx-settings-grid">
+      <form className="sx-panel sx-settings" onSubmit={(event)=>{event.preventDefault();setProfileSaved(true);}}>
+        <PanelHead title="Store profile"/><div className="sx-form-grid"><label>Store name<input defaultValue={user?.storeName ?? "Your store"}/></label><label>Seller owner<input defaultValue={user?.name ?? "Store owner"}/></label><label>Phone<input defaultValue={user?.mobile ?? ""}/></label><label>GSTIN<input placeholder="Add GSTIN"/></label><label>Business hours<input defaultValue="9:00 AM – 9:00 PM"/></label><label>Delivery radius<input defaultValue="8 km"/></label></div><label>Store address<textarea placeholder="Add your store address"/></label><label className="sx-check"><input type="checkbox" defaultChecked/>Receive new-order and urgent-ticket browser alerts</label><button className="sx-primary" type="submit">{profileSaved?"Settings saved":"Save store settings"}</button><p>Your seller account can add products and receive orders immediately.</p>
+      </form>
+      <form className="sx-panel sx-settings sx-payment-settings" key={`${defaults.upiId}-${defaults.upiEnabled}-${defaults.codEnabled}`} onSubmit={(event) => void savePayments(event)}>
+        <PanelHead title="Payment settings"/><p>Customers pay your store directly. PartX currently charges 0% commission and does not hold the payment.</p><label>UPI ID<input name="upiId" defaultValue={defaults.upiId} placeholder="store@bank" autoComplete="off"/></label><label>UPI account / display name<input name="upiDisplayName" defaultValue={defaults.upiDisplayName} placeholder="Name customers see in their UPI app"/></label><label className="sx-check"><input name="upiEnabled" type="checkbox" defaultChecked={defaults.upiEnabled}/>Enable direct UPI payments</label><label className="sx-check"><input name="codEnabled" type="checkbox" defaultChecked={defaults.codEnabled}/>Enable cash on delivery</label>{paymentError ? <p className="sx-form-error" role="alert">{paymentError}</p> : null}<button className="sx-primary" type="submit" disabled={savingPayment}>{savingPayment ? "Saving…" : paymentSaved ? "Payment settings saved" : "Save payment settings"}</button><small>Use a verified business/merchant UPI ID. Personal VPAs may be flagged or declined by payment apps. PartX never asks for or stores your UPI PIN.</small>
+      </form>
+      <section className="sx-panel sx-settings sx-announcement-settings">
+        <PanelHead title="Live banner updates"/><p>Publish a new arrival or announce an upcoming seller. Active updates appear instantly on the customer banner.</p>
+        <form onSubmit={(event) => void publishAnnouncement(event)}><label>Update type<select name="type" defaultValue="arrival"><option value="arrival">New arrival</option><option value="seller">Upcoming seller</option></select></label><label>Banner message<input name="text" required minLength={5} maxLength={100} placeholder="e.g. BMW X1 air filters now available"/></label><button className="sx-primary" type="submit" disabled={savingAnnouncement}>{savingAnnouncement ? "Publishing…" : "Publish live update"}</button></form>
+        {announcementMessage ? <p className="sx-product-success" role="status"><Icon name="check"/>{announcementMessage}</p> : null}{announcementError ? <p className="sx-form-error" role="alert">{announcementError}</p> : null}
+        <div className="sx-announcement-list">{announcements.map((announcement) => <article key={announcement.id}><div><span>{announcement.type === "seller" ? "UPCOMING SELLER" : "NEW ARRIVAL"}</span><b>{announcement.text}</b></div><button type="button" onClick={() => void setAnnouncementActive(announcement.id, !announcement.active)}>{announcement.active ? "Unpublish" : "Publish"}</button><button type="button" onClick={() => void removeAnnouncement(announcement.id)}>Remove</button></article>)}{!announcements.length ? <small>No store updates published yet.</small> : null}</div>
+      </section>
+    </div>
+  </>;
 }
 
 function SellerOrderTable({ orders, all=false }: { orders: SellerOrder[]; all?: boolean }) {
