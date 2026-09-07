@@ -9,13 +9,13 @@ export const sellerOrdersSeed: SellerOrder[] = [
 ];
 
 export const sellerTicketsSeed: SellerTicket[] = [
-  { id: "PX-TKT-10482", orderId: "PX-ORD-260824-F3Q9", customer: { name: "Akshay Singh", phone: "+91 98765 43210", email: "akshay@gmail.com" }, issue: "Wrong part received", message: "The brake pads delivered do not match my Hyundai Creta. The box part number is BP-0986-424-883.", createdAt: "3 min ago", priority: "Urgent", status: "Open", orderedProduct: "Front Disc Brake Pad Set · BP-0986-424-384", deliveredProduct: "Brake Pad Set · BP-0986-424-883" },
-  { id: "PX-TKT-10481", orderId: "PX-ORD-260825-A7K4", customer: { name: "Rohit Verma", phone: "+91 91234 56789", email: "rohit@gmail.com" }, issue: "Item damaged", message: "The outer packaging is crushed and the filter frame is bent.", createdAt: "28 min ago", priority: "High", status: "Open", orderedProduct: "High-flow Engine Air Filter · LX-3541" },
+  { id: "PX-TKT-10482", orderId: "PX-ORD-260824-F3Q9", storeId: "autohub-mumbai", storeName: "AutoHub Mumbai", customerId: "demo-customer-1", customer: { name: "Akshay Singh", phone: "+91 98765 43210", email: "akshay@gmail.com" }, issue: "Wrong part received", message: "The brake pads delivered do not match my Hyundai Creta. The box part number is BP-0986-424-883.", createdAt: "3 min ago", priority: "Urgent", status: "Open", orderedProduct: "Front Disc Brake Pad Set · BP-0986-424-384", deliveredProduct: "Brake Pad Set · BP-0986-424-883" },
+  { id: "PX-TKT-10481", orderId: "PX-ORD-260825-A7K4", storeId: "autohub-mumbai", storeName: "AutoHub Mumbai", customerId: "demo-customer-2", customer: { name: "Rohit Verma", phone: "+91 91234 56789", email: "rohit@gmail.com" }, issue: "Item damaged", message: "The outer packaging is crushed and the filter frame is bent.", createdAt: "28 min ago", priority: "High", status: "Open", orderedProduct: "High-flow Engine Air Filter · LX-3541" },
 ];
 
 export const storeRatingsSeed: StoreRating[] = [
-  { id: "PX-REV-1008", orderId: "PX-ORD-260818-J4F2", storeId: "autohub-mumbai", customerName: "Priya Nair", stars: 5, comment: "Correct part and fast delivery. Fitment was perfect.", createdAt: "22 Aug 2026", verified: true },
-  { id: "PX-REV-1007", orderId: "PX-ORD-260819-C2M8", storeId: "autohub-mumbai", customerName: "Rahul Desai", stars: 4, comment: "Well packed and exactly as described.", createdAt: "21 Aug 2026", verified: true },
+  { id: "PX-REV-1008", orderId: "PX-ORD-260818-J4F2", storeId: "autohub-mumbai", storeName: "AutoHub Mumbai", customerId: "demo-customer-3", customerName: "Priya Nair", stars: 5, comment: "Correct part and fast delivery. Fitment was perfect.", createdAt: "22 Aug 2026", verified: true },
+  { id: "PX-REV-1007", orderId: "PX-ORD-260819-C2M8", storeId: "autohub-mumbai", storeName: "AutoHub Mumbai", customerId: "demo-customer-4", customerName: "Rahul Desai", stars: 4, comment: "Well packed and exactly as described.", createdAt: "21 Aug 2026", verified: true },
 ];
 
 export function createPartXId(kind: "ORD" | "TRK" | "TKT" | "REV" | "PAY") {

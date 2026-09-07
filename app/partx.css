@@ -117,6 +117,9 @@ button, select { cursor: pointer; }
 .px-product-body { padding: 18px; }
 .px-product-meta { display: flex; justify-content: space-between; color: var(--px-muted); font-size: 11px; }
 .px-product-meta b { color: var(--px-red); letter-spacing: .08em; }
+.px-product-store { display: flex; align-items: center; gap: 5px; margin: 7px 0 5px; color: var(--px-muted); font-size: 10px; }
+.px-product-store svg { width: 13px; height: 13px; color: var(--px-red); flex: 0 0 auto; }
+.px-product-store b { color: var(--px-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .px-product-body h3 { min-height: 48px; margin: 8px 0 12px; font-size: 16px; line-height: 1.45; }
 .px-fitment { display: flex; align-items: center; gap: 6px; margin: 0 0 14px; color: var(--px-muted); font-size: 10px; font-weight: 750; }
 .px-fitment.fits { color: #16834a; }
@@ -429,6 +432,14 @@ body:has(.px-auth), body:has(.px-seller-pending) { padding-bottom: 0; }
 .px-auth-loading button { min-width: 112px; min-height: 44px; border: 1px solid var(--px-line); background: var(--px-card); color: var(--px-text); font: inherit; font-weight: 800; cursor: pointer; }
 .px-ticket-success { display: flex; align-items: center; gap: 8px; margin: 0; color: #16834a; font-size: 12px; font-weight: 800; }
 .px-ticket-success svg { width: 18px; }
+.px-support-history { display: grid; gap: 10px; margin-top: 28px; }
+.px-support-history > span { color: var(--px-red); font-size: 11px; font-weight: 900; letter-spacing: .16em; }
+.px-support-history > h2 { margin: 0 0 4px; font-family: "Roboto Condensed Variable", sans-serif; font-size: 28px; text-transform: uppercase; }
+.px-support-history article { display: grid; gap: 8px; padding: 18px 20px; }
+.px-support-history article > div { display: flex; justify-content: space-between; gap: 14px; }
+.px-support-history article > div span { color: var(--px-red); font-size: 11px; font-weight: 900; text-transform: uppercase; }
+.px-support-history article p { margin: 0; color: var(--px-muted); }
+.px-support-history article small, .px-support-history article em { color: var(--px-muted); font-size: 11px; font-style: normal; }
 .px-rating-dialog { width: min(560px,100%); }
 .px-rating-dialog .px-modal-head > div > span { color: var(--px-red); font-size: 10px; font-weight: 900; letter-spacing: .14em; }
 .px-rating-dialog > p { color: var(--px-muted); }

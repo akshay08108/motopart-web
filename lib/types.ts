@@ -196,6 +196,9 @@ export type SellerTicketPriority = "Urgent" | "High" | "Normal";
 export type SellerTicket = {
   id: string;
   orderId: string;
+  storeId: string;
+  storeName: string;
+  customerId: string;
   customer: SellerCustomer;
   issue: string;
   message: string;
@@ -212,6 +215,8 @@ export type StoreRating = {
   id: string;
   orderId: string;
   storeId: string;
+  storeName: string;
+  customerId: string;
   customerName: string;
   stars: number;
   comment: string;

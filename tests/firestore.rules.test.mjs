@@ -5,7 +5,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { deleteDoc, doc, getDoc, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, where } from "firebase/firestore";
 
 const projectId = "demo-partx-rules";
 let environment;
@@ -21,8 +21,14 @@ before(async () => {
     await setDoc(doc(database, "users", "customer-1"), {
       roles: ["customer"], activeRole: "customer",
     });
+    await setDoc(doc(database, "users", "customer-2"), {
+      roles: ["customer"], activeRole: "customer",
+    });
     await setDoc(doc(database, "users", "seller-1"), {
-      roles: ["seller"], activeRole: "seller", storeIds: ["store-1"],
+      roles: ["seller"], activeRole: "seller", storeIds: ["store-1", "store-1b"],
+    });
+    await setDoc(doc(database, "users", "seller-2"), {
+      roles: ["seller"], activeRole: "seller", storeIds: ["store-2"],
     });
     await setDoc(doc(database, "stores", "store-1"), {
       ownerId: "seller-1",
@@ -34,6 +40,12 @@ before(async () => {
         upiEnabled: true,
         codEnabled: true,
       },
+    });
+    await setDoc(doc(database, "stores", "store-1b"), {
+      ownerId: "seller-1", name: "F1 Automotives", status: "approved",
+    });
+    await setDoc(doc(database, "stores", "store-2"), {
+      ownerId: "seller-2", name: "Other Store", status: "approved",
     });
   });
 });
@@ -157,4 +169,46 @@ test("customer cannot publish a seller announcement", async () => {
     storeName: "Wrong store",
     active: true,
   }));
+});
+
+test("ticket reaches the selected store and can be resolved only by its seller", async () => {
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), "orders", "ORDER-TICKET-1"), {
+      ...pendingUpiOrder(), storeId: "store-1b", storeName: "F1 Automotives", stage: "Delivered",
+    });
+  });
+  const customer = environment.authenticatedContext("customer-1").firestore();
+  const ticketRef = doc(customer, "tickets", "TKT-STORE-1B");
+  await assertSucceeds(setDoc(ticketRef, {
+    id: "TKT-STORE-1B", orderId: "ORDER-TICKET-1", storeId: "store-1b", storeName: "F1 Automotives",
+    customerId: "customer-1", customer: { name: "Customer", phone: "9999999999", email: "customer@example.com" },
+    issue: "Wrong part received", message: "The delivered part does not match my order.",
+    priority: "Urgent", status: "Open", orderedProduct: "Bolt 10 Number",
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(getDocs(query(collection(customer, "tickets"), where("customerId", "==", "customer-1"))));
+
+  const owner = environment.authenticatedContext("seller-1").firestore();
+  await assertSucceeds(getDocs(query(collection(owner, "tickets"), where("storeId", "==", "store-1b"))));
+  await assertSucceeds(updateDoc(doc(owner, "tickets", "TKT-STORE-1B"), {
+    status: "Resolved", internalNote: "Replacement arranged", resolvedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+
+  const otherSeller = environment.authenticatedContext("seller-2").firestore();
+  await assertFails(getDoc(doc(otherSeller, "tickets", "TKT-STORE-1B")));
+});
+
+test("only the customer can review the delivered order once", async () => {
+  const customer = environment.authenticatedContext("customer-1").firestore();
+  const rating = {
+    id: "ORDER-TICKET-1", orderId: "ORDER-TICKET-1", storeId: "store-1b", storeName: "F1 Automotives",
+    customerId: "customer-1", customerName: "Customer", stars: 5, comment: "Correct replacement and helpful service.",
+    verified: true, createdAt: serverTimestamp(),
+  };
+  await assertSucceeds(setDoc(doc(customer, "ratings", "ORDER-TICKET-1"), rating));
+  await assertSucceeds(getDocs(collection(environment.unauthenticatedContext().firestore(), "ratings")));
+  await assertFails(updateDoc(doc(customer, "ratings", "ORDER-TICKET-1"), { stars: 1 }));
+
+  const otherCustomer = environment.authenticatedContext("customer-2").firestore();
+  await assertFails(setDoc(doc(otherCustomer, "ratings", "ORDER-TICKET-1"), { ...rating, customerId: "customer-2" }));
 });

@@ -80,6 +80,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   const [stores, setStores] = useState<PartnerStore[]>(demoStores);
   const [firebaseStores, setFirebaseStores] = useState<FirebaseStoreRecord[]>([]);
   const [firebaseProducts, setFirebaseProducts] = useState<SellerProduct[]>([]);
+  const [firebaseRatings, setFirebaseRatings] = useState<Array<{ storeId: string; stars: number }>>([]);
   const [announcements, setAnnouncements] = useState<LiveAnnouncement[]>([]);
   const [orders, setOrders] = useState<PartXOrder[]>([]);
   const [liveOrderUpdate, setLiveOrderUpdate] = useState<{ orderId: string; stage: OrderStage } | null>(null);
@@ -102,7 +103,10 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     const stopAnnouncements = onSnapshot(collection(firestore, "announcements"), (snapshot) => {
       setAnnouncements(snapshot.docs.map((announcementDoc) => ({ id: announcementDoc.id, ...announcementDoc.data() } as LiveAnnouncement)).filter((announcement) => announcement.active && announcement.text.trim()));
     }, () => setAnnouncements([]));
-    return () => { stopStores(); stopProducts(); stopAnnouncements(); };
+    const stopRatings = onSnapshot(collection(firestore, "ratings"), (snapshot) => {
+      setFirebaseRatings(snapshot.docs.map((ratingDoc) => ({ storeId: String(ratingDoc.data().storeId ?? ""), stars: Number(ratingDoc.data().stars ?? 0) })).filter((rating) => rating.storeId && Number.isInteger(rating.stars) && rating.stars >= 1 && rating.stars <= 5));
+    }, () => setFirebaseRatings([]));
+    return () => { stopStores(); stopProducts(); stopAnnouncements(); stopRatings(); };
   }, []);
 
   const isCustomer = user?.roles.includes("customer") ?? false;
@@ -250,10 +254,16 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     for (const store of firebaseStores) {
       const existing = combined.get(store.id);
       const sellerProducts = firebaseProducts.filter((product) => product.storeId === store.id);
-      combined.set(store.id, toPartnerStore(store, sellerProducts, existing));
+      const storeRatings = firebaseRatings.filter((rating) => rating.storeId === store.id);
+      const partnerStore = toPartnerStore(store, sellerProducts, existing);
+      combined.set(store.id, storeRatings.length ? {
+        ...partnerStore,
+        rating: Number((storeRatings.reduce((sum, rating) => sum + rating.stars, 0) / storeRatings.length).toFixed(1)),
+        ratingCount: storeRatings.length,
+      } : partnerStore);
     }
     return [...combined.values()];
-  }, [firebaseProducts, firebaseStores, stores]);
+  }, [firebaseProducts, firebaseRatings, firebaseStores, stores]);
 
   const catalogById = useMemo(() => new Map(catalog.map((product) => [product.id, product])), [catalog]);
   const storesById = useMemo(() => new Map(marketplaceStores.map((store) => [store.id, store])), [marketplaceStores]);

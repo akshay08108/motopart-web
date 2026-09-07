@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { collection, deleteDoc, doc, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import type { LiveAnnouncement, NewSellerProduct, SellerOrder, SellerOrderStatus, SellerPaymentStatus, SellerProduct, SellerTicket, StorePaymentSettings, StoreRating } from "@/lib/types";
-import { createPartXId, sellerTicketsSeed, storeRatingsSeed } from "@/lib/seller-data";
+import { createPartXId } from "@/lib/seller-data";
 import { deleteCloudinaryProductImage, uploadProductImageToCloudinary } from "@/lib/cloudinary-client";
 import { firestore } from "@/lib/firebase";
 import { usePartX } from "./app-provider";
@@ -31,9 +31,9 @@ type SellerContextValue = {
   removeAnnouncement: (announcementId: string) => Promise<void>;
   confirmPayment: (orderId: string) => Promise<void>;
   markPaymentNotFound: (orderId: string) => Promise<void>;
-  addTicket: (ticket: NewTicket) => SellerTicket;
-  resolveTicket: (ticketId: string, internalNote: string) => void;
-  addRating: (rating: Omit<StoreRating, "id" | "createdAt" | "verified">) => StoreRating;
+  addTicket: (ticket: NewTicket) => Promise<SellerTicket>;
+  resolveTicket: (ticketId: string, internalNote: string) => Promise<void>;
+  addRating: (rating: Pick<StoreRating, "orderId" | "storeId" | "stars" | "comment">) => Promise<StoreRating>;
   updateProduct: (partNumber: string, price: number, stock: number) => void;
   productOverrides: Record<string, { price: number; stock: number }>;
   sellerProducts: SellerProduct[];
@@ -74,13 +74,13 @@ function resumeAndPlayAlert(context: AudioContext) {
 }
 
 export function SellerProvider({ children }: { children: React.ReactNode }) {
-  const { updateOrderStage, user } = usePartX();
+  const { orders: customerOrders, updateOrderStage, user } = usePartX();
   const [sellerOrders, setSellerOrders] = useState<SellerOrder[]>([]);
   const [paymentVerifications, setPaymentVerifications] = useState<SellerOrder[]>([]);
   const [paymentSettings, setPaymentSettings] = useState<StorePaymentSettings | null>(null);
   const [announcements, setAnnouncements] = useState<LiveAnnouncement[]>([]);
-  const [tickets, setTickets] = useState<SellerTicket[]>(sellerTicketsSeed);
-  const [ratings, setRatings] = useState<StoreRating[]>(storeRatingsSeed);
+  const [tickets, setTickets] = useState<SellerTicket[]>([]);
+  const [ratings, setRatings] = useState<StoreRating[]>([]);
   const [alertsEnabled, setAlertsEnabled] = useState(false);
   const [activeAlert, setActiveAlert] = useState<SellerAlert | null>(null);
   const [productOverrides, setProductOverrides] = useState<Record<string, { price: number; stock: number }>>({
@@ -177,6 +177,57 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [sellerStoreIdsKey, user]);
 
+  useEffect(() => {
+    if (!user?.id) {
+      queueMicrotask(() => { setTickets([]); setRatings([]); });
+      return;
+    }
+
+    if (user.activeRole === "customer") {
+      const stopTickets = onSnapshot(
+        query(collection(firestore, "tickets"), where("customerId", "==", user.id)),
+        (snapshot) => setTickets(snapshot.docs.map((ticketDoc) => toSellerTicket(ticketDoc.id, ticketDoc.data())).sort(newestFirst)),
+        () => setTickets([]),
+      );
+      const stopRatings = onSnapshot(
+        query(collection(firestore, "ratings"), where("customerId", "==", user.id)),
+        (snapshot) => setRatings(snapshot.docs.map((ratingDoc) => toStoreRating(ratingDoc.id, ratingDoc.data())).sort(newestFirst)),
+        () => setRatings([]),
+      );
+      return () => { stopTickets(); stopRatings(); };
+    }
+
+    const storeIds = sellerStoreIdsKey.split("|").filter(Boolean);
+    if (!storeIds.length) {
+      queueMicrotask(() => { setTickets([]); setRatings([]); });
+      return;
+    }
+    const ticketsByStore = new Map<string, SellerTicket[]>();
+    const ratingsByStore = new Map<string, StoreRating[]>();
+    const initializedTicketStores = new Set<string>();
+    const refreshTickets = () => setTickets([...ticketsByStore.values()].flat().sort(newestFirst));
+    const refreshRatings = () => setRatings([...ratingsByStore.values()].flat().sort(newestFirst));
+    const stops = storeIds.flatMap((storeId) => [
+      onSnapshot(query(collection(firestore, "tickets"), where("storeId", "==", storeId)), (snapshot) => {
+        ticketsByStore.set(storeId, snapshot.docs.map((ticketDoc) => toSellerTicket(ticketDoc.id, ticketDoc.data())));
+        refreshTickets();
+        if (initializedTicketStores.has(storeId)) {
+          const added = snapshot.docChanges().find((change) => change.type === "added");
+          if (added) {
+            const ticket = toSellerTicket(added.doc.id, added.doc.data());
+            setActiveAlert({ kind: "ticket", ticket });
+            if (alertsEnabledRef.current && alertAudioRef.current) resumeAndPlayAlert(alertAudioRef.current);
+          }
+        } else initializedTicketStores.add(storeId);
+      }, () => { ticketsByStore.set(storeId, []); refreshTickets(); }),
+      onSnapshot(query(collection(firestore, "ratings"), where("storeId", "==", storeId)), (snapshot) => {
+        ratingsByStore.set(storeId, snapshot.docs.map((ratingDoc) => toStoreRating(ratingDoc.id, ratingDoc.data())));
+        refreshRatings();
+      }, () => { ratingsByStore.set(storeId, []); refreshRatings(); }),
+    ]);
+    return () => stops.forEach((stop) => stop());
+  }, [user?.activeRole, user?.id, sellerStoreIdsKey]);
+
   useEffect(() => () => {
     const context = alertAudioRef.current;
     alertAudioRef.current = null;
@@ -193,8 +244,6 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
         const saved = readBrowserStorage("local", "partx-seller-v1");
         if (saved) {
           const value = JSON.parse(saved);
-          if (value.tickets) setTickets(value.tickets);
-          if (value.ratings) setRatings(value.ratings);
           if (value.productOverrides) setProductOverrides(value.productOverrides);
         }
       } catch {}
@@ -206,9 +255,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     const syncSellerState = (event: StorageEvent) => {
       if (event.key !== "partx-seller-v1" || !event.newValue) return;
       try {
-        const next = JSON.parse(event.newValue) as { tickets?: SellerTicket[]; ratings?: StoreRating[]; productOverrides?: Record<string, { price: number; stock: number }> };
-        if (next.tickets) setTickets(next.tickets);
-        if (next.ratings) setRatings(next.ratings);
+        const next = JSON.parse(event.newValue) as { productOverrides?: Record<string, { price: number; stock: number }> };
         if (next.productOverrides) setProductOverrides(next.productOverrides);
       } catch {}
     };
@@ -218,8 +265,8 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!hydrated) return;
-    writeBrowserStorage("local", "partx-seller-v1", JSON.stringify({ tickets, ratings, productOverrides }));
-  }, [tickets, ratings, productOverrides, hydrated]);
+    writeBrowserStorage("local", "partx-seller-v1", JSON.stringify({ productOverrides }));
+  }, [productOverrides, hydrated]);
 
   const value = useMemo<SellerContextValue>(() => ({
     sellerOrders,
@@ -335,25 +382,51 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       }
       updateOrderStage(orderId, customerStageForSellerStatus[status]);
     },
-    addTicket: (ticket) => {
+    addTicket: async (ticket) => {
+      if (!user || user.activeRole !== "customer") throw new Error("Sign in as a customer to contact a seller.");
+      const order = customerOrders.find((item) => item.id === ticket.orderId);
+      if (!order?.storeId) throw new Error("Choose an order so the request reaches the correct seller.");
+      const ticketId = createPartXId("TKT");
       const created: SellerTicket = {
         ...ticket,
-        id: createPartXId("TKT"),
-        customer: ticket.customer ?? { name: "Akshay Singh", phone: "+91 98765 43210", email: "akshay@gmail.com" },
+        id: ticketId,
+        storeId: order.storeId,
+        storeName: order.storeName ?? "PartX seller",
+        customerId: user.id,
+        customer: { name: user.name, phone: user.mobile, email: user.email },
         createdAt: "Just now",
         priority: "Urgent",
         status: "Open",
-        orderedProduct: sellerOrders.find((order) => order.id === ticket.orderId)?.productName ?? "Order item",
+        orderedProduct: order.items?.[0]?.product.name ?? "Order item",
       };
-      setTickets((current) => [created, ...current]);
-      setActiveAlert({ kind: "ticket", ticket: created });
-      if (alertsEnabled && alertAudioRef.current) resumeAndPlayAlert(alertAudioRef.current);
+      await setDoc(doc(firestore, "tickets", ticketId), {
+        ...created,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
       return created;
     },
-    resolveTicket: (ticketId, internalNote) => setTickets((current) => current.map((ticket) => ticket.id === ticketId ? { ...ticket, status: "Resolved", internalNote, resolvedAt: "Just now" } : ticket)),
-    addRating: (rating) => {
-      const created: StoreRating = { ...rating, id: createPartXId("REV"), createdAt: "Just now", verified: true };
-      setRatings((current) => [created, ...current]);
+    resolveTicket: async (ticketId, internalNote) => {
+      const ticket = tickets.find((item) => item.id === ticketId);
+      if (!user || user.activeRole !== "seller" || !ticket || !user.storeIds?.includes(ticket.storeId)) throw new Error("You can only resolve tickets for your stores.");
+      await updateDoc(doc(firestore, "tickets", ticketId), { status: "Resolved", internalNote: internalNote.trim(), resolvedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    },
+    addRating: async (rating) => {
+      if (!user || user.activeRole !== "customer") throw new Error("Sign in as a customer to submit a review.");
+      const order = customerOrders.find((item) => item.id === rating.orderId);
+      if (!order || order.stage !== "Delivered" || order.storeId !== rating.storeId) throw new Error("Only a delivered order can be reviewed for its selected store.");
+      if (!Number.isInteger(rating.stars) || rating.stars < 1 || rating.stars > 5) throw new Error("Choose a rating from 1 to 5 stars.");
+      const created: StoreRating = {
+        ...rating,
+        id: rating.orderId,
+        storeName: order.storeName ?? "PartX seller",
+        customerId: user.id,
+        customerName: user.name,
+        comment: rating.comment.trim().slice(0, 500),
+        createdAt: "Just now",
+        verified: true,
+      };
+      await setDoc(doc(firestore, "ratings", rating.orderId), { ...created, createdAt: serverTimestamp() });
       return created;
     },
     updateProduct: (partNumber, price, stock) => setProductOverrides((current) => ({ ...current, [partNumber]: { price, stock } })),
@@ -420,7 +493,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       }
       if (product.imagePublicId) await deleteCloudinaryProductImage(product.imagePublicId).catch(() => undefined);
     },
-  }), [sellerOrders, paymentVerifications, paymentSettings, announcements, tickets, ratings, alertsEnabled, activeAlert, productOverrides, sellerProducts, updateOrderStage, user]);
+  }), [sellerOrders, paymentVerifications, paymentSettings, announcements, tickets, ratings, alertsEnabled, activeAlert, productOverrides, sellerProducts, customerOrders, updateOrderStage, user]);
 
   return <SellerContext.Provider value={value}>{children}</SellerContext.Provider>;
 }
@@ -496,4 +569,50 @@ function firestoreDate(value: unknown) {
   if (value instanceof Date) return value;
   if (value && typeof value === "object" && "toDate" in value && typeof value.toDate === "function") return value.toDate();
   return undefined;
+}
+
+function firestoreDisplayTime(value: unknown) {
+  const date = firestoreDate(value);
+  if (!date) return "Just now";
+  return new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function newestFirst(a: SellerTicket | StoreRating, b: SellerTicket | StoreRating) {
+  return Date.parse(b.createdAt) - Date.parse(a.createdAt);
+}
+
+function toSellerTicket(id: string, data: Record<string, unknown>): SellerTicket {
+  const customer = data.customer && typeof data.customer === "object" ? data.customer as Record<string, unknown> : {};
+  return {
+    id,
+    orderId: String(data.orderId ?? ""),
+    storeId: String(data.storeId ?? ""),
+    storeName: String(data.storeName ?? "PartX seller"),
+    customerId: String(data.customerId ?? ""),
+    customer: { name: String(customer.name ?? "Customer"), phone: String(customer.phone ?? ""), email: String(customer.email ?? "") },
+    issue: String(data.issue ?? "Order issue"),
+    message: String(data.message ?? ""),
+    createdAt: firestoreDisplayTime(data.createdAt),
+    priority: data.priority === "High" || data.priority === "Normal" ? data.priority : "Urgent",
+    status: data.status === "Resolved" ? "Resolved" : "Open",
+    orderedProduct: String(data.orderedProduct ?? "Order item"),
+    deliveredProduct: typeof data.deliveredProduct === "string" ? data.deliveredProduct : undefined,
+    internalNote: typeof data.internalNote === "string" ? data.internalNote : undefined,
+    resolvedAt: data.resolvedAt ? firestoreDisplayTime(data.resolvedAt) : undefined,
+  };
+}
+
+function toStoreRating(id: string, data: Record<string, unknown>): StoreRating {
+  return {
+    id,
+    orderId: String(data.orderId ?? id),
+    storeId: String(data.storeId ?? ""),
+    storeName: String(data.storeName ?? "PartX seller"),
+    customerId: String(data.customerId ?? ""),
+    customerName: String(data.customerName ?? "Customer"),
+    stars: Number(data.stars ?? 0),
+    comment: String(data.comment ?? ""),
+    createdAt: firestoreDisplayTime(data.createdAt),
+    verified: true,
+  };
 }
