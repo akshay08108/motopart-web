@@ -47,6 +47,12 @@ before(async () => {
     await setDoc(doc(database, "stores", "store-2"), {
       ownerId: "seller-2", name: "Other Store", status: "approved",
     });
+    await setDoc(doc(database, "vehicleMakes", "tata_motors"), {
+      name: "Tata Motors", market: "India",
+    });
+    await setDoc(doc(database, "vehicleModels", "tata_motors__nexon"), {
+      make: "Tata Motors", model: "Nexon", market: "India",
+    });
   });
 });
 
@@ -168,6 +174,17 @@ test("customer cannot publish a seller announcement", async () => {
     storeId: "store-1",
     storeName: "Wrong store",
     active: true,
+  }));
+});
+
+test("vehicle master data is publicly readable but client writes are denied", async () => {
+  const anonymous = environment.unauthenticatedContext().firestore();
+  await assertSucceeds(getDoc(doc(anonymous, "vehicleMakes", "tata_motors")));
+  await assertSucceeds(getDoc(doc(anonymous, "vehicleModels", "tata_motors__nexon")));
+
+  const seller = environment.authenticatedContext("seller-1").firestore();
+  await assertFails(setDoc(doc(seller, "vehicleModels", "invented-car"), {
+    make: "Invented", model: "Car", market: "India",
   }));
 });
 

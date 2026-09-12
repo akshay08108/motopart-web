@@ -242,13 +242,6 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     writeBrowserStorage("local", "partx-profile-v1", JSON.stringify({ vehicles, activeVehicleId, location, garages, stores }));
   }, [cart, vehicles, activeVehicleId, location, garages, stores, hydrated]);
 
-  const catalog = useMemo(() => {
-    const storeNames = new Map(firebaseStores.map((store) => [store.id, store.name]));
-    const combined = new Map(getDemoCatalog().map((product) => [product.id, product]));
-    for (const product of firebaseProducts) combined.set(product.id, toCatalogProduct(product, storeNames.get(product.storeId) ?? "PartX seller", vehicles));
-    return [...combined.values()];
-  }, [firebaseProducts, firebaseStores, vehicles]);
-
   const marketplaceStores = useMemo(() => {
     const combined = new Map(stores.map((store) => [store.id, store]));
     for (const store of firebaseStores) {
@@ -264,6 +257,20 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     }
     return [...combined.values()];
   }, [firebaseProducts, firebaseRatings, firebaseStores, stores]);
+
+  const catalog = useMemo(() => {
+    const storesById = new Map(marketplaceStores.map((store) => [store.id, store]));
+    const ratingsBySeller = new Map(marketplaceStores.map((store) => [store.name.toLowerCase(), { rating: store.rating, reviews: store.ratingCount ?? 0 }]));
+    const combined = new Map(getDemoCatalog().map((product) => {
+      const liveRating = ratingsBySeller.get(product.seller.toLowerCase());
+      return [product.id, liveRating ? { ...product, rating: liveRating.rating, reviews: liveRating.reviews } : product];
+    }));
+    for (const product of firebaseProducts) {
+      const store = storesById.get(product.storeId);
+      combined.set(product.id, toCatalogProduct(product, store?.name ?? "PartX seller", vehicles, store?.rating ?? 0, store?.ratingCount ?? 0));
+    }
+    return [...combined.values()];
+  }, [firebaseProducts, marketplaceStores, vehicles]);
 
   const catalogById = useMemo(() => new Map(catalog.map((product) => [product.id, product])), [catalog]);
   const storesById = useMemo(() => new Map(marketplaceStores.map((store) => [store.id, store])), [marketplaceStores]);
@@ -617,7 +624,7 @@ function toPartnerStore(store: FirebaseStoreRecord, products: SellerProduct[], e
   };
 }
 
-function toCatalogProduct(product: SellerProduct, storeName: string, vehicles: Vehicle[]): Product {
+function toCatalogProduct(product: SellerProduct, storeName: string, vehicles: Vehicle[], rating: number, ratingCount: number): Product {
   const compatibility = product.compatibility.toLowerCase();
   return {
     id: product.id,
@@ -628,8 +635,8 @@ function toCatalogProduct(product: SellerProduct, storeName: string, vehicles: V
     kind: product.condition === "New" ? "Premium aftermarket" : "Budget aftermarket",
     price: product.sellingPrice,
     listPrice: Math.max(product.mrp, product.sellingPrice),
-    rating: 0,
-    reviews: 0,
+    rating,
+    reviews: ratingCount,
     category: product.category,
     imageIndex: stableImageIndex(product.id),
     imageUrl: product.imageUrl,

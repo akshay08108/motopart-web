@@ -316,6 +316,21 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    match /vehicleMakes/{makeId} {
+      allow read: if true;
+      allow create, update, delete: if false;
+    }
+
+    match /vehicleModels/{vehicleModelId} {
+      allow read: if true;
+      allow create, update, delete: if false;
+    }
+
+    match /vehicleVariants/{variantId} {
+      allow read: if true;
+      allow create, update, delete: if false;
+    }
+
     match /announcements/{announcementId} {
       allow read: if true;
       allow create: if isSeller()

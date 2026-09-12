@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Product } from "@/lib/types";
+import { vehicleDetails } from "@/lib/vehicle-display";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 
@@ -22,7 +23,8 @@ export function ProductPage({ product }: { product: Product }) {
   const [selectedStoreId, setSelectedStoreId] = useState(() => sellerOptions[0]?.store.id ?? "autohub-mumbai");
   const selected = sellerOptions.find((option) => option.store.id === selectedStoreId) ?? sellerOptions[0];
   const selectedProduct = selected?.product ?? product;
-  const compatible = selectedProduct.compatibleVehicleIds.includes(activeVehicleId);
+  const compatible = selectedProduct.compatibleVehicleIds.includes(vehicle?.vehicleModelId ?? activeVehicleId)
+    || selectedProduct.compatibleVehicleIds.includes(activeVehicleId);
   const selectedPrice = selected?.price ?? product.price;
   const selectedStoreName = selected?.store.name ?? product.seller;
   return <div className="px-page px-container">
@@ -32,9 +34,9 @@ export function ProductPage({ product }: { product: Product }) {
       <div className="px-detail-copy">
         <div className="px-eyebrow">{selectedProduct.brand} · {selectedProduct.category}</div>
         <h1>{selectedProduct.name}</h1>
-        <div className="px-rating">★ {selectedProduct.rating} <span>{selectedProduct.reviews.toLocaleString("en-IN")} reviews</span></div>
+        <div className="px-rating">{selectedProduct.reviews ? <>★ {selectedProduct.rating.toFixed(1)} <span>{selectedProduct.reviews.toLocaleString("en-IN")} verified ratings</span></> : <><span>New · no verified ratings yet</span></>}</div>
         <div className="px-detail-price"><strong>₹{selectedPrice.toLocaleString("en-IN")}</strong><s>₹{selectedProduct.listPrice.toLocaleString("en-IN")}</s><span>Inclusive of taxes · {selectedStoreName}</span></div>
-        <div className={compatible ? "px-fitment-box fits" : "px-fitment-box"}><Icon name={compatible ? "check" : "garage"}/><div><b>{compatible ? `Fits your ${vehicle?.make} ${vehicle?.model}` : "Fitment not confirmed"}</b><span>{compatible ? `${vehicle?.year} · ${vehicle?.variant}` : "Select a compatible vehicle in My Garage"}</span></div></div>
+        <div className={compatible ? "px-fitment-box fits" : "px-fitment-box"}><Icon name={compatible ? "check" : "garage"}/><div><b>{compatible ? `Fits your ${vehicle?.make} ${vehicle?.model}` : "Fitment not confirmed"}</b><span>{compatible && vehicle ? vehicleDetails(vehicle) : "Select a compatible vehicle in My Garage"}</span></div></div>
         <dl className="px-specs"><div><dt>Part number</dt><dd>{selectedProduct.partNumber}</dd></div><div><dt>{selectedProduct.barcode ? "Barcode" : "OEM reference"}</dt><dd>{selectedProduct.barcode ?? selectedProduct.oemNumber}</dd></div><div><dt>Warranty</dt><dd>{selectedProduct.warranty}</dd></div><div><dt>Stock</dt><dd>{selected?.stock ?? selectedProduct.stock} available</dd></div></dl>
         <button className="px-btn px-btn-red px-btn-large" onClick={() => addToCart(selectedProduct, 1, { storeId: selected?.store.id ?? "autohub-mumbai", storeName: selectedStoreName, price: selectedPrice })}>Add from {selectedStoreName} · ₹{selectedPrice.toLocaleString("en-IN")} <Icon name="cart"/></button>
         <p className="px-delivery-callout"><Icon name="orders"/><b>{selectedProduct.deliveryLabel}</b> · Pickup also available at checkout</p>

@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import type { PartnerStore } from "@/lib/types";
+import { vehicleName } from "@/lib/vehicle-display";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import { ProductCard } from "./product-card";
@@ -54,7 +55,7 @@ export function ShopPage() {
   };
 
   return <div className="px-page px-container">
-    <div className="px-page-title"><span>PARTX MARKETPLACE</span><h1>{view === "parts" ? "Shop parts" : "Shop by store"}</h1><p>{view === "parts" ? `Verified options for your ${vehicle?.year} ${vehicle?.make} ${vehicle?.model}.` : "Browse PartX stores and shop directly from their live catalog."}</p></div>
+    <div className="px-page-title"><span>PARTX MARKETPLACE</span><h1>{view === "parts" ? "Shop parts" : "Shop by store"}</h1><p>{view === "parts" ? `Verified options for your ${vehicle ? vehicleName(vehicle) : "selected vehicle"}.` : "Browse PartX stores and shop directly from their live catalog."}</p></div>
     <div className="px-shop-view-switch" role="tablist" aria-label="Shop view">
       <button role="tab" aria-selected={view === "parts"} className={view === "parts" ? "active" : ""} onClick={() => { setView("parts"); setQuery(""); }}><Icon name="box"/>Shop parts</button>
       <button role="tab" aria-selected={view === "stores"} className={view === "stores" ? "active" : ""} onClick={() => { setView("stores"); setQuery(""); }}><Icon name="store"/>Shop by store</button>

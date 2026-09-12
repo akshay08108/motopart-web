@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { getDemoCatalog } from "@/lib/demo-data";
+import { vehicleDetails, vehicleName } from "@/lib/vehicle-display";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import { ProductCard } from "./product-card";
@@ -23,7 +23,7 @@ const categories = [
 
 export function HomePage() {
   const router = useRouter();
-  const { vehicles, activeVehicleId, setActiveVehicleId, location } = usePartX();
+  const { vehicles, activeVehicleId, setActiveVehicleId, location, catalog } = usePartX();
   const [term, setTerm] = useState("");
   const activeVehicle = vehicles.find((vehicle) => vehicle.id === activeVehicleId) ?? vehicles[0];
   const go = () => router.push(`/shop${term.trim() ? `?q=${encodeURIComponent(term)}` : ""}`);
@@ -36,7 +36,7 @@ export function HomePage() {
           <h1>Find the exact part<br/>for your <span>vehicle.</span></h1>
           <p>Vehicle-verified parts from trusted stores, ready for pickup or delivery.</p>
           <div className="px-vehicle-finder">
-            <label>Your vehicle<select value={activeVehicleId} onChange={(event) => setActiveVehicleId(event.target.value)}>{vehicles.map((vehicle) => <option value={vehicle.id} key={vehicle.id}>{vehicle.year} {vehicle.make} {vehicle.model} · {vehicle.variant}</option>)}</select></label>
+            <label>Your vehicle<select value={activeVehicleId} onChange={(event) => setActiveVehicleId(event.target.value)}>{vehicles.map((vehicle) => <option value={vehicle.id} key={vehicle.id}>{vehicleName(vehicle)} · {vehicle.variant || "Model"}</option>)}</select></label>
             <label>Part or part number<input value={term} onChange={(event) => setTerm(event.target.value)} onKeyDown={(event) => event.key === "Enter" && go()} placeholder="e.g. brake pads, LX-3541"/></label>
             <button className="px-btn px-btn-red" onClick={go}>Find parts <Icon name="arrow"/></button>
           </div>
@@ -45,7 +45,7 @@ export function HomePage() {
         <div className="px-hero-visual" aria-label={`${activeVehicle.make} ${activeVehicle.model} selected`}>
           <div className="px-hero-ring"/>
           <Image src="/vehicle-suv.png" alt="Black SUV" width={1200} height={720} priority />
-          <div className="px-vehicle-chip"><span className="px-dot"/><b>{activeVehicle.year} {activeVehicle.make} {activeVehicle.model}</b><small>{activeVehicle.variant} · {activeVehicle.fuel}</small></div>
+          <div className="px-vehicle-chip"><span className="px-dot"/><b>{vehicleName(activeVehicle)}</b><small>{vehicleDetails(activeVehicle)}</small></div>
         </div>
       </div>
     </section>
@@ -60,7 +60,7 @@ export function HomePage() {
     <section className="px-section">
       <div className="px-container">
         <div className="px-section-head"><div><span>SELECTED FOR YOUR GARAGE</span><h2>Recommended for your {activeVehicle.model}</h2></div><Link href="/shop">Shop all <Icon name="arrow"/></Link></div>
-        <div className="px-product-grid">{getDemoCatalog().slice(0, 4).map((product) => <ProductCard product={product} key={product.id}/>)}</div>
+        <div className="px-product-grid">{catalog.slice(0, 4).map((product) => <ProductCard product={product} key={product.id}/>)}</div>
       </div>
     </section>
 

@@ -7,8 +7,10 @@ import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 
 export function ProductCard({ product }: { product: Product }) {
-  const { addToCart, activeVehicleId } = usePartX();
-  const compatible = product.compatibleVehicleIds.includes(activeVehicleId);
+  const { addToCart, activeVehicleId, vehicles } = usePartX();
+  const activeVehicle = vehicles.find((vehicle) => vehicle.id === activeVehicleId);
+  const compatible = product.compatibleVehicleIds.includes(activeVehicle?.vehicleModelId ?? activeVehicleId)
+    || product.compatibleVehicleIds.includes(activeVehicleId);
   const discount = Math.round((1 - product.price / product.listPrice) * 100);
   return <article className="px-product-card">
     <Link href={`/shop/${product.id}`} className="px-product-image">
@@ -16,7 +18,7 @@ export function ProductCard({ product }: { product: Product }) {
       <Image src={product.imageUrl ?? `/parts/${product.imageIndex}-v2.png`} alt={product.name} width={520} height={390} />
     </Link>
     <div className="px-product-body">
-      <div className="px-product-meta"><b>{product.brand}</b><span>★ {product.rating}</span></div>
+      <div className="px-product-meta"><b>{product.brand}</b><span aria-label={product.reviews ? `${product.rating} out of 5 from ${product.reviews} verified ratings` : "No verified ratings yet"}>{product.reviews ? <>★ {product.rating.toFixed(1)} <small>({product.reviews.toLocaleString("en-IN")})</small></> : "New"}</span></div>
       <Link href={`/shop/${product.id}`}><h3>{product.name}</h3></Link>
       <p className="px-product-store"><Icon name="store"/>Sold by <b>{product.seller}</b></p>
       <p className={compatible ? "px-fitment fits" : "px-fitment"}><Icon name={compatible ? "check" : "garage"}/>{compatible ? "Fits your selected vehicle" : "Check vehicle fitment"}</p>

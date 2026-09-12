@@ -100,7 +100,7 @@
 
 .filters {
   display: grid;
-  grid-template-columns: 1fr 180px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   margin-top: 14px;
 }
@@ -115,6 +115,7 @@
 
 .filters select,
 .filters input,
+.confirm select,
 .confirm input {
   min-height: 44px;
   padding: 0 12px;
@@ -183,10 +184,12 @@
 .searchHint h3 { margin: 10px 0 4px; }
 .searchHint p { margin: 0; opacity: .6; }
 .error { color: #dc2626; background: rgba(239, 68, 68, .05); }
+.error p { margin: 8px 0 2px; }
+.error button { border: 0; background: transparent; color: inherit; font: inherit; font-weight: 800; text-decoration: underline; cursor: pointer; }
 
 .confirm {
   display: grid;
-  grid-template-columns: 1fr 240px auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   align-items: end;
   margin-top: 18px;
@@ -194,8 +197,10 @@
   border-radius: 18px;
   background: rgba(15, 23, 42, .05);
 }
+.selectedVehicle { grid-column: 1 / -1; }
 .confirm h3 { margin: 0 0 4px; }
-.confirm p { margin: 0; font-size: 13px; opacity: .68; }
+.confirm p { max-width: 760px; margin: 0; font-size: 12px; line-height: 1.5; opacity: .68; }
+.confirm button { grid-column: 1 / -1; justify-self: end; }
 
 @media (max-width: 760px) {
   .activeHero { grid-template-columns: 120px 1fr; }
@@ -205,9 +210,10 @@
   .dialogHeader { padding: 22px 20px 16px; }
   .dialogHeader h2 { font-size: 23px; }
   .searchBody { padding: 18px 20px 26px; max-height: calc(94vh - 105px); }
-  .filters { grid-template-columns: 1fr 120px; }
-  .results > button { grid-template-columns: 84px 1fr 24px; padding: 11px; }
-  .carThumb img { height: 58px; }
+  .results > button { grid-template-columns: 1fr 24px; padding: 13px; }
+  .carThumb { display: none; }
   .confirm { grid-template-columns: 1fr; }
+  .selectedVehicle,
+  .confirm button { grid-column: 1; }
   .confirm button { width: 100%; }
 }

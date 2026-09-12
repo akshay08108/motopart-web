@@ -1,11 +1,12 @@
 export type Vehicle = {
   id: string;
-  year: number;
+  vehicleModelId?: string;
+  year?: number;
   make: string;
   model: string;
-  variant: string;
-  fuel: string;
-  transmission: string;
+  variant?: string;
+  fuel?: string;
+  transmission?: string;
   registration?: string;
 };
 

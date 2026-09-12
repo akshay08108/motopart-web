@@ -4,24 +4,25 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { Garage, Vehicle } from "@/lib/types";
+import { vehicleDetails, vehicleName } from "@/lib/vehicle-display";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import styles from "./garage-search-page.module.css";
 
 type SearchResult = {
-  id: string;
+  vehicleModelId: string;
   make: string;
   model: string;
-  year: number;
-  variant: string;
-  fuel: string;
-  transmission: string;
-  drive?: string;
-  cylinders?: number;
-  displacement?: number;
+  displayName: string;
 };
 
-const popularMakes = ["Maruti Suzuki", "Hyundai", "Tata", "Mahindra", "Toyota", "Kia", "Honda", "MG"];
+type VariantGuide = {
+  vehicleModelId: string;
+  fuelTypes: string[];
+  trimLadder: string;
+};
+
+const preferredMakes = ["Maruti Suzuki", "Hyundai", "Tata Motors", "Mahindra", "Toyota", "Kia", "Honda", "MG Motor"];
 
 export function GarageSearchPage() {
   const { vehicles, activeVehicleId, setActiveVehicleId, addVehicle, location, setLocation, garages, addGarage } = usePartX();
@@ -30,14 +31,35 @@ export function GarageSearchPage() {
   const [locationOpen, setLocationOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [make, setMake] = useState("");
-  const [year, setYear] = useState("");
+  const [makes, setMakes] = useState<Array<{ id: string; name: string }>>([]);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const [retryKey, setRetryKey] = useState(0);
   const [selected, setSelected] = useState<SearchResult | null>(null);
+  const [variantGuide, setVariantGuide] = useState<VariantGuide | null>(null);
+  const [variantLoading, setVariantLoading] = useState(false);
+  const [fuel, setFuel] = useState("");
+  const [variant, setVariant] = useState("");
   const [registration, setRegistration] = useState("");
 
   const canSearch = query.trim().length >= 2 || Boolean(make);
+
+  useEffect(() => {
+    if (!vehicleOpen || makes.length) return;
+    const controller = new AbortController();
+    fetch("/api/v1/vehicles/makes", { signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json() as { data?: Array<{ id: string; name: string }>; error?: string };
+        if (!response.ok) throw new Error(body.error ?? "Vehicle makes could not be loaded.");
+        setMakes(body.data ?? []);
+        setSearchError("");
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setSearchError(error instanceof Error ? error.message : "Vehicle makes could not be loaded.");
+      });
+    return () => controller.abort();
+  }, [makes.length, retryKey, vehicleOpen]);
 
   useEffect(() => {
     if (!vehicleOpen || !canSearch) return;
@@ -50,11 +72,10 @@ export function GarageSearchPage() {
         const params = new URLSearchParams();
         if (query.trim()) params.set("q", query.trim());
         if (make) params.set("make", make);
-        if (/^\d{4}$/.test(year.trim())) params.set("year", year.trim());
-        const response = await fetch(`/api/vehicles/search?${params}`, { signal: controller.signal });
-        const body = await response.json() as { results?: SearchResult[]; error?: string };
+        const response = await fetch(`/api/v1/vehicles/search?${params}`, { signal: controller.signal });
+        const body = await response.json() as { data?: SearchResult[]; error?: string };
         if (!response.ok) throw new Error(body.error ?? "Vehicle search failed.");
-        setResults(body.results ?? []);
+        setResults(body.data ?? []);
       } catch (error) {
         if (controller.signal.aborted) return;
         setResults([]);
@@ -68,7 +89,26 @@ export function GarageSearchPage() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [canSearch, make, query, vehicleOpen, year]);
+  }, [canSearch, make, query, retryKey, vehicleOpen]);
+
+  useEffect(() => {
+    if (!selected) return;
+    const controller = new AbortController();
+    const params = new URLSearchParams({ make: selected.make, model: selected.model });
+    fetch(`/api/v1/vehicles/variants?${params}`, { signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json() as { data?: VariantGuide[] };
+        if (!response.ok) throw new Error("Variant information could not be loaded.");
+        setVariantGuide(body.data?.[0] ?? null);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setVariantGuide(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setVariantLoading(false);
+      });
+    return () => controller.abort();
+  }, [selected]);
 
   const activeVehicle = useMemo(() => vehicles.find((vehicle) => vehicle.id === activeVehicleId), [activeVehicleId, vehicles]);
 
@@ -76,9 +116,11 @@ export function GarageSearchPage() {
     setVehicleOpen(false);
     setQuery("");
     setMake("");
-    setYear("");
     setResults([]);
     setSelected(null);
+    setVariantGuide(null);
+    setFuel("");
+    setVariant("");
     setRegistration("");
     setSearchError("");
   };
@@ -86,13 +128,12 @@ export function GarageSearchPage() {
   const addSelectedVehicle = () => {
     if (!selected) return;
     const vehicle: Vehicle = {
-      id: `vehicle-${Date.now()}-${selected.id}`,
-      year: selected.year,
+      id: `vehicle-${Date.now()}-${selected.vehicleModelId}`,
+      vehicleModelId: selected.vehicleModelId,
       make: selected.make,
       model: selected.model,
-      variant: selected.variant,
-      fuel: selected.fuel,
-      transmission: selected.transmission,
+      variant: variant.trim() || undefined,
+      fuel: fuel || undefined,
       registration: registration.trim() || undefined,
     };
     addVehicle(vehicle);
@@ -122,13 +163,13 @@ export function GarageSearchPage() {
 
     {activeVehicle ? <section className={styles.activeHero}>
       <div className={styles.activeImage}><Image src="/vehicle-suv.png" alt="" width={360} height={200}/></div>
-      <div><span>ACTIVE VEHICLE</span><h2>{activeVehicle.year} {activeVehicle.make} {activeVehicle.model}</h2><p>{activeVehicle.variant} · {activeVehicle.fuel} · {activeVehicle.transmission}</p>{activeVehicle.registration ? <small>{activeVehicle.registration}</small> : null}</div>
+      <div><span>ACTIVE VEHICLE</span><h2>{vehicleName(activeVehicle)}</h2><p>{vehicleDetails(activeVehicle)}</p>{activeVehicle.registration ? <small>{activeVehicle.registration}</small> : null}</div>
       <Link className="px-btn px-btn-dark" href="/shop">Shop compatible parts <Icon name="arrow"/></Link>
     </section> : null}
 
     <div className="px-dashboard-grid">
       <section className="px-panel px-panel-wide"><div className="px-panel-head"><div><span>MY VEHICLES</span><h2>Select your active vehicle</h2></div></div>
-        <div className="px-vehicle-list">{vehicles.map((vehicle) => <button className={activeVehicleId === vehicle.id ? "active" : ""} onClick={() => setActiveVehicleId(vehicle.id)} key={vehicle.id}><Image src="/vehicle-suv.png" alt="" width={220} height={120}/><div><b>{vehicle.year} {vehicle.make} {vehicle.model}</b><span>{vehicle.variant} · {vehicle.fuel} · {vehicle.transmission}</span><small>{vehicle.registration}</small></div>{activeVehicleId === vehicle.id ? <em><Icon name="check"/>Active</em> : null}</button>)}</div>
+        <div className="px-vehicle-list">{vehicles.map((vehicle) => <button className={activeVehicleId === vehicle.id ? "active" : ""} onClick={() => setActiveVehicleId(vehicle.id)} key={vehicle.id}><Image src="/vehicle-suv.png" alt="" width={220} height={120}/><div><b>{vehicleName(vehicle)}</b><span>{vehicleDetails(vehicle)}</span><small>{vehicle.registration}</small></div>{activeVehicleId === vehicle.id ? <em><Icon name="check"/>Active</em> : null}</button>)}</div>
       </section>
       <section className="px-panel"><div className="px-panel-head"><div><span>DELIVERY LOCATION</span><h2>{location.label}</h2></div><button onClick={() => setLocationOpen(true)}>Edit</button></div><p className="px-address"><Icon name="pin"/>{location.address}</p></section>
       <section className="px-panel"><div className="px-panel-head"><div><span>TRUSTED GARAGES</span><h2>{garages.length} saved</h2></div><button onClick={() => setGarageOpen(true)}>Add</button></div>{garages.map((garage) => <div className="px-garage-row" key={garage.id}><div className="px-square-icon"><Icon name="garage"/></div><div><b>{garage.name}</b><span>{garage.services}</span><small>{garage.location.address}</small></div></div>)}</section>
@@ -136,19 +177,25 @@ export function GarageSearchPage() {
 
     {vehicleOpen ? <div className={styles.backdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) resetVehicleDialog(); }}>
       <div className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="vehicle-search-title">
-        <header className={styles.dialogHeader}><div><span>PARTX VEHICLE FINDER</span><h2 id="vehicle-search-title">Search & add your car</h2><p>Find your model, choose the correct year and save it to your garage.</p></div><button onClick={resetVehicleDialog} aria-label="Close vehicle search"><Icon name="close"/></button></header>
+        <header className={styles.dialogHeader}><div><span>PARTX VEHICLE FINDER</span><h2 id="vehicle-search-title">Search & add your car</h2><p>Find the model in the PartX India vehicle catalog and save it to your garage.</p></div><button onClick={resetVehicleDialog} aria-label="Close vehicle search"><Icon name="close"/></button></header>
         <div className={styles.searchBody}>
-          <label className={styles.searchBox}><Icon name="search"/><input autoFocus value={query} onChange={(event) => { setQuery(event.target.value); setSelected(null); }} placeholder="Search model, e.g. Swift, Creta, Thar"/><span>{searching ? "Searching…" : ""}</span></label>
-          <div className={styles.filters}><label>Make<select value={make} onChange={(event) => { setMake(event.target.value); setSelected(null); }}><option value="">Any make</option>{popularMakes.map((item) => <option key={item}>{item}</option>)}</select></label><label>Year<input inputMode="numeric" maxLength={4} value={year} onChange={(event) => { setYear(event.target.value.replace(/\D/g, "").slice(0, 4)); setSelected(null); }} placeholder="2022"/></label></div>
-          <div className={styles.popular}><span>Popular makes</span>{popularMakes.map((item) => <button className={make === item ? styles.selectedChip : ""} key={item} onClick={() => { setMake(make === item ? "" : item); setSelected(null); }}>{item}</button>)}</div>
+          <label className={styles.searchBox}><Icon name="search"/><input autoFocus value={query} onChange={(event) => { setQuery(event.target.value); setSelected(null); setVariantGuide(null); }} placeholder="Search model, e.g. Swift, Creta, Thar"/><span>{searching ? "Searching…" : ""}</span></label>
+          <div className={styles.filters}><label>Make<select value={make} onChange={(event) => { setMake(event.target.value); setSelected(null); setVariantGuide(null); }}><option value="">Any make</option>{makes.map((item) => <option value={item.name} key={item.id}>{item.name}</option>)}</select></label></div>
+          <div className={styles.popular}><span>Popular makes</span>{preferredMakes.filter((item) => makes.some((makeItem) => makeItem.name === item)).map((item) => <button type="button" className={make === item ? styles.selectedChip : ""} key={item} onClick={() => { setMake(make === item ? "" : item); setSelected(null); setVariantGuide(null); }}>{item}</button>)}</div>
 
-          {searchError ? <div className={styles.error}><Icon name="close"/>{searchError}</div> : null}
+          {searchError ? <div className={styles.error}><Icon name="close"/><p>{searchError}</p><button type="button" onClick={() => setRetryKey((current) => current + 1)}>Try again</button></div> : null}
           {!canSearch ? <div className={styles.searchHint}><Icon name="search"/><h3>Start with your car model</h3><p>Type at least 2 letters, or choose a make above.</p></div> : null}
           {canSearch && !searching && !searchError && !results.length ? <div className={styles.searchHint}><Icon name="garage"/><h3>No matching cars found</h3><p>Try a different model spelling, make, or year.</p></div> : null}
 
-          {results.length ? <div className={styles.results}>{results.map((car) => <button className={selected?.id === car.id ? styles.resultSelected : ""} key={car.id} onClick={() => setSelected(car)}><div className={styles.carThumb}><Image src="/vehicle-suv.png" alt="" width={120} height={72}/></div><div><span>{car.make.toUpperCase()}</span><h3>{car.year} {car.make} {car.model}</h3><p>{car.variant}</p><small>{car.fuel} · {car.transmission}{car.drive ? ` · ${car.drive}` : ""}</small></div><i>{selected?.id === car.id ? <Icon name="check"/> : <Icon name="chevron"/>}</i></button>)}</div> : null}
+          {canSearch && results.length ? <div className={styles.results}>{results.map((car) => <button type="button" className={selected?.vehicleModelId === car.vehicleModelId ? styles.resultSelected : ""} key={car.vehicleModelId} onClick={() => { setSelected(car); setVariantGuide(null); setVariantLoading(true); setFuel(""); setVariant(""); }}><div className={styles.carThumb}><Image src="/vehicle-suv.png" alt="" width={120} height={72}/></div><div><span>{car.make.toUpperCase()}</span><h3>{car.displayName}</h3><p>India model reference</p><small>{car.vehicleModelId}</small></div><i>{selected?.vehicleModelId === car.vehicleModelId ? <Icon name="check"/> : <Icon name="chevron"/>}</i></button>)}</div> : null}
 
-          {selected ? <section className={styles.confirm}><div><span>SELECTED VEHICLE</span><h3>{selected.year} {selected.make} {selected.model}</h3><p>{selected.variant} · {selected.fuel} · {selected.transmission}</p></div><label>Registration number <input value={registration} onChange={(event) => setRegistration(event.target.value.toUpperCase())} placeholder="Optional · TS 09 AB 1234"/></label><button className="px-btn px-btn-red" onClick={addSelectedVehicle}>Add to My Garage <Icon name="arrow"/></button></section> : null}
+          {selected ? <section className={styles.confirm}>
+            <div className={styles.selectedVehicle}><span>SELECTED VEHICLE</span><h3>{selected.displayName}</h3><p>{variantGuide?.trimLadder ?? (variantLoading ? "Loading available fuel and trim guidance…" : "No variant guide is available for this model.")}</p></div>
+            {variantGuide?.fuelTypes.length ? <label>Fuel type<select value={fuel} onChange={(event) => setFuel(event.target.value)}><option value="">Not specified</option>{variantGuide.fuelTypes.map((item) => <option key={item}>{item}</option>)}</select></label> : null}
+            <label>Variant / trim<input value={variant} onChange={(event) => setVariant(event.target.value)} placeholder="Optional · enter from your RC"/></label>
+            <label>Registration number <input value={registration} onChange={(event) => setRegistration(event.target.value.toUpperCase())} placeholder="Optional · TS 09 AB 1234"/></label>
+            <button className="px-btn px-btn-red" onClick={addSelectedVehicle}>Add to My Garage <Icon name="arrow"/></button>
+          </section> : null}
         </div>
       </div>
     </div> : null}
