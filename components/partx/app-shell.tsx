@@ -83,7 +83,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div><b>Help</b><Link href="/support">Contact support</Link><Link href="/orders">Track order</Link><Link href="/account">Account</Link></div>
         <div><b>Partners</b><Link href="/sell">Add your store</Link><p>Sell parts at your prices.</p></div>
       </div>
-      <div className="px-container px-footer-bottom">© 2026 PartX · Demo commerce environment · Built for real API integration</div>
+      <div className="px-container px-footer-bottom">© 2026 PartX · Built with Codex</div>
     </footer>
     <nav className="px-mobile-nav" aria-label="Mobile navigation">
       {[["/", "home", "Home"], ["/shop", "grid", "Shop"], ["/cart", "cart", "Cart"], ["/orders", "orders", "Orders"], [isCustomer ? "/account" : isSeller ? "/seller" : "/login", "user", user ? "Account" : "Sign in"]].map(([href, icon, label]) => <Link key={href} className={active(href) ? "active" : ""} href={href}><span><Icon name={icon}/>{href === "/cart" && cartCount > 0 && <em>{cartCount}</em>}</span>{label}</Link>)}
