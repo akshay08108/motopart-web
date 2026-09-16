@@ -11,6 +11,7 @@ import { usePartX, type PartXOrder } from "./app-provider";
 import { Icon } from "./icons";
 import { useSeller } from "./seller-provider";
 import { readBrowserStorage, removeBrowserStorage, writeBrowserStorage } from "@/lib/browser-storage";
+import { orderHref, productHref } from "@/lib/navigation";
 
 export function GaragePage() {
   const { vehicles, activeVehicleId, setActiveVehicleId, addVehicle, location, setLocation, garages, addGarage } = usePartX();
@@ -44,7 +45,7 @@ export function CartPage() {
   const { cart, cartTotal, setQuantity, removeFromCart } = usePartX();
   const delivery = cartTotal >= 999 ? 0 : 99;
   return <div className="px-page px-container"><div className="px-page-title"><span>YOUR BAG</span><h1>Cart</h1><p>{cart.length ? `${cart.length} part${cart.length > 1 ? "s" : ""} ready for checkout.` : "Your cart is waiting for the right parts."}</p></div>
-    {!cart.length ? <div className="px-empty"><Icon name="cart"/><h2>Your cart is empty</h2><p>Browse vehicle-verified parts and add what you need.</p><Link href="/shop" className="px-btn px-btn-red">Shop parts <Icon name="arrow"/></Link></div> : <div className="px-cart-layout"><div className="px-cart-lines">{cart.map(({ product, quantity, storeName, unitPrice }) => <article key={product.id}><Image src={product.imageUrl ?? `/parts/${product.imageIndex}-v2.png`} alt={product.name} width={220} height={160}/><div><span>{product.brand}</span><Link href={`/shop/${product.id}`}><h2>{product.name}</h2></Link><p>{product.partNumber} · {product.deliveryLabel}</p><p className="px-cart-seller"><Icon name="store"/>Sold by <b>{storeName ?? product.seller}</b></p><div className="px-qty"><button onClick={() => setQuantity(product.id, quantity - 1)}>−</button><b>{quantity}</b><button onClick={() => setQuantity(product.id, quantity + 1)}>+</button></div></div><div className="px-line-price"><strong>₹{((unitPrice ?? product.price) * quantity).toLocaleString("en-IN")}</strong><button onClick={() => removeFromCart(product.id)} aria-label={`Remove ${product.name}`}><Icon name="trash"/>Remove</button></div></article>)}</div><aside className="px-summary"><span>ORDER SUMMARY</span><h2>Payment details</h2><dl><div><dt>Parts total</dt><dd>₹{cartTotal.toLocaleString("en-IN")}</dd></div><div><dt>Delivery</dt><dd>{delivery ? `₹${delivery}` : "FREE"}</dd></div><div><dt>Estimated tax</dt><dd>Included</dd></div><div className="total"><dt>Total</dt><dd>₹{(cartTotal + delivery).toLocaleString("en-IN")}</dd></div></dl><Link href="/checkout" className="px-btn px-btn-red px-btn-large">Secure checkout <Icon name="arrow"/></Link><small>Test payments only · No money will be charged</small></aside></div>}
+    {!cart.length ? <div className="px-empty"><Icon name="cart"/><h2>Your cart is empty</h2><p>Browse vehicle-verified parts and add what you need.</p><Link href="/shop" className="px-btn px-btn-red">Shop parts <Icon name="arrow"/></Link></div> : <div className="px-cart-layout"><div className="px-cart-lines">{cart.map(({ product, quantity, storeName, unitPrice }) => <article key={product.id}><Image src={product.imageUrl ?? `/parts/${product.imageIndex}-v2.png`} alt={product.name} width={220} height={160}/><div><span>{product.brand}</span><Link href={productHref(product.id)}><h2>{product.name}</h2></Link><p>{product.partNumber} · {product.deliveryLabel}</p><p className="px-cart-seller"><Icon name="store"/>Sold by <b>{storeName ?? product.seller}</b></p><div className="px-qty"><button onClick={() => setQuantity(product.id, quantity - 1)}>−</button><b>{quantity}</b><button onClick={() => setQuantity(product.id, quantity + 1)}>+</button></div></div><div className="px-line-price"><strong>₹{((unitPrice ?? product.price) * quantity).toLocaleString("en-IN")}</strong><button onClick={() => removeFromCart(product.id)} aria-label={`Remove ${product.name}`}><Icon name="trash"/>Remove</button></div></article>)}</div><aside className="px-summary"><span>ORDER SUMMARY</span><h2>Payment details</h2><dl><div><dt>Parts total</dt><dd>₹{cartTotal.toLocaleString("en-IN")}</dd></div><div><dt>Delivery</dt><dd>{delivery ? `₹${delivery}` : "FREE"}</dd></div><div><dt>Estimated tax</dt><dd>Included</dd></div><div className="total"><dt>Total</dt><dd>₹{(cartTotal + delivery).toLocaleString("en-IN")}</dd></div></dl><Link href="/checkout" className="px-btn px-btn-red px-btn-large">Secure checkout <Icon name="arrow"/></Link><small>Test payments only · No money will be charged</small></aside></div>}
   </div>;
 }
 
@@ -87,7 +88,7 @@ export function CheckoutPage() {
         }
       }
       if (selectedPayment === "cod") {
-        router.push(`/orders/${order.id}?placed=1&payment=cod`);
+        router.push(orderHref(order.id, "placed=1&payment=cod"));
         return;
       }
       writeBrowserStorage("session", attemptKey, order.id);
@@ -116,7 +117,7 @@ export function CheckoutPage() {
     try {
       await submitUpiReference(attempt.id, transactionReference);
       removeBrowserStorage("session", attemptKey);
-      router.push(`/orders/${attempt.id}?payment=submitted`);
+      router.push(orderHref(attempt.id, "payment=submitted"));
     } catch (reason) {
       const code = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "";
       setCheckoutError(code === "permission-denied"
@@ -147,7 +148,7 @@ export function CheckoutPage() {
 
 export function OrdersPage() {
   const { orders } = usePartX();
-  return <div className="px-page px-container"><div className="px-page-heading-row"><div className="px-page-title"><span>PURCHASE HISTORY</span><h1>My orders</h1><p>Track placed orders and get help with any issue.</p></div><Link href="/support" className="px-btn px-btn-outline"><Icon name="headset"/>Contact support</Link></div><div className="px-order-list">{orders.map((order) => <article key={order.id}><div><span>ORDER {order.id}</span><h2>{customerOrderLabel(order)}</h2><p>Placed {order.placedAt} · {order.eta}</p></div><div className="px-order-progress"><i className={`stage-${["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].indexOf(order.stage) + 1}`}/><div>{["Confirmed", "Preparing", "On the way", "Delivered"].map((stage) => <span key={stage}>{stage}</span>)}</div></div><strong>₹{order.total.toLocaleString("en-IN")}</strong><div className="px-order-actions"><Link href={`/orders/${order.id}`} className="px-btn px-btn-dark">View details <Icon name="arrow"/></Link><Link href={`/support?order=${order.id}`}>Get help</Link></div></article>)}</div></div>;
+  return <div className="px-page px-container"><div className="px-page-heading-row"><div className="px-page-title"><span>PURCHASE HISTORY</span><h1>My orders</h1><p>Track placed orders and get help with any issue.</p></div><Link href="/support" className="px-btn px-btn-outline"><Icon name="headset"/>Contact support</Link></div><div className="px-order-list">{orders.map((order) => <article key={order.id}><div><span>ORDER {order.id}</span><h2>{customerOrderLabel(order)}</h2><p>Placed {order.placedAt} · {order.eta}</p></div><div className="px-order-progress"><i className={`stage-${["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].indexOf(order.stage) + 1}`}/><div>{["Confirmed", "Preparing", "On the way", "Delivered"].map((stage) => <span key={stage}>{stage}</span>)}</div></div><strong>₹{order.total.toLocaleString("en-IN")}</strong><div className="px-order-actions"><Link href={orderHref(order.id)} className="px-btn px-btn-dark">View details <Icon name="arrow"/></Link><Link href={`/support?order=${order.id}`}>Get help</Link></div></article>)}</div></div>;
 }
 
 export function OrderDetailPage({ id }: { id: string }) {

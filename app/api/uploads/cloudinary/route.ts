@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { NextResponse } from "next/server";
+import { corsJson, corsOptions } from "@/lib/api-cors";
 
 export const runtime = "nodejs";
 
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     const session = await requireSeller(request);
     const body = await readJson(request);
     const productId = typeof body.productId === "string" ? body.productId.trim() : "";
-    if (!productIdPattern.test(productId)) return error("A valid product ID is required.", 400);
+    if (!productIdPattern.test(productId)) return error(request, "A valid product ID is required.", 400);
 
     const config = cloudinaryConfig();
     const timestamp = Math.floor(Date.now() / 1000);
@@ -33,14 +33,14 @@ export async function POST(request: Request) {
       ...(uploadPreset ? { upload_preset: uploadPreset } : {}),
     };
 
-    return NextResponse.json({
+    return corsJson(request, {
       cloudName: config.cloudName,
       apiKey: config.apiKey,
       signature: signCloudinary(parameters, config.apiSecret),
       ...parameters,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (reason) {
-    return routeError(reason);
+    return routeError(request, reason);
   }
 }
 
@@ -49,7 +49,7 @@ export async function DELETE(request: Request) {
     const session = await requireSeller(request);
     const body = await readJson(request);
     const publicId = typeof body.publicId === "string" ? body.publicId.trim() : "";
-    if (!publicId.startsWith(`partx/products/${session.uid}/`)) return error("This image does not belong to your store.", 403);
+    if (!publicId.startsWith(`partx/products/${session.uid}/`)) return error(request, "This image does not belong to your store.", 403);
 
     const config = cloudinaryConfig();
     const timestamp = Math.floor(Date.now() / 1000);
@@ -66,9 +66,9 @@ export async function DELETE(request: Request) {
       cache: "no-store",
     });
     if (!response.ok) throw new UploadRouteError("The previous product image could not be removed.", 502);
-    return NextResponse.json({ deleted: true }, { headers: { "Cache-Control": "no-store" } });
+    return corsJson(request, { deleted: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (reason) {
-    return routeError(reason);
+    return routeError(request, reason);
   }
 }
 
@@ -126,14 +126,16 @@ function signCloudinary(parameters: Record<string, string | number>, apiSecret: 
   return createHash("sha1").update(`${payload}${apiSecret}`).digest("hex");
 }
 
-function error(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status, headers: { "Cache-Control": "no-store" } });
+function error(request: Request, message: string, status: number) {
+  return corsJson(request, { error: message }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-function routeError(reason: unknown) {
-  if (reason instanceof UploadRouteError) return error(reason.message, reason.status);
-  return error("Image storage is temporarily unavailable. Please try again.", 500);
+function routeError(request: Request, reason: unknown) {
+  if (reason instanceof UploadRouteError) return error(request, reason.message, reason.status);
+  return error(request, "Image storage is temporarily unavailable. Please try again.", 500);
 }
+
+export const OPTIONS = corsOptions;
 
 class UploadRouteError extends Error {
   constructor(message: string, readonly status: number) {

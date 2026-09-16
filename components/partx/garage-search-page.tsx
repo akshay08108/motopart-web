@@ -8,6 +8,7 @@ import { vehicleDetails, vehicleName } from "@/lib/vehicle-display";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import styles from "./garage-search-page.module.css";
+import { apiUrl } from "@/lib/api-url";
 
 type SearchResult = {
   vehicleModelId: string;
@@ -48,7 +49,7 @@ export function GarageSearchPage() {
   useEffect(() => {
     if (!vehicleOpen || makes.length) return;
     const controller = new AbortController();
-    fetch("/api/v1/vehicles/makes", { signal: controller.signal })
+    fetch(apiUrl("/api/v1/vehicles/makes"), { signal: controller.signal })
       .then(async (response) => {
         const body = await response.json() as { data?: Array<{ id: string; name: string }>; error?: string };
         if (!response.ok) throw new Error(body.error ?? "Vehicle makes could not be loaded.");
@@ -72,7 +73,7 @@ export function GarageSearchPage() {
         const params = new URLSearchParams();
         if (query.trim()) params.set("q", query.trim());
         if (make) params.set("make", make);
-        const response = await fetch(`/api/v1/vehicles/search?${params}`, { signal: controller.signal });
+        const response = await fetch(apiUrl(`/api/v1/vehicles/search?${params}`), { signal: controller.signal });
         const body = await response.json() as { data?: SearchResult[]; error?: string };
         if (!response.ok) throw new Error(body.error ?? "Vehicle search failed.");
         setResults(body.data ?? []);
@@ -95,7 +96,7 @@ export function GarageSearchPage() {
     if (!selected) return;
     const controller = new AbortController();
     const params = new URLSearchParams({ make: selected.make, model: selected.model });
-    fetch(`/api/v1/vehicles/variants?${params}`, { signal: controller.signal })
+    fetch(apiUrl(`/api/v1/vehicles/variants?${params}`), { signal: controller.signal })
       .then(async (response) => {
         const body = await response.json() as { data?: VariantGuide[] };
         if (!response.ok) throw new Error("Variant information could not be loaded.");

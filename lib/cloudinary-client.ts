@@ -1,4 +1,5 @@
 import { firebaseAuth } from "@/lib/firebase";
+import { apiUrl } from "@/lib/api-url";
 
 type SignedUpload = {
   cloudName: string;
@@ -26,7 +27,7 @@ export async function uploadProductImageToCloudinary(
   onProgress?: (progress: number) => void,
 ): Promise<UploadedProductImage> {
   const token = await sellerToken();
-  const signedResponse = await fetch("/api/uploads/cloudinary", {
+  const signedResponse = await fetch(apiUrl("/api/uploads/cloudinary"), {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ productId }),
@@ -56,7 +57,7 @@ export async function uploadProductImageToCloudinary(
 
 export async function deleteCloudinaryProductImage(publicId: string) {
   const token = await sellerToken();
-  const response = await fetch("/api/uploads/cloudinary", {
+  const response = await fetch(apiUrl("/api/uploads/cloudinary"), {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ publicId }),

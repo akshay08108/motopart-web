@@ -29,8 +29,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.push(`/shop${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ""}`);
   };
   const active = (href: string) => href === "/" ? pathname === "/" : pathname.startsWith(href);
-  const customerRoute = ["/account", "/orders", "/garage", "/checkout", "/support"].some((route) => pathname === route || pathname.startsWith(`${route}/`));
-  const sellerRoute = pathname === "/seller" || pathname.startsWith("/seller/");
+  const customerRoute = ["/account", "/order", "/orders", "/garage", "/checkout", "/support"].some((route) => pathname === route || pathname.startsWith(`${route}/`));
+  const sellerRoute = pathname === "/seller" || pathname === "/seller-order" || pathname.startsWith("/seller/");
   const authRoute = pathname === "/login" || pathname.startsWith("/login/");
   const isCustomer = Boolean(user?.roles.includes("customer"));
   const isSeller = Boolean(user?.roles.includes("seller"));

@@ -2,15 +2,33 @@
   "name": "partx-web",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:mobile": "node scripts/build-mobile.mjs",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "cap:sync": "node node_modules/@capacitor/cli/bin/capacitor sync android",
+    "android:open": "node node_modules/@capacitor/cli/bin/capacitor open android",
+    "android:run": "node node_modules/@capacitor/cli/bin/capacitor run android",
+    "android:debug": "pnpm build:mobile && pnpm cap:sync && cd android && ./gradlew assembleDebug",
+    "android:release": "pnpm build:mobile && pnpm cap:sync && cd android && ./gradlew assembleRelease",
+    "android:bundle": "pnpm build:mobile && pnpm cap:sync && cd android && ./gradlew bundleRelease",
     "test:rules": "firebase emulators:exec --only firestore --project demo-partx-rules \"node --test tests/firestore.rules.test.mjs\""
   },
   "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/browser": "^8.0.4",
+    "@capacitor/core": "8.5.2",
+    "@capacitor/network": "^8.0.1",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.3",
     "@fontsource-variable/manrope": "^5.2.7",
     "@fontsource-variable/roboto-condensed": "^5.2.7",
     "firebase": "^12.18.0",
@@ -21,6 +39,7 @@
     "read-excel-file": "^9.3.10"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.2",
     "@firebase/rules-unit-testing": "^5.0.2",
     "@types/node": "^22.18.1",
     "@types/react": "^19.1.12",

@@ -1,4 +1,5 @@
 import type { Garage, Offer, Order, PartnerStore, PaymentResult, Product, SupportIssueType, SupportTicket, Vehicle } from "@/lib/types";
+import { apiUrl } from "@/lib/api-url";
 
 type CheckoutInput = { address: string; delivery: string; payment: string; productIds: string[]; discountCode?: string; storeId?: string };
 
@@ -18,7 +19,7 @@ export interface CommerceApi {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+  const response = await fetch(apiUrl(url), init);
   if (!response.ok) throw new Error(`API request failed (${response.status})`);
   return response.json() as Promise<T>;
 }

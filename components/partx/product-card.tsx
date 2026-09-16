@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Product } from "@/lib/types";
+import { productHref } from "@/lib/navigation";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 
@@ -13,13 +14,13 @@ export function ProductCard({ product }: { product: Product }) {
     || product.compatibleVehicleIds.includes(activeVehicleId);
   const discount = Math.round((1 - product.price / product.listPrice) * 100);
   return <article className="px-product-card">
-    <Link href={`/shop/${product.id}`} className="px-product-image">
+    <Link href={productHref(product.id)} className="px-product-image">
       {discount > 0 && <span className="px-discount">-{discount}%</span>}
       <Image src={product.imageUrl ?? `/parts/${product.imageIndex}-v2.png`} alt={product.name} width={520} height={390} />
     </Link>
     <div className="px-product-body">
       <div className="px-product-meta"><b>{product.brand}</b><span aria-label={product.reviews ? `${product.rating} out of 5 from ${product.reviews} verified ratings` : "No verified ratings yet"}>{product.reviews ? <>★ {product.rating.toFixed(1)} <small>({product.reviews.toLocaleString("en-IN")})</small></> : "New"}</span></div>
-      <Link href={`/shop/${product.id}`}><h3>{product.name}</h3></Link>
+      <Link href={productHref(product.id)}><h3>{product.name}</h3></Link>
       <p className="px-product-store"><Icon name="store"/>Sold by <b>{product.seller}</b></p>
       <p className={compatible ? "px-fitment fits" : "px-fitment"}><Icon name={compatible ? "check" : "garage"}/>{compatible ? "Fits your selected vehicle" : "Check vehicle fitment"}</p>
       <div className="px-product-price"><strong>₹{product.price.toLocaleString("en-IN")}</strong><s>₹{product.listPrice.toLocaleString("en-IN")}</s></div>

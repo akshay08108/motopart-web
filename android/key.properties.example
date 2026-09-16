@@ -1,0 +1,6 @@
+# Copy this file to android/key.properties and replace every placeholder.
+# android/key.properties and signing key files are intentionally ignored by Git.
+storeFile=/absolute/path/outside-this-repository/partx-release.jks
+storePassword=REPLACE_WITH_KEYSTORE_PASSWORD
+keyAlias=partx
+keyPassword=REPLACE_WITH_KEY_PASSWORD
