@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { collection, deleteDoc, doc, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
-import type { LiveAnnouncement, NewSellerProduct, SellerOrder, SellerOrderStatus, SellerPaymentStatus, SellerProduct, SellerTicket, StorePaymentSettings, StoreRating } from "@/lib/types";
+import type { LiveAnnouncement, NewSellerProduct, SellerOrder, SellerOrderItem, SellerOrderStatus, SellerPaymentStatus, SellerProduct, SellerTicket, StorePaymentSettings, StoreRating } from "@/lib/types";
 import { createPartXId } from "@/lib/seller-data";
 import { deleteCloudinaryProductImage, uploadProductImageToCloudinary } from "@/lib/cloudinary-client";
 import { firestore } from "@/lib/firebase";
@@ -513,8 +513,36 @@ type FirestoreSellerOrder = SellerOrder & { createdAt?: unknown };
 
 function toSellerOrder(id: string, data: Record<string, unknown>): FirestoreSellerOrder {
   const customer = data.customer && typeof data.customer === "object" ? data.customer as Record<string, unknown> : {};
-  const items = Array.isArray(data.items) ? data.items : [];
-  const primaryItem = items[0] && typeof items[0] === "object" ? items[0] as Record<string, unknown> : {};
+  const items: SellerOrderItem[] = Array.isArray(data.items) ? data.items.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const line = item as Record<string, unknown>;
+    const imageIndex = Number(line.imageIndex);
+    const quantity = Number(line.quantity ?? 1);
+    const unitPrice = Number(line.unitPrice);
+    return [{
+      productId: typeof line.productId === "string" ? line.productId : undefined,
+      productName: String(line.productName ?? "Order item"),
+      partNumber: String(line.partNumber ?? ""),
+      imageUrl: typeof line.imageUrl === "string" && line.imageUrl ? line.imageUrl : undefined,
+      imageIndex: Number.isInteger(imageIndex) ? imageIndex : undefined,
+      quantity: Number.isInteger(quantity) && quantity > 0 ? quantity : 1,
+      unitPrice: Number.isFinite(unitPrice) ? unitPrice : undefined,
+      storeId: typeof line.storeId === "string" ? line.storeId : undefined,
+      storeName: typeof line.storeName === "string" ? line.storeName : undefined,
+    }];
+  }) : [];
+  const fallbackImageIndex = Number(data.imageIndex);
+  if (!items.length) {
+    items.push({
+      productId: typeof data.productId === "string" ? data.productId : undefined,
+      productName: String(data.productName ?? "Order item"),
+      partNumber: String(data.partNumber ?? ""),
+      imageUrl: typeof data.imageUrl === "string" && data.imageUrl ? data.imageUrl : undefined,
+      imageIndex: Number.isInteger(fallbackImageIndex) ? fallbackImageIndex : undefined,
+      quantity: Number(data.quantity ?? 1),
+    });
+  }
+  const primaryItem = items[0];
   const imageIndex = Number(primaryItem.imageIndex ?? data.imageIndex);
   return {
     id,
@@ -526,9 +554,10 @@ function toSellerOrder(id: string, data: Record<string, unknown>): FirestoreSell
     storeName: String(data.storeName ?? "PartX seller"),
     customer: { name: String(customer.name ?? "Customer"), phone: String(customer.phone ?? ""), email: String(customer.email ?? "") },
     placedAt: String(data.placedAt ?? "Just now"),
-    productName: String(data.productName ?? "Order item"),
-    partNumber: String(data.partNumber ?? ""),
-    quantity: Number(data.quantity ?? 1),
+    productName: items[0].productName,
+    partNumber: items[0].partNumber,
+    quantity: items.reduce((total, item) => total + item.quantity, 0),
+    items,
     fulfilment: data.fulfilment === "pickup" || data.fulfilment === "garage" ? data.fulfilment : "delivery",
     paymentStatus: isSellerPaymentStatus(data.paymentStatus) ? data.paymentStatus : "Paid",
     paymentMethod: data.paymentMethod === "upi" || data.paymentMethod === "cod" ? data.paymentMethod : undefined,

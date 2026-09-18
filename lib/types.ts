@@ -162,6 +162,18 @@ export type SellerCustomer = {
   email: string;
 };
 
+export type SellerOrderItem = {
+  productId?: string;
+  productName: string;
+  partNumber: string;
+  imageUrl?: string;
+  imageIndex?: number;
+  quantity: number;
+  unitPrice?: number;
+  storeId?: string;
+  storeName?: string;
+};
+
 export type SellerOrder = {
   id: string;
   trackingId: string;
@@ -175,6 +187,7 @@ export type SellerOrder = {
   productName: string;
   partNumber: string;
   quantity: number;
+  items?: SellerOrderItem[];
   fulfilment: FulfilmentMode;
   paymentStatus: SellerPaymentStatus;
   paymentMethod?: PaymentMethod;
