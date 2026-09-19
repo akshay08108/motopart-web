@@ -10,8 +10,8 @@
   --green: #0b9251;
   --green-soft: #eaf8f0;
   --shadow: 0 20px 60px rgba(17, 25, 39, .12);
-  --display: "Roboto Condensed Variable", "Arial Narrow", sans-serif;
-  --body: "Manrope Variable", system-ui, sans-serif;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "Plus Jakarta Sans Variable", system-ui, sans-serif;
 }
 
 :root[data-theme="dark"] {
@@ -29,7 +29,7 @@
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
-body { margin: 0; color: var(--ink); background: var(--white); font-family: var(--body); font-size: 14px; }
+body { margin: 0; color: var(--ink); background: var(--white); font-family: var(--body); font-size: 15px; }
 button, input { font: inherit; }
 button { color: inherit; }
 button:focus-visible, input:focus-visible { outline: 3px solid rgba(244, 81, 30, .22); outline-offset: 2px; }

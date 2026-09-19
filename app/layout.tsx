@@ -1,5 +1,9 @@
-import "@fontsource-variable/manrope";
-import "@fontsource-variable/roboto-condensed";
+import "@fontsource-variable/plus-jakarta-sans";
+import "@fontsource/barlow-condensed/latin-400.css";
+import "@fontsource/barlow-condensed/latin-600.css";
+import "@fontsource/barlow-condensed/latin-700.css";
+import "@fontsource/barlow-condensed/latin-800.css";
+import "@fontsource/barlow-condensed/latin-900.css";
 import "./globals.css";
 import "./partx.css";
 import type { Metadata, Viewport } from "next";
