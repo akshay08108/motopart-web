@@ -357,6 +357,28 @@ service cloud.firestore {
         && ownsStore(resource.data.storeId);
     }
 
+    match /notificationDevices/{deviceId} {
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.token is string
+        && request.resource.data.token.size() >= 20
+        && request.resource.data.platform == 'web'
+        && request.resource.data.roles is list
+        && request.resource.data.activeRole in request.resource.data.roles
+        && request.resource.data.storeIds is list;
+      allow read, delete: if signedIn()
+        && resource.data.userId == request.auth.uid;
+      allow update: if signedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.token is string
+        && request.resource.data.token.size() >= 20
+        && request.resource.data.platform == 'web'
+        && request.resource.data.roles is list
+        && request.resource.data.activeRole in request.resource.data.roles
+        && request.resource.data.storeIds is list;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

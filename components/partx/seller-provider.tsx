@@ -22,7 +22,7 @@ type SellerContextValue = {
   ratings: StoreRating[];
   alertsEnabled: boolean;
   activeAlert: SellerAlert | null;
-  enableAlerts: () => void;
+  enableAlerts: () => Promise<void>;
   dismissAlert: () => void;
   updateOrderStatus: (orderId: string, status: SellerOrderStatus) => Promise<void>;
   savePaymentSettings: (settings: StorePaymentSettings) => Promise<void>;
@@ -74,7 +74,7 @@ function resumeAndPlayAlert(context: AudioContext) {
 }
 
 export function SellerProvider({ children }: { children: React.ReactNode }) {
-  const { orders: customerOrders, updateOrderStage, user } = usePartX();
+  const { orders: customerOrders, updateOrderStage, user, enableNotifications } = usePartX();
   const [sellerOrders, setSellerOrders] = useState<SellerOrder[]>([]);
   const [paymentVerifications, setPaymentVerifications] = useState<SellerOrder[]>([]);
   const [paymentSettings, setPaymentSettings] = useState<StorePaymentSettings | null>(null);
@@ -277,14 +277,16 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     ratings,
     alertsEnabled,
     activeAlert,
-    enableAlerts: () => {
+    enableAlerts: async () => {
       const AudioContextClass = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!AudioContextClass) return;
-      const context = alertAudioRef.current?.state === "closed" ? null : alertAudioRef.current;
-      alertAudioRef.current = context ?? new AudioContextClass();
+      if (AudioContextClass) {
+        const context = alertAudioRef.current?.state === "closed" ? null : alertAudioRef.current;
+        alertAudioRef.current = context ?? new AudioContextClass();
+      }
       setAlertsEnabled(true);
       alertsEnabledRef.current = true;
-      resumeAndPlayAlert(alertAudioRef.current);
+      if (alertAudioRef.current) resumeAndPlayAlert(alertAudioRef.current);
+      await enableNotifications();
     },
     dismissAlert: () => setActiveAlert(null),
     savePaymentSettings: async (settings) => {
@@ -493,7 +495,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       }
       if (product.imagePublicId) await deleteCloudinaryProductImage(product.imagePublicId).catch(() => undefined);
     },
-  }), [sellerOrders, paymentVerifications, paymentSettings, announcements, tickets, ratings, alertsEnabled, activeAlert, productOverrides, sellerProducts, customerOrders, updateOrderStage, user]);
+  }), [sellerOrders, paymentVerifications, paymentSettings, announcements, tickets, ratings, alertsEnabled, activeAlert, productOverrides, sellerProducts, customerOrders, updateOrderStage, user, enableNotifications]);
 
   return <SellerContext.Provider value={value}>{children}</SellerContext.Provider>;
 }

@@ -188,6 +188,24 @@ test("vehicle master data is publicly readable but client writes are denied", as
   }));
 });
 
+test("users can register only their own notification devices", async () => {
+  const customer = environment.authenticatedContext("customer-1").firestore();
+  const deviceRef = doc(customer, "notificationDevices", "device-customer-1");
+  await assertSucceeds(setDoc(deviceRef, {
+    userId: "customer-1", token: "valid-firebase-registration-token", platform: "web",
+    roles: ["customer"], activeRole: "customer", storeIds: [], updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(getDoc(deviceRef));
+
+  const otherCustomer = environment.authenticatedContext("customer-2").firestore();
+  await assertFails(getDoc(doc(otherCustomer, "notificationDevices", "device-customer-1")));
+  await assertFails(setDoc(doc(otherCustomer, "notificationDevices", "forged-device"), {
+    userId: "customer-1", token: "another-valid-registration-token", platform: "web",
+    roles: ["customer"], activeRole: "customer", storeIds: [], updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(deleteDoc(deviceRef));
+});
+
 test("ticket reaches the selected store and can be resolved only by its seller", async () => {
   await environment.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), "orders", "ORDER-TICKET-1"), {

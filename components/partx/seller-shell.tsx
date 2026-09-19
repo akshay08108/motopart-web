@@ -15,7 +15,7 @@ const sellerNav = [
 export function SellerShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, signOut } = usePartX();
+  const { user, signOut, notificationPermission, notificationError } = usePartX();
   const { tickets, sellerOrders, paymentVerifications, alertsEnabled, activeAlert, enableAlerts, dismissAlert } = useSeller();
   const [menuOpen, setMenuOpen] = useState(false);
   const openTickets = tickets.filter((ticket) => ticket.status === "Open").length;
@@ -42,12 +42,12 @@ export function SellerShell({ children }: { children: React.ReactNode }) {
         <button className="sx-mobile-menu" onClick={() => setMenuOpen((open) => !open)} aria-label="Toggle seller menu"><Icon name={menuOpen ? "close" : "menu"}/></button>
         <div className="sx-store-name"><b>{user?.storeName ?? "PartX Seller"}</b><span><i/>Online</span></div>
         <div className="sx-top-actions">
-          <button className={alertsEnabled ? "sx-alert-toggle enabled" : "sx-alert-toggle"} onClick={enableAlerts}><Icon name="volume"/>{alertsEnabled ? "Alerts enabled" : "Enable alerts"}</button>
+          <button className={alertsEnabled ? "sx-alert-toggle enabled" : "sx-alert-toggle"} onClick={() => void enableAlerts()} title={notificationError || undefined}><Icon name={notificationPermission === "granted" ? "bell" : "volume"}/>{notificationPermission === "granted" ? "Notifications enabled" : alertsEnabled ? "Sound enabled" : "Enable alerts"}</button>
           <Link href="/seller/tickets" className="sx-bell" aria-label={`${openTickets} open tickets`}><Icon name="bell"/>{openTickets > 0 ? <span>{openTickets}</span> : null}</Link>
           <div className="sx-seller-avatar">{user?.name.split(" ").map((part) => part[0]).join("").slice(0,2).toUpperCase() ?? "PX"}</div>
         </div>
       </header>
-      <main className="sx-main">{children}</main>
+      <main className="sx-main">{notificationError ? <p className="sx-notification-error" role="alert">{notificationError}</p> : null}{children}</main>
     </div>
     {activeAlert ? <div className="sx-alert-toast" role="status" aria-live="assertive"><Icon name="bell"/><div><b>{activeAlert.kind === "order" ? "New order received" : activeAlert.kind === "payment" ? "UPI payment needs verification" : "Urgent ticket received"}</b><strong>{activeAlert.kind === "ticket" ? activeAlert.ticket.id : activeAlert.order.id}</strong><span>{activeAlert.kind === "ticket" ? `${activeAlert.ticket.issue} · ${activeAlert.ticket.orderId}` : activeAlert.kind === "payment" ? `₹${activeAlert.order.total.toLocaleString("en-IN")} · Ref ${activeAlert.order.paymentReference}` : `${activeAlert.order.productName} · ${activeAlert.order.fulfilment}`}</span></div><button onClick={dismissAlert} aria-label="Dismiss alert"><Icon name="close"/></button></div> : null}
     <nav className="sx-mobile-nav" aria-label="Seller mobile navigation">{sellerNav.slice(0, 5).map(([href, icon, label]) => <Link className={active(href) ? "active" : ""} href={href} key={href}><Icon name={icon}/><span>{label === "Packing Queue" ? "Packing" : label.replace("Products & Prices", "Products")}</span>{countFor(href) > 0 ? <em>{countFor(href)}</em> : null}</Link>)}</nav>

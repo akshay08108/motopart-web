@@ -10,6 +10,7 @@ import { demoGarages, demoLocation, demoStores } from "@/lib/marketplace-data";
 import { createPartXId } from "@/lib/seller-data";
 import { createPaymentOrderId, developmentPaymentSettings, isValidUtr, normalizeUtr, paymentExpiresAt } from "@/lib/upi-payments";
 import { readBrowserStorage, removeBrowserStorage, writeBrowserStorage } from "@/lib/browser-storage";
+import { browserNotificationPermission, registerPushNotifications, unregisterPushNotifications } from "@/lib/push-notifications";
 
 const AUTH_PROFILE_CACHE_KEY = "partx-firebase-profile-v1";
 
@@ -65,6 +66,9 @@ type AppContextValue = {
   signIn: (identifier: string, password: string, role: UserRole) => Promise<boolean>;
   register: (input: RegisterInput) => Promise<boolean>;
   resetPassword: (email: string) => Promise<boolean>;
+  notificationPermission: NotificationPermission | "unsupported";
+  notificationError: string;
+  enableNotifications: () => Promise<boolean>;
   signOut: () => Promise<void>;
 };
 
@@ -87,11 +91,21 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<CustomerUser | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [firebaseHydrated, setFirebaseHydrated] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("default");
+  const [notificationError, setNotificationError] = useState("");
   const ordersRef = useRef<PartXOrder[]>([]);
 
   useEffect(() => {
     ordersRef.current = orders;
   }, [orders]);
+
+  useEffect(() => {
+    if (!user || browserNotificationPermission() !== "granted") return;
+    void registerPushNotifications(user).then((result) => {
+      setNotificationPermission(browserNotificationPermission());
+      setNotificationError(result.enabled ? "" : result.reason);
+    });
+  }, [user]);
 
   useEffect(() => {
     const stopStores = onSnapshot(collection(firestore, "stores"), (snapshot) => {
@@ -572,12 +586,25 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       if (!email.includes("@")) return false;
       try { await sendPasswordResetEmail(firebaseAuth, email.trim()); return true; } catch { return false; }
     },
+    notificationPermission,
+    notificationError,
+    enableNotifications: async () => {
+      if (!user) {
+        setNotificationError("Sign in before enabling notifications.");
+        return false;
+      }
+      const result = await registerPushNotifications(user);
+      setNotificationPermission(browserNotificationPermission());
+      setNotificationError(result.enabled ? "" : result.reason);
+      return result.enabled;
+    },
     signOut: async () => {
+      if (user) await unregisterPushNotifications();
       setUser(null);
       removeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY);
       await firebaseSignOut(firebaseAuth);
     },
-  }), [theme, resolvedCart, vehicles, activeVehicleId, location, garages, marketplaceStores, announcements, catalog, catalogById, storesById, orders, liveOrderUpdate, user, hydrated, firebaseHydrated]);
+  }), [theme, resolvedCart, vehicles, activeVehicleId, location, garages, marketplaceStores, announcements, catalog, catalogById, storesById, orders, liveOrderUpdate, user, hydrated, firebaseHydrated, notificationPermission, notificationError]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
