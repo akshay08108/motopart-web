@@ -1,5 +1,6 @@
 import "@fontsource-variable/plus-jakarta-sans";
 import "@fontsource-variable/sora";
+import "@fontsource/racing-sans-one";
 import "./globals.css";
 import "./partx.css";
 import type { Metadata, Viewport } from "next";

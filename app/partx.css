@@ -35,7 +35,7 @@ button, select { cursor: pointer; }
 .px-container { width: min(1480px, calc(100% - 64px)); margin-inline: auto; }
 .px-header { position: sticky; z-index: 40; top: 0; height: 82px; border-bottom: 1px solid var(--px-line); background: var(--px-header); backdrop-filter: blur(18px); }
 .px-header-inner { height: 100%; display: flex; align-items: center; gap: 26px; }
-.px-brand { flex: 0 0 auto; display: flex; align-items: center; font-family: "Sora Variable", sans-serif; font-size: 30px; font-weight: 800; letter-spacing: -.04em; }
+.px-brand { flex: 0 0 auto; display: flex; align-items: center; font-family: "Racing Sans One", "Sora Variable", sans-serif; font-size: 31px; font-weight: 400; line-height: 1; letter-spacing: -.015em; text-transform: uppercase; }
 .px-brand b, .px-footer-brand span { color: var(--px-red); }
 .px-mark { width: 48px; height: 48px; object-fit: contain; margin-right: 2px; }
 .px-mark-dark { display: none; }
@@ -351,7 +351,7 @@ button, select { cursor: pointer; }
 .px-footer { padding: 55px 0 0; background: #0b0d11; color: #fff; }
 .px-footer-grid { display: grid; grid-template-columns: 1.5fr repeat(3,1fr); gap: 50px; }
 .px-footer-grid > div { display: flex; flex-direction: column; align-items: start; gap: 9px; }
-.px-footer-brand { font: 900 36px/1 "Sora Variable",sans-serif; }
+.px-footer-brand { font: 400 38px/1 "Racing Sans One","Sora Variable",sans-serif; letter-spacing:-.015em; text-transform:uppercase; }
 .px-footer p, .px-footer a { margin: 0; color: #9298a2; font-size: 11px; }
 .px-footer a:hover { color: #fff; }
 .px-footer-grid b { margin-bottom: 6px; font-size: 12px; text-transform: uppercase; }
@@ -365,7 +365,7 @@ body:has(.px-auth), body:has(.px-seller-pending) { padding-bottom: 0; }
 .px-auth { display: grid; grid-template-columns: minmax(480px,1.04fr) minmax(520px,.96fr); min-height: 100svh; background: #fff; color: #12151b; }
 .px-auth-story { position: relative; display: flex; min-height: 100svh; overflow: hidden; flex-direction: column; padding: 38px 54px; background: radial-gradient(circle at 70% 48%,#3a3e46 0,transparent 35%),linear-gradient(145deg,#17191e,#050608 72%); color: #fff; }
 .px-auth-story::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent 49.8%,rgba(255,255,255,.04) 50%,transparent 50.2%); background-size:86px 100%; pointer-events:none; }
-.px-auth-brand, .px-auth-mobile-brand { position: relative; z-index: 2; display: inline-flex; align-items: center; align-self: flex-start; color: inherit; font: 900 27px/1 "Sora Variable",sans-serif; text-transform: uppercase; }
+.px-auth-brand, .px-auth-mobile-brand { position: relative; z-index: 2; display: inline-flex; align-items: center; align-self: flex-start; color: inherit; font: 400 29px/1 "Racing Sans One","Sora Variable",sans-serif; letter-spacing:-.015em; text-transform:uppercase; }
 .px-auth-brand img, .px-auth-mobile-brand img { object-fit: contain; }
 .px-auth-brand b, .px-auth-mobile-brand b { color: var(--px-red); }
 .px-auth-message { position: relative; z-index: 2; width: min(620px,88%); margin-top: clamp(64px,10vh,120px); }
@@ -466,7 +466,7 @@ body:has(.px-auth), body:has(.px-seller-pending) { padding-bottom: 0; }
 /* Seller workspace */
 .sx-app { --sx-sidebar:#0b1017; min-height:100vh; background:#f5f6f7; color:#101318; font-family:"Plus Jakarta Sans Variable",system-ui,sans-serif; font-size:14px; }
 .sx-sidebar { position:fixed; z-index:70; inset:0 auto 0 0; display:flex; flex-direction:column; width:236px; padding:18px 10px; background:linear-gradient(160deg,#0b1017,#111923); color:#fff; }
-.sx-logo { display:flex; align-items:center; padding:0 12px 24px; font:800 25px/1 "Sora Variable",sans-serif; letter-spacing:-.02em; }
+.sx-logo { display:flex; align-items:center; padding:0 12px 24px; font:400 27px/1 "Racing Sans One","Sora Variable",sans-serif; letter-spacing:-.015em; text-transform:uppercase; }
 .sx-logo img { width:42px; height:42px; object-fit:contain; }.sx-logo span { color:var(--px-red); }
 .sx-sidebar nav { display:grid; gap:4px; }.sx-sidebar nav a { display:grid; grid-template-columns:24px 1fr auto; align-items:center; gap:10px; min-height:48px; padding:0 12px; color:#dce0e6; font-size:12px; font-weight:750; }
 .sx-sidebar nav a svg { width:19px; }.sx-sidebar nav a:hover { background:#1a222d; }.sx-sidebar nav a.active { background:var(--px-red); color:#fff; box-shadow:0 8px 24px rgba(237,16,28,.24); }

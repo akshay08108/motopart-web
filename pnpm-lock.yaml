@@ -35,6 +35,9 @@ importers:
       '@fontsource-variable/sora':
         specifier: ^5.3.0
         version: 5.3.0
+      '@fontsource/racing-sans-one':
+        specifier: ^5.3.0
+        version: 5.3.0
       firebase:
         specifier: ^12.18.0
         version: 12.18.0
@@ -481,6 +484,9 @@ packages:
 
   '@fontsource-variable/sora@5.3.0':
     resolution: {integrity: sha512-h8kHta4Z8SkfUGeI82TUy1n3rbrKpBRGwuk4t4qCwto5oEHxlbOFD2yGP+Df5fbmTXwKGn+o667vYp0E4K8Whw==}
+
+  '@fontsource/racing-sans-one@5.3.0':
+    resolution: {integrity: sha512-ESZApGzFjmr5MjpDA5eoZTfk4LSwpAeuD0W9klx5fFZYXmF5OvE1n5BKNg1CL/aQKEd6YSM5d51iPA+wcmi6Jw==}
 
   '@grpc/grpc-js@1.9.16':
     resolution: {integrity: sha512-wE4Ut/olIzfKqp631XrG+wbF0v1vWFN4YL9FyXC2LJiG33DsV7PLzURjrCvY/6je2ntdRkeLpPDluzSRGaVltQ==}
@@ -3097,6 +3103,8 @@ snapshots:
   '@fontsource-variable/plus-jakarta-sans@5.3.0': {}
 
   '@fontsource-variable/sora@5.3.0': {}
+
+  '@fontsource/racing-sans-one@5.3.0': {}
 
   '@grpc/grpc-js@1.9.16':
     dependencies:
