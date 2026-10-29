@@ -10,7 +10,7 @@ import { SellerProvider } from "@/components/partx/seller-provider";
 import { CapacitorBridge } from "@/components/partx/capacitor-bridge";
 
 export const metadata: Metadata = {
-  title: { default: "PartX — The right part. The first time.", template: "%s · PartX" },
+  title: { default: "PartX · The right part. The first time.", template: "%s · PartX" },
   description: "Vehicle-verified auto parts from trusted stores, ready for pickup or delivery.",
 };
 

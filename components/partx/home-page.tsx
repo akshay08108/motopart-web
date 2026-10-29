@@ -33,7 +33,7 @@ export function HomePage() {
       <div className="px-container px-hero-grid">
         <div className="px-hero-copy">
           <div className="px-eyebrow">VEHICLE-VERIFIED AUTO PARTS</div>
-          <h1>Find the exact part<br/>for your <span>vehicle.</span></h1>
+          <div className="px-hero-headline"><h1><span className="px-hero-line">Find the exact part</span> <span className="px-hero-line">for your <span className="px-hero-accent">vehicle.</span></span></h1></div>
           <p>Vehicle-verified parts from trusted stores, ready for pickup or delivery.</p>
           <div className="px-vehicle-finder">
             <label>Your vehicle<select value={activeVehicleId} onChange={(event) => setActiveVehicleId(event.target.value)}>{vehicles.map((vehicle) => <option value={vehicle.id} key={vehicle.id}>{vehicleName(vehicle)} · {vehicle.variant || "Model"}</option>)}</select></label>
