@@ -43,8 +43,13 @@ export function HomePage() {
           <div className="px-hero-facts"><span><Icon name="check"/>Fitment checked</span><span><Icon name="pin"/>{location.label}: {location.address.split(",")[0]}</span></div>
         </div>
         <div className="px-hero-visual" aria-label={`${activeVehicle.make} ${activeVehicle.model} selected`}>
+          <div className="px-hero-orbit" aria-hidden="true"/>
           <div className="px-hero-ring"/>
-          <Image src="/vehicle-suv.png" alt="Black SUV" width={1200} height={720} priority />
+          <span className="px-hero-spin-label" aria-hidden="true"><i/>Showroom rotation</span>
+          <span className="px-hero-car-shadow" aria-hidden="true"/>
+          <div className="px-hero-car">
+            <Image src="/vehicle-suv.png" alt="Black SUV rotating in the PartX showroom" width={1200} height={720} priority />
+          </div>
           <div className="px-vehicle-chip"><span className="px-dot"/><b>{vehicleName(activeVehicle)}</b><small>{vehicleDetails(activeVehicle)}</small></div>
         </div>
       </div>
