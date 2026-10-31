@@ -60,7 +60,7 @@ export function HomePage() {
     <section className="px-section">
       <div className="px-container">
         <div className="px-section-head"><div><span>SELECTED FOR YOUR GARAGE</span><h2>Recommended for your {activeVehicle.model}</h2></div><Link href="/shop">Shop all <Icon name="arrow"/></Link></div>
-        <div className="px-product-grid">{catalog.slice(0, 4).map((product) => <ProductCard product={product} key={product.id}/>)}</div>
+        <div className="px-product-grid">{catalog.slice(0, 5).map((product) => <ProductCard product={product} key={product.id}/>)}</div>
       </div>
     </section>
 
