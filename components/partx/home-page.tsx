@@ -4,10 +4,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { vehicleDetails, vehicleName } from "@/lib/vehicle-display";
+import { vehicleName } from "@/lib/vehicle-display";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import { ProductCard } from "./product-card";
+import { PartSearch } from "./part-search";
 
 const categories = [
   { name: "Brakes", image: "/categories/0-v2.png", description: "Pads, discs & calipers", href: "/shop?category=Brakes" },
@@ -37,20 +38,10 @@ export function HomePage() {
           <p>Vehicle-verified parts from trusted stores, ready for pickup or delivery.</p>
           <div className="px-vehicle-finder">
             <label>Your vehicle<select value={activeVehicleId} onChange={(event) => setActiveVehicleId(event.target.value)}>{vehicles.map((vehicle) => <option value={vehicle.id} key={vehicle.id}>{vehicleName(vehicle)} · {vehicle.variant || "Model"}</option>)}</select></label>
-            <label>Part or part number<input value={term} onChange={(event) => setTerm(event.target.value)} onKeyDown={(event) => event.key === "Enter" && go()} placeholder="e.g. brake pads, LX-3541"/></label>
+            <div className="px-hero-part-search"><span>Part or part number</span><PartSearch value={term} onChange={setTerm} label="Search hero parts" placeholder="e.g. brake pads, LX-3541"/></div>
             <button className="px-btn px-btn-red" onClick={go}>Find parts <Icon name="arrow"/></button>
           </div>
-          <div className="px-hero-facts"><span><Icon name="check"/>Fitment checked</span><span><Icon name="pin"/>{location.label}: {location.address.split(",")[0]}</span></div>
-        </div>
-        <div className="px-hero-visual" aria-label={`${activeVehicle.make} ${activeVehicle.model} selected`}>
-          <div className="px-hero-orbit" aria-hidden="true"/>
-          <div className="px-hero-ring"/>
-          <span className="px-hero-spin-label" aria-hidden="true"><i/>Showroom rotation</span>
-          <span className="px-hero-car-shadow" aria-hidden="true"/>
-          <div className="px-hero-car">
-            <Image src="/vehicle-suv.png" alt="Black SUV rotating in the PartX showroom" width={1200} height={720} priority />
-          </div>
-          <div className="px-vehicle-chip"><span className="px-dot"/><b>{vehicleName(activeVehicle)}</b><small>{vehicleDetails(activeVehicle)}</small></div>
+          <div className="px-hero-facts"><span><Icon name="check"/>Fitment checked</span><span><Icon name="pin"/>{location.address ? `${location.label}: ${location.address.split(",")[0]}` : "Choose delivery location at checkout"}</span></div>
         </div>
       </div>
     </section>
