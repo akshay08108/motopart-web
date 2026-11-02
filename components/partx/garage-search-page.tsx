@@ -10,6 +10,8 @@ import { Icon } from "./icons";
 import styles from "./garage-search-page.module.css";
 import { apiUrl } from "@/lib/api-url";
 import { DeliveryLocationPicker } from "./delivery-location-picker";
+import { LocationPicker } from "../location-picker";
+import type { AppLocation } from "@/lib/types";
 
 type SearchResult = {
   vehicleModelId: string;
@@ -30,6 +32,7 @@ export function GarageSearchPage() {
   const { vehicles, activeVehicleId, setActiveVehicleId, addVehicle, location, garages, addGarage } = usePartX();
   const [vehicleOpen, setVehicleOpen] = useState(false);
   const [garageOpen, setGarageOpen] = useState(false);
+  const [garageLocation,setGarageLocation] = useState<AppLocation>({ id:"garage-draft", label:"Garage", address:"" });
   const [locationOpen, setLocationOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [make, setMake] = useState("");
@@ -151,7 +154,7 @@ export function GarageSearchPage() {
       phone: String(data.get("phone")),
       services: String(data.get("services")),
       distanceKm: 2.5,
-      location: { id: `garage-location-${Date.now()}`, label: "Garage", address: String(data.get("address")) },
+      location: { ...garageLocation, id: `garage-location-${Date.now()}`, label: "Garage", address: String(data.get("address")) },
     };
     addGarage(garage);
     setGarageOpen(false);
@@ -202,7 +205,7 @@ export function GarageSearchPage() {
       </div>
     </div> : null}
 
-    {garageOpen ? <SimpleModal title="Add a trusted garage" close={() => setGarageOpen(false)}><form className="px-form" onSubmit={saveGarage}><label>Garage name<input name="name" required/></label><label>Phone<input name="phone" required/></label><label>Services<input name="services" placeholder="Installation, diagnostics" required/></label><label>Address<textarea name="address" required/></label><button className="px-btn px-btn-red" type="submit">Save garage</button></form></SimpleModal> : null}
+    {garageOpen ? <SimpleModal title="Add a trusted garage" close={() => setGarageOpen(false)}><form className="px-form" onSubmit={saveGarage}><label>Garage name<input name="name" required/></label><label>Phone<input name="phone" required/></label><label>Services<input name="services" placeholder="Installation, diagnostics" required/></label><LocationPicker value={garageLocation} onSelect={setGarageLocation} label="Garage address"/><button className="px-btn px-btn-red" type="submit">Save garage</button></form></SimpleModal> : null}
     {locationOpen ? <DeliveryLocationPicker close={() => setLocationOpen(false)}/> : null}
   </div>;
 }

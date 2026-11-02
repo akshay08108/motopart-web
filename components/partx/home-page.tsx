@@ -9,6 +9,7 @@ import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import { ProductCard } from "./product-card";
 import { PartSearch } from "./part-search";
+import { DeliveryLocationButton } from "./delivery-location-button";
 
 const categories = [
   { name: "Brakes", image: "/categories/0-v2.png", description: "Pads, discs & calipers", href: "/shop?category=Brakes" },
@@ -24,7 +25,7 @@ const categories = [
 
 export function HomePage() {
   const router = useRouter();
-  const { vehicles, activeVehicleId, setActiveVehicleId, location, catalog } = usePartX();
+  const { vehicles, activeVehicleId, setActiveVehicleId, catalog } = usePartX();
   const [term, setTerm] = useState("");
   const activeVehicle = vehicles.find((vehicle) => vehicle.id === activeVehicleId) ?? vehicles[0];
   const go = () => router.push(`/shop${term.trim() ? `?q=${encodeURIComponent(term)}` : ""}`);
@@ -41,7 +42,7 @@ export function HomePage() {
             <div className="px-hero-part-search"><span>Part or part number</span><PartSearch value={term} onChange={setTerm} label="Search hero parts" placeholder="e.g. brake pads, LX-3541"/></div>
             <button className="px-btn px-btn-red" onClick={go}>Find parts <Icon name="arrow"/></button>
           </div>
-          <div className="px-hero-facts"><span><Icon name="check"/>Fitment checked</span><span><Icon name="pin"/>{location.address ? `${location.label}: ${location.address.split(",")[0]}` : "Choose delivery location at checkout"}</span></div>
+          <div className="px-hero-facts"><span><Icon name="check"/>Fitment checked</span><DeliveryLocationButton/></div>
         </div>
       </div>
     </section>

@@ -9,6 +9,7 @@ import { firestore } from "@/lib/firebase";
 import { usePartX } from "./app-provider";
 import { isValidUpiId } from "@/lib/upi-payments";
 import { readBrowserStorage, writeBrowserStorage } from "@/lib/browser-storage";
+import { formatDeliveryTime } from "@/lib/delivery-time";
 
 type NewTicket = Pick<SellerTicket, "orderId" | "issue" | "message"> & { customer?: SellerTicket["customer"] };
 type SellerAlert = { kind: "order"; order: SellerOrder } | { kind: "payment"; order: SellerOrder } | { kind: "ticket"; ticket: SellerTicket };
@@ -372,16 +373,20 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       });
     },
     updateOrderStatus: async (orderId, status) => {
-      setSellerOrders((current) => current.map((order) => order.id === orderId ? { ...order, status } : order));
-      const order = sellerOrdersRef.current.find((item) => item.id === orderId);
-      if (order?.storeId) {
-        await updateDoc(doc(firestore, "orders", orderId), {
-          status,
-          stage: customerStageForSellerStatus[status],
-          ...(status === "Delivered" ? { eta: "Delivered just now" } : {}),
-          updatedAt: serverTimestamp(),
-        });
-      }
+      if (!user || user.activeRole !== "seller") throw new Error("Sign in as the seller to update this order.");
+      await runTransaction(firestore, async (transaction) => {
+        const orderRef = doc(firestore, "orders", orderId);
+        const snapshot = await transaction.get(orderRef);
+        if (!snapshot.exists()) throw new Error("Order not found.");
+        const data = snapshot.data();
+        if (!user.storeIds?.includes(String(data.storeId))) throw new Error("This order belongs to another store.");
+        if (data.status === "Delivered" || data.stage === "Delivered") {
+          if (status === "Delivered") return;
+          throw new Error("A delivered order cannot be reopened.");
+        }
+        transaction.update(orderRef, { status, stage: customerStageForSellerStatus[status],
+          ...(status === "Delivered" ? { eta:"Delivered", deliveredAt:serverTimestamp() } : {}), updatedAt:serverTimestamp() });
+      });
       updateOrderStage(orderId, customerStageForSellerStatus[status]);
     },
     addTicket: async (ticket) => {
@@ -573,6 +578,7 @@ function toSellerOrder(id: string, data: Record<string, unknown>): FirestoreSell
     sellerUpiNameSnapshot: typeof data.sellerUpiNameSnapshot === "string" ? data.sellerUpiNameSnapshot : undefined,
     paymentSubmittedAt: data.paymentSubmittedAt ? "Submitted" : undefined,
     expiresAt: firestoreDate(data.expiresAt),
+    deliveredAt: formatDeliveryTime(data.deliveredAt),
     deadline: String(data.deadline ?? "Review order"),
     status: isSellerOrderStatus(data.status) ? data.status : "New",
     total: Number(data.total ?? 0),

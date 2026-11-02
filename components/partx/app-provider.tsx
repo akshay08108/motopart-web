@@ -11,10 +11,12 @@ import { createPartXId } from "@/lib/seller-data";
 import { createPaymentOrderId, developmentPaymentSettings, isValidUtr, normalizeUtr, paymentExpiresAt } from "@/lib/upi-payments";
 import { readBrowserStorage, removeBrowserStorage, writeBrowserStorage } from "@/lib/browser-storage";
 import { browserNotificationPermission, registerPushNotifications, unregisterPushNotifications } from "@/lib/push-notifications";
+import { formatDeliveryTime } from "@/lib/delivery-time";
 
 const AUTH_PROFILE_CACHE_KEY = "partx-firebase-profile-v1";
 
 export type PartXOrder = Order & {
+  deliveredAt?: string;
   items?: CartLine[];
   fulfilment?: "delivery" | "pickup" | "garage";
   trackingId?: string;
@@ -104,7 +106,13 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   }, [orders]);
 
   useEffect(() => {
-    queueMicrotask(() => setLocation({ id: "default", label: "Home", address: "" }));
+    queueMicrotask(() => {
+      let next:AppLocation = { id:"default", label:"Home", address:"" };
+      if (!user?.id) {
+        try { const saved = JSON.parse(readBrowserStorage("local", "partx-guest-location-v1") ?? "null"); if (saved && typeof saved.address === "string" && typeof saved.label === "string") next = saved; } catch {}
+      }
+      setLocation(next);
+    });
     if (!user?.id) return;
     return onSnapshot(doc(firestore, "users", user.id, "deliveryLocations", "default"), (snapshot) => {
       const data = snapshot.data();
@@ -360,9 +368,9 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     addVehicle: (vehicle) => { setVehicles((current) => [...current, vehicle]); setActiveVehicleId(vehicle.id); },
     location,
     setLocation: async (nextLocation) => {
-      if (!user) throw new Error("Sign in before saving your address.");
       const saved = Object.fromEntries(Object.entries(nextLocation).filter(([, value]) => value !== undefined)) as AppLocation;
-      await setDoc(doc(firestore, "users", user.id, "deliveryLocations", "default"), saved);
+      if (user) await setDoc(doc(firestore, "users", user.id, "deliveryLocations", "default"), saved);
+      else writeBrowserStorage("local", "partx-guest-location-v1", JSON.stringify(saved));
       setLocation(saved);
     },
     garages,
@@ -548,7 +556,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       setOrders((current) => current.map((item) => item.id === orderId ? { ...item, paymentStatus: "PAYMENT_CANCELLED", orderStatus: "PAYMENT_CANCELLED" } : item));
     },
     updateOrderStage: (orderId, stage) => {
-      setOrders((current) => current.map((order) => order.id === orderId ? { ...order, stage, eta: stage === "Delivered" ? "Delivered just now" : order.eta } : order));
+      setOrders((current) => current.map((order) => order.id === orderId ? { ...order, stage, eta: stage === "Delivered" ? order.deliveredAt ? `Delivered ${order.deliveredAt}` : "Delivery time unavailable" : order.eta } : order));
       setLiveOrderUpdate({ orderId, stage });
     },
     liveOrderUpdate,
@@ -639,6 +647,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
 }
 
 type FirebaseStoreRecord = {
+  location?: AppLocation;
   id: string;
   ownerId: string;
   name: string;
@@ -665,7 +674,7 @@ function toPartnerStore(store: FirebaseStoreRecord, products: SellerProduct[], e
     rating: store.rating ?? existing?.rating ?? 0,
     ratingCount: store.ratingCount ?? existing?.ratingCount ?? 0,
     distanceKm: existing?.distanceKm ?? 0,
-    location: existing?.location ?? { id: `${store.id}-location`, label: "Store", address: store.address ?? "Location will be confirmed at checkout" },
+    location: store.location ?? (store.address ? { ...existing?.location, id: `${store.id}-location`, label: "Store", address: store.address } : existing?.location ?? { id: `${store.id}-location`, label: "Store", address: "" }),
     paymentSettings: store.paymentSettings ?? developmentPaymentSettings(store.name) ?? existing?.paymentSettings,
     listings: products.map((product) => ({
       id: product.id,
@@ -736,7 +745,8 @@ function toCustomerOrder(id: string, data: Record<string, unknown>): PartXOrder 
     storeId: String(data.storeId ?? ""),
     storeName: String(data.storeName ?? "PartX seller"),
     placedAt: firestoreDate(data.createdAt)?.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) ?? String(data.placedAt ?? "Date unavailable"),
-    eta: String(data.eta ?? "Delivery estimate pending"),
+    eta: data.stage === "Delivered" ? formatDeliveryTime(data.deliveredAt) ? `Delivered ${formatDeliveryTime(data.deliveredAt)}` : "Delivery time unavailable" : String(data.eta ?? "Delivery estimate pending"),
+    deliveredAt: formatDeliveryTime(data.deliveredAt),
     stage: isOrderStage(data.stage) ? data.stage : "Confirmed",
     total: Number(data.totalAmount ?? data.total ?? 0),
     items,

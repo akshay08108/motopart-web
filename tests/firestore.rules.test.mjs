@@ -71,6 +71,15 @@ test("delivery addresses belong only to their customer", async () => {
   await assertFails(updateDoc(doc(owner, "users/customer-1/deliveryLocations/default"), { latitude: 200 }));
 });
 
+test("store owners can update map locations but other sellers cannot", async () => {
+  const owner = environment.authenticatedContext("seller-1").firestore();
+  const other = environment.authenticatedContext("seller-2").firestore();
+  const location = { id:"store-location",label:"Store",address:"Bandra West, Mumbai 400050",latitude:19.06,longitude:72.83 };
+  await assertSucceeds(updateDoc(doc(owner,"stores/store-1"), { address:location.address,location,updatedAt:serverTimestamp() }));
+  await assertFails(updateDoc(doc(other,"stores/store-1"), { address:location.address,location }));
+  await assertFails(updateDoc(doc(owner,"stores/store-1"), { location:{...location,latitude:200} }));
+});
+
 function pendingUpiOrder(customerId = "customer-1") {
   return {
     customerId,
@@ -110,6 +119,25 @@ function pendingUpiOrder(customerId = "customer-1") {
     updatedAt: Timestamp.now(),
   };
 }
+
+test("delivery time is server recorded once and cannot be forged or overwritten", async () => {
+  const id = "DELIVERY-TIMESTAMP";
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), "orders", id), { ...pendingUpiOrder(), status:"Dispatched", stage:"On the way", paymentStatus:"PAID", orderStatus:"PLACED" });
+  });
+  const seller = environment.authenticatedContext("seller-1").firestore();
+  const customer = environment.authenticatedContext("customer-1").firestore();
+  const otherSeller = environment.authenticatedContext("seller-2").firestore();
+  const markDelivered = { status:"Delivered", stage:"Delivered", eta:"Delivered", deliveredAt:serverTimestamp(), updatedAt:serverTimestamp() };
+  await assertFails(updateDoc(doc(customer, "orders", id), markDelivered));
+  await assertFails(updateDoc(doc(otherSeller, "orders", id), markDelivered));
+  await assertFails(updateDoc(doc(seller, "orders", id), { ...markDelivered, deliveredAt:Timestamp.fromMillis(1000) }));
+  await assertSucceeds(updateDoc(doc(seller, "orders", id), markDelivered));
+  const delivered = await getDoc(doc(customer, "orders", id));
+  if (!delivered.data().deliveredAt?.toMillis()) throw new Error("No delivery timestamp was saved");
+  await assertFails(updateDoc(doc(seller, "orders", id), { deliveredAt:serverTimestamp(), updatedAt:serverTimestamp() }));
+  await assertFails(updateDoc(doc(seller, "orders", id), { status:"Dispatched", stage:"On the way", updatedAt:serverTimestamp() }));
+});
 
 test("customer can create an ARR-style pending UPI order", async () => {
   const database = environment.authenticatedContext("customer-1").firestore();

@@ -19,6 +19,10 @@ async function lookup(query: string, signal?: AbortSignal): Promise<Place[]> {
 
 export function DeliveryLocationPicker({ close }: { close: () => void }) {
   const { location, setLocation } = usePartX();
+  return <MapLocationPicker value={location} onSave={setLocation} close={close} saveLabel="Save delivery location"/>;
+}
+
+export function MapLocationPicker({ value: location, onSave: setLocation, close, title = "Where should we deliver?", saveLabel = "Use this location" }: { value:AppLocation; onSave:(location:AppLocation) => void | Promise<void>; close:() => void; title?:string; saveLabel?:string }) {
   const [draft, setDraft] = useState<AppLocation>(location);
   const [query, setQuery] = useState("");
   const [places, setPlaces] = useState<Place[]>([]);
@@ -120,14 +124,14 @@ export function DeliveryLocationPicker({ close }: { close: () => void }) {
       if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     }
-  }}><header><div><small>DELIVERY ADDRESS</small><h2 id="delivery-location-title">Where should we deliver?</h2></div><button type="button" aria-label="Close address picker" onClick={close} disabled={saving}>×</button></header>
+  }}><header><div><small>{title === "Where should we deliver?" ? "DELIVERY ADDRESS" : "LOCATION"}</small><h2 id="delivery-location-title">{title}</h2></div><button type="button" aria-label="Close address picker" onClick={close} disabled={saving}>×</button></header>
     {apiKey ? <><label className="px-map-search">Search for an address<input value={query} onChange={(event) => { setQuery(event.target.value); setPlaces([]); }} placeholder="Area, street, city or postcode" autoComplete="off"/></label>{places.length ? <ul className="px-map-results">{places.map((place) => <li key={place.id}><button type="button" onClick={() => choose(place)}>{place.place_name}</button></li>)}</ul> : null}<button className="px-btn px-btn-outline" type="button" disabled={busy} onClick={locate}>Use my current location</button><div ref={mount} className="px-delivery-map" aria-label="Delivery map. Click to select a location or drag the pin."/><p className="px-form-note">Tap the map or drag the pin to your entrance. Add your flat number and landmark below.</p></> : <p className="px-form-note">Map search is unavailable. You can still save your full delivery address.</p>}
     {busy ? <p role="status">Finding address…</p> : null}{error ? <p className="px-checkout-error" role="alert">{error}</p> : null}
     <form className="px-form" onSubmit={async (event) => {
       event.preventDefault(); setSaving(true); setError("");
-      try { await setLocation({ ...draft, id: "default", label: draft.label.trim(), address: draft.address.trim() }); close(); }
+      try { await setLocation({ ...draft, id: location.id || "default", label: draft.label.trim(), address: draft.address.trim() }); close(); }
       catch { setError("We could not save your address. Check your connection and try again."); }
       finally { setSaving(false); }
-    }}><label>Address label<input value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} placeholder="Home or Work" required maxLength={50}/></label><label>Full delivery address<textarea value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} required minLength={10} maxLength={500} placeholder="Flat / building, street, landmark, city and postcode"/></label><button className="px-btn px-btn-red" type="submit" disabled={busy || saving}>{saving ? "Saving…" : "Save delivery location"}</button></form>
+    }}><label>Address label<input value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} placeholder="Home or Work" required maxLength={50}/></label><label>Full delivery address<textarea value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} required minLength={10} maxLength={500} placeholder="Flat / building, street, landmark, city and postcode"/></label><button className="px-btn px-btn-red" type="submit" disabled={busy || saving}>{saving ? "Saving…" : saveLabel}</button></form>
   </div></div>;
 }

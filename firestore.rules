@@ -83,8 +83,17 @@ service cloud.firestore {
         && request.resource.data.status == resource.data.status
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'owner', 'phone', 'gstin', 'businessHours', 'deliveryRadiusKm',
-          'address', 'paymentSettings', 'updatedAt'
+          'address', 'location', 'paymentSettings', 'updatedAt'
         ])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['location']) || (
+          request.resource.data.location is map
+          && request.resource.data.location.address == request.resource.data.address
+          && request.resource.data.address is string
+          && request.resource.data.address.size() >= 10
+          && request.resource.data.address.size() <= 500
+          && (!('latitude' in request.resource.data.location) || (request.resource.data.location.latitude is number && request.resource.data.location.latitude >= -90 && request.resource.data.location.latitude <= 90))
+          && (!('longitude' in request.resource.data.location) || (request.resource.data.location.longitude is number && request.resource.data.location.longitude >= -180 && request.resource.data.location.longitude <= 180))
+        ))
         && (!request.resource.data.keys().hasAny(['paymentSettings']) || validPaymentSettings(request.resource.data.paymentSettings));
       allow delete: if false;
     }
@@ -118,6 +127,7 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow create: if isCustomer()
+        && !request.resource.data.keys().hasAny(['deliveredAt'])
         && request.resource.data.customerId == request.auth.uid
         && request.resource.data.storeId is string
         && request.resource.data.sellerId is string
@@ -220,7 +230,17 @@ service cloud.firestore {
       ) || (
         ownsStore(resource.data.storeId)
         && (!resource.data.keys().hasAny(['orderStatus']) || resource.data.orderStatus == 'PLACED')
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'stage', 'eta', 'updatedAt'])
+        && resource.data.get('status', '') != 'Delivered'
+        && resource.data.get('stage', '') != 'Delivered'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'stage', 'eta', 'deliveredAt', 'updatedAt'])
+        && request.resource.data.status in ['New', 'Accepted', 'Packing', 'Packed', 'Dispatched', 'Delivered']
+        && (request.resource.data.status == 'Delivered'
+          ? (request.resource.data.stage == 'Delivered'
+            && !resource.data.keys().hasAny(['deliveredAt'])
+            && request.resource.data.deliveredAt is timestamp
+            && request.resource.data.deliveredAt == request.time)
+          : (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['deliveredAt'])
+            && request.resource.data.stage != 'Delivered'))
       );
       allow delete: if false;
     }
