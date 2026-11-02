@@ -1,0 +1,20 @@
+.px-delivery-overlay { position:fixed; inset:0; z-index:200; background:#0009; display:flex; align-items:center; justify-content:center; padding:20px; }
+.px-delivery-dialog { width:min(100%,680px); max-height:90dvh; overflow:auto; background:#fff; color:#14191e; padding:24px; border-radius:16px; box-shadow:0 24px 80px #0005; }
+.px-delivery-dialog > header { display:flex; justify-content:space-between; align-items:start; gap:16px; margin-bottom:20px; }
+.px-delivery-dialog h2 { font-family:inherit; font-size:24px; margin:4px 0; }
+.px-delivery-dialog header small { color:#ed1024; font-weight:800; letter-spacing:.1em; }
+.px-delivery-dialog header > button { border:0; background:transparent; color:inherit; font-size:30px; width:44px; height:44px; cursor:pointer; }
+.px-map-search { display:grid; gap:8px; font-weight:700; }
+.px-map-search input { width:100%; font:inherit; font-size:16px; color:inherit; background:transparent; padding:14px; border:1px solid #89939b66; border-radius:8px; }
+.px-map-results { list-style:none; margin:6px 0 12px; padding:0; border:1px solid #89939b66; border-radius:8px; }
+.px-map-results button { width:100%; text-align:left; border:0; border-bottom:1px solid #89939b33; background:transparent; color:inherit; padding:14px; font:inherit; cursor:pointer; }
+.px-map-results button:hover, .px-map-results button:focus-visible { background:#ed102415; }
+.px-delivery-dialog > .px-btn { margin:12px 0; }
+.px-delivery-map { height:300px; width:100%; border-radius:10px; isolation:isolate; background:#d9e0e3; }
+.px-delivery-map .leaflet-control-attribution { font-size:10px; }
+.px-delivery-pin span { display:block; width:28px; height:28px; border:4px solid #fff; border-radius:50% 50% 50% 0; background:#ed1024; transform:rotate(-45deg); box-shadow:0 2px 8px #0006; }
+.px-delivery-checkout { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px; border:1px solid #89939b66; margin-bottom:24px; }
+.px-delivery-checkout > span { display:flex; gap:10px; align-items:center; }
+.px-delivery-checkout svg { flex-shrink:0; }
+[data-theme="dark"] .px-delivery-dialog { background:#11161e; color:#f5f6f8; }
+@media(max-width:600px) { .px-delivery-overlay { padding:8px; align-items:end; } .px-delivery-dialog { padding:18px; max-height:94dvh; border-radius:16px 16px 0 0; } .px-delivery-map { height:260px; } .px-delivery-checkout { align-items:stretch; flex-direction:column; } }

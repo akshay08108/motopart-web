@@ -56,6 +56,20 @@ service cloud.firestore {
           .hasOnly(['activeRole', 'name', 'mobile', 'updatedAt'])
         && request.resource.data.activeRole in resource.data.roles;
       allow delete: if false;
+
+      match /deliveryLocations/{locationId} {
+        allow read, delete: if ownsUser(uid);
+        allow create, update: if ownsUser(uid)
+          && request.resource.data.keys().hasOnly(['id', 'label', 'address', 'placeId', 'latitude', 'longitude'])
+          && request.resource.data.address is string
+          && request.resource.data.address.size() >= 10
+          && request.resource.data.address.size() <= 500
+          && request.resource.data.label is string
+          && request.resource.data.label.size() > 0
+          && request.resource.data.label.size() <= 50
+          && (!('latitude' in request.resource.data) || (request.resource.data.latitude is number && request.resource.data.latitude >= -90 && request.resource.data.latitude <= 90))
+          && (!('longitude' in request.resource.data) || (request.resource.data.longitude is number && request.resource.data.longitude >= -180 && request.resource.data.longitude <= 180));
+      }
     }
 
     match /stores/{storeId} {

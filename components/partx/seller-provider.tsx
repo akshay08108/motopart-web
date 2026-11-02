@@ -549,6 +549,7 @@ function toSellerOrder(id: string, data: Record<string, unknown>): FirestoreSell
   return {
     id,
     trackingId: String(data.trackingId ?? "PX-TRK-PENDING"),
+    deliveryLocation: data.deliveryLocation && typeof data.deliveryLocation === "object" ? data.deliveryLocation as import("@/lib/types").AppLocation : undefined,
     productId: typeof primaryItem.productId === "string" ? primaryItem.productId : typeof data.productId === "string" ? data.productId : undefined,
     imageUrl: typeof primaryItem.imageUrl === "string" && primaryItem.imageUrl ? primaryItem.imageUrl : typeof data.imageUrl === "string" && data.imageUrl ? data.imageUrl : undefined,
     imageIndex: Number.isInteger(imageIndex) ? imageIndex : undefined,

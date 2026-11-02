@@ -60,6 +60,17 @@ after(async () => {
   await environment?.cleanup();
 });
 
+test("delivery addresses belong only to their customer", async () => {
+  const owner = environment.authenticatedContext("customer-1").firestore();
+  const other = environment.authenticatedContext("customer-2").firestore();
+  const address = { id: "default", label: "Home", address: "Bandra West, Mumbai 400050", latitude: 19.06, longitude: 72.83 };
+  await assertSucceeds(setDoc(doc(owner, "users/customer-1/deliveryLocations/default"), address));
+  await assertSucceeds(getDoc(doc(owner, "users/customer-1/deliveryLocations/default")));
+  await assertFails(getDoc(doc(other, "users/customer-1/deliveryLocations/default")));
+  await assertFails(setDoc(doc(other, "users/customer-1/deliveryLocations/default"), address));
+  await assertFails(updateDoc(doc(owner, "users/customer-1/deliveryLocations/default"), { latitude: 200 }));
+});
+
 function pendingUpiOrder(customerId = "customer-1") {
   return {
     customerId,

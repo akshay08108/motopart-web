@@ -9,6 +9,7 @@ import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import styles from "./garage-search-page.module.css";
 import { apiUrl } from "@/lib/api-url";
+import { DeliveryLocationPicker } from "./delivery-location-picker";
 
 type SearchResult = {
   vehicleModelId: string;
@@ -26,7 +27,7 @@ type VariantGuide = {
 const preferredMakes = ["Maruti Suzuki", "Hyundai", "Tata Motors", "Mahindra", "Toyota", "Kia", "Honda", "MG Motor"];
 
 export function GarageSearchPage() {
-  const { vehicles, activeVehicleId, setActiveVehicleId, addVehicle, location, setLocation, garages, addGarage } = usePartX();
+  const { vehicles, activeVehicleId, setActiveVehicleId, addVehicle, location, garages, addGarage } = usePartX();
   const [vehicleOpen, setVehicleOpen] = useState(false);
   const [garageOpen, setGarageOpen] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
@@ -202,7 +203,7 @@ export function GarageSearchPage() {
     </div> : null}
 
     {garageOpen ? <SimpleModal title="Add a trusted garage" close={() => setGarageOpen(false)}><form className="px-form" onSubmit={saveGarage}><label>Garage name<input name="name" required/></label><label>Phone<input name="phone" required/></label><label>Services<input name="services" placeholder="Installation, diagnostics" required/></label><label>Address<textarea name="address" required/></label><button className="px-btn px-btn-red" type="submit">Save garage</button></form></SimpleModal> : null}
-    {locationOpen ? <SimpleModal title="Update delivery location" close={() => setLocationOpen(false)}><form className="px-form" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); setLocation({ ...location, label: String(data.get("label")), address: String(data.get("address")) }); setLocationOpen(false); }}><label>Label<input name="label" defaultValue={location.label} required/></label><label>Full address<textarea name="address" defaultValue={location.address} required/></label><button className="px-btn px-btn-red" type="submit">Update location</button></form></SimpleModal> : null}
+    {locationOpen ? <DeliveryLocationPicker close={() => setLocationOpen(false)}/> : null}
   </div>;
 }
 

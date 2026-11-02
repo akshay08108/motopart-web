@@ -175,6 +175,7 @@ export type SellerOrderItem = {
 };
 
 export type SellerOrder = {
+  deliveryLocation?: AppLocation;
   id: string;
   trackingId: string;
   productId?: string;

@@ -2,11 +2,11 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createUserWithEmailAndPassword, deleteUser, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut as firebaseSignOut, updateProfile } from "firebase/auth";
-import { collection, doc, getDoc, onSnapshot, query, runTransaction, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import type { AppLocation, CartLine, CustomerUser, Garage, LiveAnnouncement, Order, OrderStage, PartnerStore, PaymentMethod, PaymentOrderStatus, Product, SellerPaymentStatus, SellerProduct, StorePaymentSettings, UserRole, Vehicle } from "@/lib/types";
 import { getDemoCatalog, vehicles as initialVehicles } from "@/lib/demo-data";
 import { firebaseAuth, firestore } from "@/lib/firebase";
-import { demoGarages, demoLocation, demoStores } from "@/lib/marketplace-data";
+import { demoGarages, demoStores } from "@/lib/marketplace-data";
 import { createPartXId } from "@/lib/seller-data";
 import { createPaymentOrderId, developmentPaymentSettings, isValidUtr, normalizeUtr, paymentExpiresAt } from "@/lib/upi-payments";
 import { readBrowserStorage, removeBrowserStorage, writeBrowserStorage } from "@/lib/browser-storage";
@@ -47,7 +47,7 @@ type AppContextValue = {
   setActiveVehicleId: (id: string) => void;
   addVehicle: (vehicle: Vehicle) => void;
   location: AppLocation;
-  setLocation: (location: AppLocation) => void;
+  setLocation: (location: AppLocation) => Promise<void>;
   garages: Garage[];
   addGarage: (garage: Garage) => void;
   stores: PartnerStore[];
@@ -79,7 +79,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>(initialVehicles);
   const [activeVehicleId, setActiveVehicleId] = useState(initialVehicles[0].id);
-  const [location, setLocation] = useState<AppLocation>(demoLocation);
+  const [location, setLocation] = useState<AppLocation>({ id: "default", label: "Home", address: "" });
   const [garages, setGarages] = useState<Garage[]>(demoGarages);
   const [stores, setStores] = useState<PartnerStore[]>(demoStores);
   const [firebaseStores, setFirebaseStores] = useState<FirebaseStoreRecord[]>([]);
@@ -98,6 +98,15 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     ordersRef.current = orders;
   }, [orders]);
+
+  useEffect(() => {
+    queueMicrotask(() => setLocation({ id: "default", label: "Home", address: "" }));
+    if (!user?.id) return;
+    return onSnapshot(doc(firestore, "users", user.id, "deliveryLocations", "default"), (snapshot) => {
+      const data = snapshot.data();
+      if (data && typeof data.address === "string") setLocation(data as AppLocation);
+    }, () => { /* Saving reports any connection or permission error in the address picker. */ });
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user || browserNotificationPermission() !== "granted") return;
@@ -184,7 +193,6 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
           const profile = JSON.parse(savedProfile);
           if (Array.isArray(profile.vehicles)) setVehicles(profile.vehicles);
           if (typeof profile.activeVehicleId === "string") setActiveVehicleId(profile.activeVehicleId);
-          if (profile.location && typeof profile.location === "object" && typeof profile.location.address === "string") setLocation(profile.location);
           if (Array.isArray(profile.garages)) setGarages(profile.garages);
           if (Array.isArray(profile.stores)) setStores(profile.stores.map((saved: PartnerStore) => {
             const seed = demoStores.find((store) => store.id === saved.id);
@@ -337,7 +345,12 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     setActiveVehicleId,
     addVehicle: (vehicle) => { setVehicles((current) => [...current, vehicle]); setActiveVehicleId(vehicle.id); },
     location,
-    setLocation,
+    setLocation: async (nextLocation) => {
+      if (!user) throw new Error("Sign in before saving your address.");
+      const saved = Object.fromEntries(Object.entries(nextLocation).filter(([, value]) => value !== undefined)) as AppLocation;
+      await setDoc(doc(firestore, "users", user.id, "deliveryLocations", "default"), saved);
+      setLocation(saved);
+    },
     garages,
     addGarage: (garage) => setGarages((current) => [...current, garage]),
     stores: marketplaceStores,
@@ -353,6 +366,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     placeOrder: async (fulfilment, payment, attemptId) => {
       if (!user) throw new Error("Sign in as a customer before placing an order.");
       if (!resolvedCart.length) throw new Error("Your cart is empty.");
+      if (fulfilment === "delivery" && location.address.trim().length < 10) throw new Error("Choose a full delivery address before placing your order.");
       const orderStoreIds = new Set(resolvedCart.map((item) => item.storeId ?? "autohub-mumbai"));
       if (orderStoreIds.size > 1) throw new Error("Products from different stores must be checked out separately so each seller receives the correct order.");
       const storeId = resolvedCart[0]?.storeId ?? "autohub-mumbai";
@@ -406,6 +420,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         currency: "INR",
         fulfilment,
         paymentStatus: order.paymentStatus,
+        ...(fulfilment === "delivery" ? { deliveryLocation: Object.fromEntries(Object.entries(location).filter(([, value]) => value !== undefined)) } : {}),
         paymentMethod: payment,
         paymentMode: "live",
         orderStatus: order.orderStatus,
