@@ -3,11 +3,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import { SellerShell } from "./seller-shell";
 import { CartFeedback } from "./cart-feedback";
+import { PartSearch } from "./part-search";
 
 const nav = [
   ["/", "Home"], ["/shop", "Shop Parts"], ["/garage", "My Garage"], ["/orders", "Orders"], ["/offers", "Offers"],
@@ -23,12 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggleTheme, cartCount, cartNotice, announcements, user, authHydrated } = usePartX();
-  const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    router.push(`/shop${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ""}`);
-  };
   const active = (href: string) => href === "/" ? pathname === "/" : pathname.startsWith(href);
   const customerRoute = ["/account", "/order", "/orders", "/garage", "/checkout", "/support"].some((route) => pathname === route || pathname.startsWith(`${route}/`));
   const sellerRoute = pathname === "/seller" || pathname === "/seller-order" || pathname.startsWith("/seller/");
@@ -63,10 +59,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav className={open ? "px-nav is-open" : "px-nav"} aria-label="Primary navigation">
           {nav.map(([href, label]) => <Link key={href} className={active(href) ? "active" : ""} href={href} onClick={() => setOpen(false)}>{label}</Link>)}
         </nav>
-        <form className="px-header-search" onSubmit={submit} role="search">
-          <Icon name="search" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search part name, number or brand" aria-label="Search parts" />
-        </form>
+        <PartSearch className="px-nav-search"/>
         <div className="px-header-actions">
           <button className="px-icon-button" onClick={toggleTheme} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><Icon name={theme === "light" ? "moon" : "sun"}/></button>
           <Link href={isCustomer ? "/account" : isSeller ? "/seller" : "/login"} className="px-icon-button" aria-label={user ? "Account" : "Sign in"}><Icon name="user"/></Link>

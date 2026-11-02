@@ -7,10 +7,17 @@ import { vehicleName } from "@/lib/vehicle-display";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import { ProductCard } from "./product-card";
+import { PartSearch } from "./part-search";
+import { searchParts } from "@/lib/catalog-search";
 
 const preferredCategories = ["Brakes", "Filters", "Batteries", "Engine", "Electrical", "Suspension", "Accessories", "Other"];
 
 export function ShopPage() {
+  const params = useSearchParams();
+  return <ShopResults key={params.toString()}/>;
+}
+
+function ShopResults() {
   const params = useSearchParams();
   const initialCategory = params.get("category") ?? "All";
   const [view, setView] = useState<"parts" | "stores">(params.get("view") === "stores" ? "stores" : "parts");
@@ -23,13 +30,7 @@ export function ShopPage() {
   const activeCategory = categories.includes(category) ? category : "All";
   const vehicle = vehicles.find((item) => item.id === activeVehicleId);
   const products = useMemo(() => {
-    const normalizedQuery = normalizeSearch(query);
-    const compactQuery = normalizedQuery.replaceAll(" ", "");
-    const list = catalog.filter((product) => {
-      const matchesCategory = activeCategory === "All" || product.category === activeCategory;
-      const haystack = normalizeSearch(`${product.name} ${product.brand} ${product.partNumber} ${product.oemNumber} ${product.barcode ?? ""} ${product.category} ${product.seller}`);
-      return matchesCategory && (!normalizedQuery || haystack.includes(normalizedQuery) || haystack.replaceAll(" ", "").includes(compactQuery));
-    });
+    const list = searchParts(catalog, query).filter((product) => activeCategory === "All" || product.category === activeCategory);
     if (sort === "low") list.sort((a, b) => a.price - b.price);
     if (sort === "high") list.sort((a, b) => b.price - a.price);
     if (sort === "rating") list.sort((a, b) => b.rating - a.rating);
@@ -61,7 +62,7 @@ export function ShopPage() {
       <button role="tab" aria-selected={view === "stores"} className={view === "stores" ? "active" : ""} onClick={() => { setView("stores"); setQuery(""); }}><Icon name="store"/>Shop by store</button>
     </div>
     <div className="px-shop-tools">
-      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={view === "parts" ? "Search name, store, brand, OEM or part number" : "Search store, location, category or part"} aria-label={view === "parts" ? "Search catalog" : "Search stores"}/>
+      {view === "parts" ? <PartSearch value={query} onChange={setQuery} onSearch={(term) => { setQuery(term); setCategory("All"); }} className="px-catalog-search" label="Search catalog" placeholder="Search name, store, brand, OEM or part number"/> : <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search store, location, category or part" aria-label="Search stores"/>}
       {view === "parts" ? <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort parts"><option value="recommended">Recommended</option><option value="low">Price: low to high</option><option value="high">Price: high to low</option><option value="rating">Top rated</option></select> : <select value={storeSort} onChange={(event) => setStoreSort(event.target.value)} aria-label="Sort stores"><option value="rated">Top rated</option><option value="products">Most products</option><option value="nearest">Nearest first</option></select>}
     </div>
     {view === "parts" ? <>

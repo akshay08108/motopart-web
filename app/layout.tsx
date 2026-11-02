@@ -7,6 +7,7 @@ import "./partx.css";
 import "./delivery-location.css";
 import "./cart.css";
 import "./order-experience.css";
+import "./search.css";
 import type { Metadata, Viewport } from "next";
 import { AppShell } from "@/components/partx/app-shell";
 import { PartXProvider } from "@/components/partx/app-provider";
