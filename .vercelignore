@@ -1,0 +1,11 @@
+# Only the web application is deployed to Vercel.
+android/
+out/
+.capacitor-build/
+.capacitor-output-previous/
+node_modules/
+.next/
+.memsearch/
+outputs/
+*.apk
+*.aab
