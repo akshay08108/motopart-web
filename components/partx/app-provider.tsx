@@ -34,6 +34,8 @@ export type CartSellerSelection = { storeId: string; storeName: string; price: n
 export type RegisterInput = { name: string; email: string; mobile: string; password: string; role: UserRole; storeName?: string };
 
 type AppContextValue = {
+  cartNotice: { id: number; productName: string; message: string; added: boolean; expiresAt: number } | null;
+  dismissCartNotice: (id: number) => void;
   theme: "light" | "dark";
   toggleTheme: () => void;
   cart: CartLine[];
@@ -77,6 +79,8 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function PartXProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [cartNotice, setCartNotice] = useState<AppContextValue["cartNotice"]>(null);
+  const cartNoticeSequence = useRef(0);
   const [vehicles, setVehicles] = useState<Vehicle[]>(initialVehicles);
   const [activeVehicleId, setActiveVehicleId] = useState(initialVehicles[0].id);
   const [location, setLocation] = useState<AppLocation>({ id: "default", label: "Home", address: "" });
@@ -312,12 +316,14 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   }), [cart, catalogById, storesById]);
 
   const value = useMemo<AppContextValue>(() => ({
+    cartNotice,
+    dismissCartNotice: (id) => setCartNotice((current) => current?.id === id ? null : current),
     theme,
     toggleTheme: () => setTheme((current) => current === "light" ? "dark" : "light"),
     cart: resolvedCart,
     cartCount: resolvedCart.reduce((sum, line) => sum + line.quantity, 0),
     cartTotal: resolvedCart.reduce((sum, line) => sum + (line.unitPrice ?? line.product.price) * line.quantity, 0),
-    addToCart: (product, quantity = 1, seller) => setCart((current) => {
+    addToCart: (product, quantity = 1, seller) => {
       const exactStore = marketplaceStores.find((store) => store.listings.some((listing) => listing.productId === product.id));
       const defaultStore = exactStore ?? marketplaceStores.find((store) => store.listings.some((listing) => listing.partNumber === product.partNumber));
       const defaultListing = defaultStore?.listings.find((listing) => listing.productId === product.id)
@@ -327,11 +333,19 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       const selectedListing = selectedStore?.listings.find((listing) => listing.productId === product.id)
         ?? selectedStore?.listings.find((listing) => listing.partNumber === product.partNumber);
       const selectedProduct = selectedListing ? catalogById.get(selectedListing.productId) ?? product : product;
+      const requestedQuantity = Number.isFinite(quantity) ? Math.max(1, Math.floor(quantity)) : 1;
+      const existing = resolvedCart.find((line) => line.product.id === selectedProduct.id || line.product.partNumber === selectedProduct.partNumber);
+      const sameStore = existing?.storeId === selection.storeId;
+      const canAdd = selectedProduct.stock > 0 && (!sameStore || (existing?.quantity ?? 0) < selectedProduct.stock);
+      setCartNotice({ id: ++cartNoticeSequence.current, productName: selectedProduct.name, message: canAdd ? (existing && !sameStore ? "Store updated in cart" : "Added to cart") : selectedProduct.stock <= 0 ? "Currently out of stock" : "Maximum available stock already in cart", added: canAdd, expiresAt: Date.now() + 3500 });
+      if (!canAdd) return;
+      setCart((current) => {
       const found = current.find((line) => line.product.id === selectedProduct.id || line.product.partNumber === selectedProduct.partNumber);
-      if (!found) return [...current, { product: selectedProduct, quantity, storeId: selection.storeId, storeName: selection.storeName, unitPrice: selection.price }];
+      if (!found) return [...current, { product: selectedProduct, quantity: Math.min(requestedQuantity, selectedProduct.stock), storeId: selection.storeId, storeName: selection.storeName, unitPrice: selection.price }];
       if (found.storeId !== selection.storeId) return current.map((line) => line.product.id === found.product.id ? { ...line, product: selectedProduct, storeId: selection.storeId, storeName: selection.storeName, unitPrice: selection.price } : line);
-      return current.map((line) => line.product.id === found.product.id ? { ...line, product: selectedProduct, quantity: Math.min(line.quantity + quantity, selectedProduct.stock), unitPrice: selection.price } : line);
-    }),
+      return current.map((line) => line.product.id === found.product.id ? { ...line, product: selectedProduct, quantity: Math.min(line.quantity + requestedQuantity, selectedProduct.stock), unitPrice: selection.price } : line);
+      });
+    },
     setQuantity: (id, quantity) => {
       const partNumber = resolvedCart.find((line) => line.product.id === id)?.product.partNumber;
       setCart((current) => current.map((line) => line.product.id === id || (partNumber && line.product.partNumber === partNumber) ? { ...line, quantity: Math.max(1, Math.min(quantity, line.product.stock)) } : line));
@@ -619,7 +633,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       removeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY);
       await firebaseSignOut(firebaseAuth);
     },
-  }), [theme, resolvedCart, vehicles, activeVehicleId, location, garages, marketplaceStores, announcements, catalog, catalogById, storesById, orders, liveOrderUpdate, user, hydrated, firebaseHydrated, notificationPermission, notificationError]);
+  }), [cartNotice, theme, resolvedCart, vehicles, activeVehicleId, location, garages, marketplaceStores, announcements, catalog, catalogById, storesById, orders, liveOrderUpdate, user, hydrated, firebaseHydrated, notificationPermission, notificationError]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
@@ -698,7 +712,8 @@ function stableImageIndex(value: string) {
 }
 
 function toCustomerOrder(id: string, data: Record<string, unknown>): PartXOrder {
-  const items = Array.isArray(data.items) ? data.items.flatMap((item) => {
+  const rawItems = Array.isArray(data.items) && data.items.length ? data.items : data.productId || data.partNumber ? [data] : [];
+  const items = rawItems.length ? rawItems.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
     const line = item as Record<string, unknown>;
     const unitPrice = Number(line.unitPrice ?? 0);
@@ -720,7 +735,7 @@ function toCustomerOrder(id: string, data: Record<string, unknown>): PartXOrder 
     trackingId: String(data.trackingId ?? "PX-TRK-PENDING"),
     storeId: String(data.storeId ?? ""),
     storeName: String(data.storeName ?? "PartX seller"),
-    placedAt: String(data.placedAt ?? "Just now"),
+    placedAt: firestoreDate(data.createdAt)?.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) ?? String(data.placedAt ?? "Date unavailable"),
     eta: String(data.eta ?? "Delivery estimate pending"),
     stage: isOrderStage(data.stage) ? data.stage : "Confirmed",
     total: Number(data.totalAmount ?? data.total ?? 0),

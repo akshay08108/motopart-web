@@ -7,6 +7,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import { SellerShell } from "./seller-shell";
+import { CartFeedback } from "./cart-feedback";
 
 const nav = [
   ["/", "Home"], ["/shop", "Shop Parts"], ["/garage", "My Garage"], ["/orders", "Orders"], ["/offers", "Offers"],
@@ -21,7 +22,7 @@ const fallbackAnnouncements = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { theme, toggleTheme, cartCount, announcements, user, authHydrated } = usePartX();
+  const { theme, toggleTheme, cartCount, cartNotice, announcements, user, authHydrated } = usePartX();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const submit = (event: FormEvent) => {
@@ -69,13 +70,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="px-header-actions">
           <button className="px-icon-button" onClick={toggleTheme} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><Icon name={theme === "light" ? "moon" : "sun"}/></button>
           <Link href={isCustomer ? "/account" : isSeller ? "/seller" : "/login"} className="px-icon-button" aria-label={user ? "Account" : "Sign in"}><Icon name="user"/></Link>
-          <Link href="/cart" className="px-icon-button px-cart-button" aria-label={`Cart with ${cartCount} items`}><Icon name="cart"/>{cartCount > 0 && <span>{cartCount}</span>}</Link>
+          <Link href="/cart" className="px-icon-button px-cart-button" aria-label={`Cart with ${cartCount} items`}><Icon name="cart" key={cartNotice?.id ?? 0} className={cartNotice?.added ? "px-cart-bump" : undefined}/>{cartCount > 0 && <span>{cartCount}</span>}</Link>
           <button className="px-menu-button" onClick={() => setOpen((value) => !value)} aria-label="Toggle menu"><Icon name={open ? "close" : "menu"}/></button>
         </div>
       </div>
     </header>
     <div className="px-ticker" aria-label="Latest parts and sellers"><span>LIVE UPDATES</span><div>{liveUpdates.map((announcement, index) => <span className="px-ticker-item" key={announcement.id}><b>{announcement.text}</b>{index < liveUpdates.length - 1 ? <i/> : null}</span>)}</div></div>
     <main>{children}</main>
+    <CartFeedback/>
     <footer className="px-footer">
       <div className="px-container px-footer-grid">
         <div><div className="px-footer-brand">Part<span>X</span></div><p>The right part. The first time.</p></div>
@@ -86,7 +88,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="px-container px-footer-bottom">© 2026 PartX · Built with Codex</div>
     </footer>
     <nav className="px-mobile-nav" aria-label="Mobile navigation">
-      {[["/", "home", "Home"], ["/shop", "grid", "Shop"], ["/cart", "cart", "Cart"], ["/orders", "orders", "Orders"], [isCustomer ? "/account" : isSeller ? "/seller" : "/login", "user", user ? "Account" : "Sign in"]].map(([href, icon, label]) => <Link key={href} className={active(href) ? "active" : ""} href={href}><span><Icon name={icon}/>{href === "/cart" && cartCount > 0 && <em>{cartCount}</em>}</span>{label}</Link>)}
+      {[["/", "home", "Home"], ["/shop", "grid", "Shop"], ["/cart", "cart", "Cart"], ["/orders", "orders", "Orders"], [isCustomer ? "/account" : isSeller ? "/seller" : "/login", "user", user ? "Account" : "Sign in"]].map(([href, icon, label]) => <Link key={href} className={active(href) ? "active" : ""} href={href}><span><Icon name={icon} key={href === "/cart" ? cartNotice?.id ?? 0 : icon} className={href === "/cart" && cartNotice?.added ? "px-cart-bump" : undefined}/>{href === "/cart" && cartCount > 0 && <em>{cartCount}</em>}</span>{label}</Link>)}
     </nav>
   </div>;
 }
