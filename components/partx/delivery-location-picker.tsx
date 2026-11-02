@@ -9,7 +9,8 @@ type Place = { id: string; place_name: string; center: [number, number] };
 const apiKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY;
 
 async function lookup(query: string, signal?: AbortSignal): Promise<Place[]> {
-  const params = new URLSearchParams({ key: apiKey ?? "", language: "en", limit: "5" });
+  const params = new URLSearchParams({ key: apiKey ?? "", language: "en" });
+  if (!/^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(query)) params.set("limit", "5");
   const response = await fetch(`https://api.maptiler.com/geocoding/${encodeURIComponent(query)}.json?${params}`, { signal });
   if (!response.ok) throw new Error("Address search is unavailable. Please try again or enter your address below.");
   const data = await response.json();
