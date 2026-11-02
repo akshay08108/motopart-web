@@ -23,8 +23,8 @@ export function ProductCard({ product }: { product: Product }) {
       <Link href={productHref(product.id)}><h3>{product.name}</h3></Link>
       <p className="px-product-store"><Icon name="store"/>Sold by <b>{product.seller}</b></p>
       <p className={compatible ? "px-fitment fits" : "px-fitment"}><Icon name={compatible ? "check" : "garage"}/>{compatible ? "Fits your selected vehicle" : "Check vehicle fitment"}</p>
-      <div className="px-product-price"><strong>₹{product.price.toLocaleString("en-IN")}</strong><s>₹{product.listPrice.toLocaleString("en-IN")}</s></div>
-      <div className="px-product-delivery">{product.deliveryLabel}</div>
+      <div className="px-product-price"><strong>₹{product.price.toLocaleString("en-IN")}</strong>{discount > 0 ? <s>₹{product.listPrice.toLocaleString("en-IN")}</s> : null}</div>
+      {product.deliveryLabel ? <div className="px-product-delivery">{product.deliveryLabel}</div> : null}
       <button className="px-btn px-btn-dark" onClick={() => addToCart(product)}>Add to cart <Icon name="cart"/></button>
     </div>
   </article>;
