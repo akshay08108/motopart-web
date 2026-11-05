@@ -19,7 +19,8 @@
     "android:debug": "pnpm build:mobile && pnpm cap:sync && cd android && ./gradlew assembleDebug",
     "android:release": "pnpm build:mobile && pnpm cap:sync && cd android && ./gradlew assembleRelease",
     "android:bundle": "pnpm build:mobile && pnpm cap:sync && cd android && ./gradlew bundleRelease",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-partx-rules \"node --test tests/firestore.rules.test.mjs\""
+    "test:rules": "firebase emulators:exec --only firestore --project demo-partx-rules \"node --test tests/firestore.rules.test.mjs\"",
+    "test:riders": "node --test functions/rider-service.test.js"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",

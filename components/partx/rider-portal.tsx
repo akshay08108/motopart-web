@@ -1,0 +1,176 @@
+"use client";
+
+import Image from "next/image";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { createContext, useContext, useEffect, useRef, useState, type FormEvent } from "react";
+import { doc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import { firestore } from "@/lib/firebase";
+import { deliveryCall, deliveryDate, deliveryLabels, isActiveDelivery, navigationLink, phoneLink, useRiderJobs, type RiderDelivery } from "@/lib/rider";
+import { usePartX } from "./app-provider";
+import { Icon } from "./icons";
+import { DeliveryMap } from "./delivery-map";
+
+type Workspace = ReturnType<typeof useRiderJobs>;
+const RiderContext = createContext<Workspace | null>(null);
+function useRider() { const value = useContext(RiderContext); if (!value) throw new Error("Rider workspace is required"); return value; }
+
+export function RiderShell({ children }: { children: React.ReactNode }) {
+  const { user, signOut, enableNotifications, notificationPermission, notificationError } = usePartX();
+  const workspace = useRiderJobs(user?.id);
+  const { profile, jobs, loaded, error } = workspace;
+  const pathname = usePathname();
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const [connected, setConnected] = useState(true);
+  const [notice, setNotice] = useState("");
+  const previousJobs = useRef<Set<string> | null>(null);
+  const audio = useRef<AudioContext | null>(null);
+  const active = jobs.find((job) => job.id === profile?.activeDeliveryId && isActiveDelivery(job.state));
+  useEffect(() => {
+    const online = () => setConnected(true); const offline = () => setConnected(false);
+    queueMicrotask(() => setConnected(navigator.onLine));
+    window.addEventListener("online", online); window.addEventListener("offline", offline);
+    return () => { window.removeEventListener("online", online); window.removeEventListener("offline", offline); };
+  }, []);
+  useEffect(() => {
+    if (!user?.id || !profile?.active || !profile.online) return;
+    const heartbeat = () => {
+      if (document.visibilityState !== "visible" || !navigator.onLine) return;
+      void updateDoc(doc(firestore, "riders", user.id), { online: true, lastSeenAt: serverTimestamp(), updatedAt: serverTimestamp() }).catch(() => setActionError("Could not refresh your availability. Check your connection."));
+    };
+    heartbeat();
+    const timer = window.setInterval(heartbeat, 45_000);
+    document.addEventListener("visibilitychange", heartbeat);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", heartbeat); };
+  }, [user?.id, profile?.active, profile?.online]);
+  useEffect(() => {
+    if (!loaded) return;
+    const ids = new Set(jobs.map((job) => job.id));
+    const newJob = previousJobs.current ? jobs.find((job) => job.state === "ASSIGNED" && !previousJobs.current!.has(job.id)) : undefined;
+    previousJobs.current = ids;
+    if (!newJob) return;
+    queueMicrotask(() => setNotice(`New pickup assigned from ${newJob.storeName}.`));
+    if (audio.current?.state === "running") {
+      const sound = audio.current.createOscillator(); const gain = audio.current.createGain();
+      sound.connect(gain); gain.connect(audio.current.destination); gain.gain.value = 0.08; sound.frequency.value = 660;
+      sound.start(); sound.stop(audio.current.currentTime + 0.6);
+    }
+  }, [jobs, loaded]);
+  const toggleOnline = async () => {
+    if (!user || !profile) return;
+    setBusy(true); setActionError("");
+    try { await updateDoc(doc(firestore, "riders", user.id), { online: !profile.online, lastSeenAt: serverTimestamp(), updatedAt: serverTimestamp() }); }
+    catch { setActionError("Availability could not be saved. Check your connection and try again."); }
+    finally { setBusy(false); }
+  };
+  return <RiderContext.Provider value={workspace}><div className="rx-app">
+    <header className="rx-header"><Link href="/rider" className="rx-brand"><Image src="/brand/partx-light.png" alt="" width={40} height={40}/><span>Part<b>X</b><small>RIDER</small></span></Link><div className="rx-header-right"><button className={`rx-availability ${profile?.online && connected ? "is-online" : ""}`} type="button" role="switch" aria-checked={Boolean(profile?.online)} disabled={!profile?.active || busy || !connected} onClick={() => void toggleOnline()}><i/>{profile?.online ? "Online" : "Offline"}</button><button className="rx-icon" type="button" onClick={() => void signOut()} aria-label="Sign out"><Icon name="logout"/></button></div></header>
+    <nav className="rx-navigation" aria-label="Rider navigation">{[["/rider", "home", "Deliveries"], ["/rider/history", "orders", "History"], ["/rider/profile", "user", "Profile"]].map(([href, icon, label]) => <Link key={href} href={href} className={pathname === href ? "active" : ""}><Icon name={icon}/>{label}</Link>)}</nav>
+    <main className="rx-main">
+      {!connected ? <p className="rx-error" role="alert">You are offline. Reconnect before updating a delivery. Location sharing is paused.</p> : null}
+      {error || actionError ? <p className="rx-error" role="alert">{error || actionError}</p> : null}
+      {notice ? <div className="rx-notice" role="status"><Icon name="bell"/>{notice}<button type="button" className="rx-link" onClick={() => setNotice("")}>Dismiss</button></div> : null}
+      {!loaded ? <div className="rx-empty">Loading your rider workspace…</div> : !profile?.active ? <div className="rx-empty"><Icon name="user"/><h1>Your rider access is not active</h1><p>Contact PartX operations to activate your account.</p></div> : <>
+        {active?.state === "PICKED_UP" ? <RiderLocationSharing key={active.id} delivery={active}/> : null}
+        {children}
+      </>}
+      <section className="rx-alert-settings"><div><Icon name="bell"/><span><b>Stay ready for your next pickup</b><small>{notificationPermission === "granted" ? "Push notifications enabled. Enable sound for this session." : "Enable assignment notifications and sound."}</small></span></div><button className="rx-secondary" type="button" onClick={() => {
+        try { if (!audio.current && "AudioContext" in window) audio.current = new AudioContext(); void audio.current?.resume().catch(() => undefined); } catch { /* Push alerts can still work without browser audio. */ }
+        void enableNotifications().then((enabled) => setNotice(enabled ? "Assignment notifications enabled. Sound is available while this portal is open." : "Check notification permissions to receive assignment alerts.")).catch(() => setNotice("Notifications could not be enabled. Check your browser settings and try again."));
+      }}>Enable alerts</button>{notificationError ? <p role="status">{notificationError}</p> : null}</section>
+    </main><footer className="rx-footer">PartX Rider · Every part, delivered.</footer>
+  </div></RiderContext.Provider>;
+}
+
+function RiderLocationSharing({ delivery }: { delivery: RiderDelivery }) {
+  const [sharing, setSharing] = useState(false);
+  const [message, setMessage] = useState("Share your location so the customer can follow this delivery.");
+  const [lastSent, setLastSent] = useState<number>();
+  useEffect(() => {
+    if (!sharing) return;
+    if (!navigator.geolocation) { queueMicrotask(() => { setMessage("Location sharing is not supported by this browser."); setSharing(false); }); return; }
+    let watcher: number | undefined;
+    let refresh: number | undefined;
+    let stopped = false; let lastWrite = 0; let inFlight = false;
+    const stop = () => { if (watcher !== undefined) navigator.geolocation.clearWatch(watcher); if (refresh !== undefined) window.clearInterval(refresh); watcher = undefined; refresh = undefined; };
+    const start = () => {
+      stop();
+      if (document.visibilityState !== "visible" || !navigator.onLine) { setMessage("Sharing paused. Keep this portal open and reconnect to resume."); return; }
+      setMessage("Getting your GPS location…");
+      const received = (position: GeolocationPosition) => {
+        if (stopped || document.visibilityState !== "visible" || !navigator.onLine || inFlight || Date.now() - lastWrite < 10_000) return;
+        if (Date.now() - position.timestamp > 20_000) { setMessage("Waiting for a fresh GPS fix…"); return; }
+        if (position.coords.accuracy > 1000) { setMessage("GPS accuracy is too low. Move outdoors and try again."); return; }
+        inFlight = true;
+        void setDoc(doc(firestore, "deliveries", delivery.id, "location", "current"), {
+          riderId: delivery.riderId, latitude: position.coords.latitude, longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy, updatedAt: serverTimestamp(),
+        }).then(() => { if (!stopped) { lastWrite = Date.now(); setLastSent(lastWrite); setMessage(position.coords.accuracy > 100 ? "Location shared · GPS accuracy is limited" : "Your location is being shared with this customer."); } })
+          .catch(() => { if (!stopped) setMessage("Location could not be shared. Check your connection and retry."); })
+          .finally(() => { inFlight = false; });
+      };
+      const failed = (error: GeolocationPositionError) => {
+        if (stopped) return;
+        setMessage(error.code === 1 ? "Location permission denied. Allow location in your browser settings, then retry." : "GPS unavailable. Check location settings and move to an open area.");
+        if (error.code === 1) { stop(); setSharing(false); }
+      };
+      const options = { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 };
+      watcher = navigator.geolocation.watchPosition(received, failed, options);
+      // Obtain fresh fixes while stationary too; never re-stamp an old coordinate.
+      refresh = window.setInterval(() => navigator.geolocation.getCurrentPosition(received, failed, options), 15_000);
+    };
+    start(); document.addEventListener("visibilitychange", start); window.addEventListener("online", start); window.addEventListener("offline", start);
+    return () => { stopped = true; stop(); document.removeEventListener("visibilitychange", start); window.removeEventListener("online", start); window.removeEventListener("offline", start); };
+  }, [sharing, delivery.id, delivery.riderId]);
+  return <section className="rx-location-sharing"><div><Icon name="pin"/><span><b>{sharing ? "Location sharing enabled" : "Start live tracking"}</b><small aria-live="polite">{message}</small>{lastSent ? <small>Last sent {deliveryDate(lastSent)}</small> : null}</span></div><button type="button" className={sharing ? "rx-secondary" : "rx-primary"} onClick={() => setSharing((value) => !value)}>{sharing ? "Pause sharing" : "Share location"}</button><p>Keep this portal open during delivery. Sharing may pause when you lock your phone or switch apps.</p></section>;
+}
+
+export function RiderHomePage() {
+  const { jobs, profile } = useRider();
+  const { user } = usePartX();
+  const active = jobs.find((job) => job.id === profile?.activeDeliveryId && isActiveDelivery(job.state));
+  const today = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata" }).format(new Date());
+  const deliveredToday = jobs.filter((job) => job.state === "DELIVERED" && job.deliveredAt && new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata" }).format(new Date(job.deliveredAt)) === today);
+  return <><div className="rx-page-title"><span>YOUR DELIVERY DESK</span><h1>Let’s get moving, {user?.name.split(" ")[0]}.</h1><p>{active ? "Your next stop is ready below." : profile?.online ? "You’re available. New assignments will appear here." : "Go online when you’re ready to receive assignments."}</p></div><div className="rx-stats"><div><span>Active delivery</span><b>{active ? "01" : "00"}</b></div><div><span>Delivered today</span><b>{String(deliveredToday.length).padStart(2, "0")}</b></div><div><span>COD collected today</span><b>₹{deliveredToday.reduce((sum, job) => sum + (job.codCollected ? job.codAmount : 0), 0).toLocaleString("en-IN")}</b></div></div>{active ? <RiderJob key={active.id} delivery={active}/> : <section className="rx-empty"><span className="rx-empty-icon"><Icon name="box"/></span><h2>{profile?.online ? "Ready for the next pickup" : "You’re currently offline"}</h2><p>{profile?.online ? "Keep this page open. A seller can assign you an order when it’s packed." : "Use the online switch above to make yourself available."}</p></section>}</>;
+}
+
+function RiderJob({ delivery }: { delivery: RiderDelivery }) {
+  const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [message, setMessage] = useState("");
+  const [reason, setReason] = useState(""); const [showReason, setShowReason] = useState<"decline" | "issue" | null>(null);
+  const [code, setCode] = useState(""); const [cashCollected, setCashCollected] = useState(false); const [itemsChecked, setItemsChecked] = useState(false);
+  const [confirmation, setConfirmation] = useState(false);
+  const act = async (action: string) => {
+    setBusy(true); setError(""); setMessage("");
+    try { await deliveryCall("updatePartXDelivery", { deliveryId: delivery.id, action, reason, code, codCollected: cashCollected }); setShowReason(null); setReason(""); setMessage(action === "issue" ? "Issue sent to the seller. Keep the order safe and contact the store." : "Delivery updated."); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Could not update delivery."); }
+    finally { setBusy(false); }
+  };
+  return <article className="rx-job"><header><div><span>ORDER {delivery.orderId}</span><h2>{delivery.state === "ASSIGNED" ? "A new pickup for you" : delivery.state === "ACCEPTED" ? "Collect from the store" : "Deliver to the destination"}</h2><p>Assigned {deliveryDate(delivery.assignedAt)}</p></div><span className="rx-status">{deliveryLabels[delivery.state]}</span></header>
+    <div className="rx-job-grid"><section><div className="rx-stops"><Stop label="PICKUP" name={delivery.storeName} point={delivery.pickup} phone={delivery.storePhone}/><Stop label={delivery.fulfilment === "garage" ? "GARAGE DELIVERY" : "DELIVERY"} name={delivery.customer.name} point={delivery.destination} phone={delivery.customer.phone}/></div><div className="rx-items"><h3>Items to collect · {delivery.items.reduce((sum, item) => sum + item.quantity, 0)} units</h3>{delivery.items.map((item, index) => <div key={index}><Icon name="box"/><span><b>{item.name}</b><small>{item.partNumber || "No part number"}</small></span><strong>×{item.quantity}</strong></div>)}</div></section>
+    <aside><div className={`rx-payment ${delivery.codAmount > 0 ? "is-cod" : ""}`}><Icon name="orders"/><span>{delivery.codAmount > 0 ? "COLLECT FROM CUSTOMER" : "PAYMENT"}</span><b>{delivery.codAmount > 0 ? `₹${delivery.codAmount.toLocaleString("en-IN")}` : "Already paid"}</b><small>{delivery.codAmount > 0 ? "Cash on delivery · Record collection before completion" : "No payment needs to be collected"}</small></div>
+      {delivery.issue ? <p className="rx-notice"><b>Issue reported</b><br/>{delivery.issue.reason}<br/><small>{deliveryDate(delivery.issue.reportedAt)}</small></p> : null}
+      {delivery.state === "ASSIGNED" ? <div className="rx-job-actions"><button className="rx-primary" disabled={busy} onClick={() => void act("accept")}>Accept delivery <Icon name="arrow"/></button><button className="rx-secondary" disabled={busy} onClick={() => setShowReason("decline")}>Decline assignment</button></div> : null}
+      {delivery.state === "ACCEPTED" ? <div className="rx-job-actions"><label className="rx-checkbox"><input type="checkbox" checked={itemsChecked} onChange={(event) => setItemsChecked(event.target.checked)}/>I checked every item and quantity at the store.</label><button className="rx-primary" disabled={busy || !itemsChecked} onClick={() => void act("pickup")}>{busy ? "Saving…" : "Confirm pickup"}<Icon name="check"/></button></div> : null}
+      {delivery.state === "PICKED_UP" ? <form className="rx-complete" onSubmit={(event) => { event.preventDefault(); void act("complete"); }}><h3>Confirm handover</h3><p>Ask the customer for the delivery code shown in their order. Enter it only after handing over the parts.</p><label>Customer’s delivery code<input className="rx-otp-input" inputMode="numeric" autoComplete="off" pattern="[0-9]{6}" maxLength={6} minLength={6} placeholder="6-digit code" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} required/></label>{delivery.codAmount > 0 ? <label className="rx-checkbox"><input type="checkbox" checked={cashCollected} onChange={(event) => setCashCollected(event.target.checked)}/>I collected ₹{delivery.codAmount.toLocaleString("en-IN")} in cash.</label> : null}<label className="rx-checkbox"><input type="checkbox" checked={confirmation} onChange={(event) => setConfirmation(event.target.checked)}/>All parts have been handed over.</label><button className="rx-primary" type="submit" disabled={busy || !confirmation || code.length !== 6 || (delivery.codAmount > 0 && !cashCollected)}>{busy ? "Verifying…" : "Verify & complete delivery"}</button></form> : null}
+      {delivery.state !== "ASSIGNED" ? <button type="button" className="rx-link" onClick={() => setShowReason("issue")}>Customer unreachable or another issue?</button> : null}
+      {showReason ? <form className="rx-reason-form" onSubmit={(event: FormEvent) => { event.preventDefault(); void act(showReason); }}><label>{showReason === "decline" ? "Reason for declining" : "Describe the delivery issue"}<textarea required minLength={showReason === "decline" ? 5 : 10} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Add details for the seller"/></label><div><button type="button" className="rx-secondary" onClick={() => setShowReason(null)}>Cancel</button><button className="rx-primary" disabled={busy} type="submit">{busy ? "Sending…" : "Send to seller"}</button></div></form> : null}
+      {error ? <p className="rx-error" role="alert">{error}</p> : null}{message ? <p className="rx-notice" role="status">{message}</p> : null}
+    </aside></div>{delivery.state === "PICKED_UP" ? <DeliveryMap delivery={delivery}/> : null}
+  </article>;
+}
+
+function Stop({ label, name, point, phone }: { label: string; name: string; point: RiderDelivery["pickup"]; phone: string }) {
+  return <div className="rx-stop"><i><Icon name={label === "PICKUP" ? "store" : "pin"}/></i><div><span>{label}</span><h3>{name}</h3><p>{point.address}</p><div className="rx-stop-links"><a href={navigationLink(point)} target="_blank" rel="noopener noreferrer"><Icon name="arrow"/>Navigate</a>{phone ? <a href={phoneLink(phone)}><Icon name="phone"/>Call</a> : <small>Phone not provided</small>}</div></div></div>;
+}
+
+export function RiderHistoryPage() {
+  const { jobs } = useRider();
+  const history = jobs.filter((job) => !isActiveDelivery(job.state));
+  return <><div className="rx-page-title"><span>YOUR DELIVERY RECORD</span><h1>Delivery history</h1><p>Completed deliveries and closed assignments, with exact timestamps.</p></div><div className="rx-history">{history.map((job) => <article className="rx-card" key={job.id}><header><span>{job.orderId}</span><b className="rx-status">{deliveryLabels[job.state]}</b></header><h2>{job.storeName}</h2><p>{job.destination.address}</p><div>{job.items.map((item, index) => <span className="rx-history-item" key={index}>{item.name} ×{item.quantity}</span>)}</div><footer><span>{deliveryDate(job.deliveredAt ?? job.closedAt)}</span><b>{job.codCollected ? `COD collected ₹${job.codAmount.toLocaleString("en-IN")}` : job.state === "DELIVERED" ? "Prepaid" : job.closedReason}</b></footer></article>)}{!history.length ? <div className="rx-empty"><Icon name="orders"/><h2>No completed deliveries yet</h2><p>Your delivery history will appear here after your first job.</p></div> : null}</div></>;
+}
+
+export function RiderProfilePage() {
+  const { user, signOut } = usePartX(); const { profile } = useRider();
+  return <><div className="rx-page-title"><span>PARTX RIDER</span><h1>Your profile</h1><p>Your rider details are managed by PartX operations.</p></div><section className="rx-card rx-profile"><div className="rx-avatar">{user?.name.slice(0, 1)}</div><h2>{profile?.name || user?.name}</h2><dl><div><dt>Email</dt><dd>{user?.email}</dd></div><div><dt>Phone</dt><dd>{profile?.phone || user?.mobile || "Not provided"}</dd></div><div><dt>Rider ID</dt><dd>{user?.id}</dd></div><div><dt>Account</dt><dd>{profile?.active ? "Active" : "Access paused"}</dd></div></dl><p>For changes to your contact details or delivery support, contact PartX operations through your assigned seller.</p><button type="button" className="rx-secondary" onClick={() => void signOut()}>Sign out</button></section></>;
+}

@@ -16,6 +16,8 @@ before(async () => {
     firestore: { rules: await readFile(new URL("../firestore.rules", import.meta.url), "utf8") },
   });
 
+  await environment.clearFirestore();
+
   await environment.withSecurityRulesDisabled(async (context) => {
     const database = context.firestore();
     await setDoc(doc(database, "users", "customer-1"), {
@@ -58,6 +60,65 @@ before(async () => {
 
 after(async () => {
   await environment?.cleanup();
+});
+
+test("rider roles and dispatch profiles cannot be self-provisioned or escalated", async () => {
+  const customer = environment.authenticatedContext("customer-1").firestore();
+  const newAccount = environment.authenticatedContext("uninvited-rider").firestore();
+  await assertFails(setDoc(doc(newAccount, "users/uninvited-rider"), { roles: ["rider"], activeRole: "rider" }));
+  await assertFails(updateDoc(doc(customer, "users/customer-1"), { roles: ["customer", "rider"] }));
+  await assertFails(setDoc(doc(customer, "riders/customer-1"), { active: true, online: true, name: "Imposter" }));
+});
+
+test("rider assignments, OTP secrets, GPS and order completion are isolated by account", async () => {
+  const id = "rider-rules-delivery";
+  await environment.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, "users/rider-1"), { roles: ["rider"], activeRole: "rider" });
+    await setDoc(doc(db, "users/rider-2"), { roles: ["rider"], activeRole: "rider" });
+    for (const uid of ["rider-1", "rider-2"]) await setDoc(doc(db, `riders/${uid}`), { active: true, online: true, activeDeliveryId: id, name: uid });
+    await setDoc(doc(db, `orders/${id}`), { ...pendingUpiOrder(), orderStatus: "PLACED", paymentStatus: "PAID", status: "Dispatched", stage: "On the way", riderDeliveryId: id });
+    await setDoc(doc(db, `deliveries/${id}`), { riderId: "rider-1", customerId: "customer-1", storeId: "store-1", state: "PICKED_UP" });
+    await setDoc(doc(db, `deliverySecrets/${id}`), { code: "123456" });
+  });
+  const rider = environment.authenticatedContext("rider-1").firestore();
+  const otherRider = environment.authenticatedContext("rider-2").firestore();
+  const customer = environment.authenticatedContext("customer-1").firestore();
+  const otherCustomer = environment.authenticatedContext("customer-2").firestore();
+  const seller = environment.authenticatedContext("seller-1").firestore();
+  const otherSeller = environment.authenticatedContext("seller-2").firestore();
+  const gps = { riderId: "rider-1", latitude: 19.06, longitude: 72.83, accuracy: 12, updatedAt: serverTimestamp() };
+  await assertFails(getDoc(doc(customer, "riders/rider-1")));
+  await assertFails(getDoc(doc(otherRider, "riders/rider-1")));
+  await assertSucceeds(getDoc(doc(seller, "riders/rider-1")));
+  await environment.withSecurityRulesDisabled(async (context) => updateDoc(doc(context.firestore(), `deliveries/${id}`), { state: "ACCEPTED" }));
+  await assertFails(setDoc(doc(rider, `deliveries/${id}/location/current`), gps));
+  await environment.withSecurityRulesDisabled(async (context) => updateDoc(doc(context.firestore(), `deliveries/${id}`), { state: "PICKED_UP" }));
+  await assertSucceeds(setDoc(doc(rider, `deliveries/${id}/location/current`), gps));
+  for (const db of [rider, customer, seller]) await assertSucceeds(getDoc(doc(db, `deliveries/${id}/location/current`)));
+  for (const db of [otherRider, otherCustomer, otherSeller]) {
+    await assertFails(getDoc(doc(db, `deliveries/${id}`)));
+    await assertFails(getDoc(doc(db, `deliveries/${id}/location/current`)));
+    await assertFails(setDoc(doc(db, `deliveries/${id}/location/current`), gps));
+  }
+  for (const db of [rider, customer, seller]) {
+    await assertFails(getDoc(doc(db, `deliverySecrets/${id}`)));
+    await assertFails(updateDoc(doc(db, `deliveries/${id}`), { state: "DELIVERED" }));
+    await assertFails(updateDoc(doc(db, `orders/${id}`), { status: "Delivered", stage: "Delivered", deliveredAt: serverTimestamp() }));
+  }
+  await assertFails(updateDoc(doc(rider, "riders/rider-1"), { active: true, activeDeliveryId: null }));
+  await assertSucceeds(updateDoc(doc(rider, "riders/rider-1"), { online: false, lastSeenAt: serverTimestamp(), updatedAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(rider, `deliveries/${id}/location/current`), { ...gps, latitude: 200 }));
+  await assertFails(setDoc(doc(rider, `deliveries/${id}/location/current`), { ...gps, updatedAt: Timestamp.fromMillis(100) }));
+  await environment.withSecurityRulesDisabled(async (context) => updateDoc(doc(context.firestore(), `deliveries/${id}`), { state: "DELIVERED" }));
+  await assertFails(setDoc(doc(rider, `deliveries/${id}/location/current`), gps));
+});
+
+test("customer checkout cannot forge rider assignment, delivery completion or cash collection", async () => {
+  const customer = environment.authenticatedContext("customer-1").firestore();
+  for (const extra of [{ riderDeliveryId: "fake" }, { codCollected: true }, { deliveredAt: serverTimestamp() }, { status: "Delivered", stage: "Delivered" }]) {
+    await assertFails(setDoc(doc(customer, "orders/forged-rider-checkout"), { ...pendingUpiOrder(), ...extra }));
+  }
 });
 
 test("delivery addresses belong only to their customer", async () => {

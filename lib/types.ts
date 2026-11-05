@@ -79,7 +79,7 @@ export type CustomerUser = {
   storeName?: string;
 };
 
-export type UserRole = "customer" | "seller";
+export type UserRole = "customer" | "seller" | "rider";
 
 export type OrderStage = "Confirmed" | "Preparing" | "Picked up" | "On the way" | "Delivered";
 
@@ -175,6 +175,8 @@ export type SellerOrderItem = {
 };
 
 export type SellerOrder = {
+  riderDeliveryId?: string;
+  codCollected?: boolean;
   deliveredAt?: string;
   deliveryLocation?: AppLocation;
   id: string;

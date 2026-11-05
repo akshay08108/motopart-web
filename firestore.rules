@@ -23,6 +23,19 @@ service cloud.firestore {
       return signedIn() && 'customer' in currentUser().roles;
     }
 
+    function isRider() {
+      return signedIn() && 'rider' in currentUser().roles
+        && get(/databases/$(database)/documents/riders/$(request.auth.uid)).data.active == true;
+    }
+
+    function canReadDelivery(delivery) {
+      return signedIn() && (
+        delivery.customerId == request.auth.uid
+        || (delivery.riderId == request.auth.uid && isRider())
+        || ownsStore(delivery.storeId)
+      );
+    }
+
     function ownsStore(storeId) {
       return isSeller()
         && get(/databases/$(database)/documents/stores/$(storeId)).data.ownerId == request.auth.uid;
@@ -127,7 +140,9 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow create: if isCustomer()
-        && !request.resource.data.keys().hasAny(['deliveredAt'])
+        && !request.resource.data.keys().hasAny(['deliveredAt', 'riderDeliveryId', 'codCollected', 'codCollectedAt', 'codCollectedBy'])
+        && request.resource.data.status == 'New'
+        && request.resource.data.stage == 'Confirmed'
         && request.resource.data.customerId == request.auth.uid
         && request.resource.data.storeId is string
         && request.resource.data.sellerId is string
@@ -229,6 +244,7 @@ service cloud.firestore {
         && request.resource.data.orderStatus == 'PAYMENT_VERIFICATION_PENDING'
       ) || (
         ownsStore(resource.data.storeId)
+        && (!resource.data.keys().hasAny(['riderDeliveryId']) || !(get(/databases/$(database)/documents/deliveries/$(resource.data.riderDeliveryId)).data.state in ['ASSIGNED', 'ACCEPTED', 'PICKED_UP', 'DELIVERED']))
         && (!resource.data.keys().hasAny(['orderStatus']) || resource.data.orderStatus == 'PLACED')
         && resource.data.get('status', '') != 'Delivered'
         && resource.data.get('stage', '') != 'Delivered'
@@ -243,6 +259,44 @@ service cloud.firestore {
             && request.resource.data.stage != 'Delivered'))
       );
       allow delete: if false;
+    }
+
+    // Rider profiles are provisioned by PartX operations, never by public signup.
+    // Sellers see only the minimal dispatch profile, not users or GPS history.
+    match /riders/{riderId} {
+      allow read: if (ownsUser(riderId) && 'rider' in currentUser().roles) || (isSeller() && resource.data.active == true);
+      allow update: if isRider() && request.auth.uid == riderId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['online', 'lastSeenAt', 'updatedAt'])
+        && request.resource.data.online is bool
+        && request.resource.data.lastSeenAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow create, delete: if false;
+    }
+
+    match /deliveries/{deliveryId} {
+      allow read: if canReadDelivery(resource.data);
+      allow write: if false;
+      match /location/{locationId} {
+        function delivery() {
+          return get(/databases/$(database)/documents/deliveries/$(deliveryId)).data;
+        }
+        allow read: if canReadDelivery(delivery());
+        allow create, update: if locationId == 'current' && isRider()
+          && delivery().riderId == request.auth.uid
+          && delivery().state == 'PICKED_UP'
+          && get(/databases/$(database)/documents/riders/$(request.auth.uid)).data.activeDeliveryId == deliveryId
+          && request.resource.data.keys().hasOnly(['riderId', 'latitude', 'longitude', 'accuracy', 'updatedAt'])
+          && request.resource.data.riderId == request.auth.uid
+          && request.resource.data.latitude is number && request.resource.data.latitude >= -90 && request.resource.data.latitude <= 90
+          && request.resource.data.longitude is number && request.resource.data.longitude >= -180 && request.resource.data.longitude <= 180
+          && request.resource.data.accuracy is number && request.resource.data.accuracy >= 0 && request.resource.data.accuracy <= 1000
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if false;
+      }
+    }
+
+    match /deliverySecrets/{deliveryId} {
+      allow read, write: if false;
     }
 
     match /paymentReferences/{referenceId} {

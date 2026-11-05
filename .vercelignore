@@ -1,5 +1,6 @@
 # Only the web application is deployed to Vercel.
 android/
+functions/
 out/
 .capacitor-build/
 .capacitor-output-previous/

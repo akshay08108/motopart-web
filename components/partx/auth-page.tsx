@@ -13,6 +13,7 @@ type AuthMode = "signin" | "register";
 const roleCopy = {
   customer: { label: "CUSTOMER ACCESS", story: <>Your garage.<br/>Your parts.<br/><em>One account.</em></>, storyDescription: "Save vehicles, compare verified stores and track every order.", heading: "Customer account", signInDescription: "Sign in to see your garage, orders and saved details.", registerDescription: "Start comparing sellers and tracking your parts in one place." },
   seller: { label: "SELLER ACCESS", story: <>Your store.<br/>Your orders.<br/><em>One command center.</em></>, storyDescription: "Manage products, prices, packing and customer support.", heading: "Seller account", signInDescription: "Sign in to open your store dashboard and packing queue.", registerDescription: "Create your store, add products and receive orders immediately." },
+  rider: { label: "PARTX RIDER", story: <>Pick up.<br/>Deliver.<br/><em>Keep moving.</em></>, storyDescription: "Your assigned deliveries, pickup details and customer destinations in one place.", heading: "Rider portal", signInDescription: "Sign in with the rider account provided by PartX operations.", registerDescription: "Rider accounts are managed by PartX operations." },
 } as const;
 
 export function RoleChoicePage() {
@@ -49,7 +50,7 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
 
   useEffect(() => {
     if (!authHydrated || !user || !user.roles.includes(role)) return;
-    router.replace(role === "seller" ? "/seller" : "/account");
+    router.replace(role === "rider" ? "/rider" : role === "seller" ? "/seller" : "/account");
   }, [authHydrated, role, router, user]);
 
   const complete = async (event: FormEvent<HTMLFormElement>) => {
@@ -60,7 +61,7 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
       success = await register({ name: String(data.get("name")), email: String(data.get("email")), mobile: String(data.get("mobile")), password: String(data.get("password")), role, storeName: String(data.get("storeName") ?? "") });
     } else success = await signIn(identifier, String(data.get("password")), role);
     setBusy(false);
-    if (success) router.replace(role === "seller" ? "/seller" : "/account");
+    if (success) router.replace(role === "rider" ? "/rider" : role === "seller" ? "/seller" : "/account");
     else setError(`We could not sign you in as a ${role}. Check your email, password and selected account type.`);
   };
 
@@ -83,7 +84,7 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
       <div className="px-auth-form-wrap">
         <Link className="px-auth-role-back" href="/login"><Icon name="back"/>Choose another account type</Link>
         <div className="px-auth-heading"><span>PARTX {copy.heading.toUpperCase()}</span><h2>{mode === "signin" ? "Welcome back" : role === "seller" ? "Register your store" : "Create your account"}</h2><p>{mode === "signin" ? copy.signInDescription : copy.registerDescription}</p></div>
-        <div className="px-auth-tabs" role="tablist"><button type="button" className={mode === "signin" ? "active" : ""} onClick={() => changeMode("signin")}>Sign in</button><button type="button" className={mode === "register" ? "active" : ""} onClick={() => changeMode("register")}>{role === "seller" ? "Register store" : "Create account"}</button></div>
+        {role !== "rider" ? <div className="px-auth-tabs" role="tablist"><button type="button" className={mode === "signin" ? "active" : ""} onClick={() => changeMode("signin")}>Sign in</button><button type="button" className={mode === "register" ? "active" : ""} onClick={() => changeMode("register")}>{role === "seller" ? "Register store" : "Create account"}</button></div> : null}
         <form className="px-auth-form" onSubmit={complete}>
           {mode === "register" ? <label>Full name<div><Icon name="user"/><input name="name" autoComplete="name" placeholder="Your full name" required/></div></label> : null}
           {mode === "register" && role === "seller" ? <label>Store name<div><Icon name="store"/><input name="storeName" placeholder="Your business name" required/></div></label> : null}
@@ -96,7 +97,7 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
           {notice ? <p className="px-auth-notice" role="status">{notice}</p> : null}
           <button className="px-btn px-btn-red px-auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "signin" ? `Sign in as ${role}` : role === "seller" ? "Create seller account" : "Create customer account"}<Icon name="arrow"/></button>
         </form>
-        <p className="px-auth-demo"><b>FIREBASE SECURED</b> {role === "seller" ? "Your store opens immediately so you can add products and receive customer orders." : "Your customer account and role are now stored securely in Firebase."}</p>
+        <p className="px-auth-demo"><b>{role === "rider" ? "PARTX RIDER ACCESS" : "FIREBASE SECURED"}</b> {role === "rider" ? "Use your assigned account. Contact PartX operations if you need rider access." : role === "seller" ? "Your store opens immediately so you can add products and receive customer orders." : "Your customer account and role are now stored securely in Firebase."}</p>
       </div>
     </section>
   </main>;

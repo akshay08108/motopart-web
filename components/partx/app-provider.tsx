@@ -16,6 +16,8 @@ import { formatDeliveryTime } from "@/lib/delivery-time";
 const AUTH_PROFILE_CACHE_KEY = "partx-firebase-profile-v1";
 
 export type PartXOrder = Order & {
+  riderDeliveryId?: string;
+  codCollected?: boolean;
   deliveredAt?: string;
   items?: CartLine[];
   fulfilment?: "delivery" | "pickup" | "garage";
@@ -388,6 +390,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     placeOrder: async (fulfilment, payment, attemptId) => {
       if (!user) throw new Error("Sign in as a customer before placing an order.");
       if (!resolvedCart.length) throw new Error("Your cart is empty.");
+      if (fulfilment === "garage" && (!garages[0] || garages[0].location.address.trim().length < 10)) throw new Error("Add a garage with a full address before ordering a garage delivery.");
       if (fulfilment === "delivery" && location.address.trim().length < 10) throw new Error("Choose a full delivery address before placing your order.");
       const orderStoreIds = new Set(resolvedCart.map((item) => item.storeId ?? "autohub-mumbai"));
       if (orderStoreIds.size > 1) throw new Error("Products from different stores must be checked out separately so each seller receives the correct order.");
@@ -442,7 +445,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         currency: "INR",
         fulfilment,
         paymentStatus: order.paymentStatus,
-        ...(fulfilment === "delivery" ? { deliveryLocation: Object.fromEntries(Object.entries(location).filter(([, value]) => value !== undefined)) } : {}),
+        ...(["delivery", "garage"].includes(fulfilment ?? "") ? { deliveryLocation: Object.fromEntries(Object.entries(fulfilment === "garage" ? garages[0].location : location).filter(([, value]) => value !== undefined)) } : {}),
         paymentMethod: payment,
         paymentMode: "live",
         orderStatus: order.orderStatus,
@@ -582,6 +585,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       }
     },
     register: async (input) => {
+      if (input.role === "rider") throw new Error("PartX rider accounts are created by the operations team.");
       if (!input.name.trim() || !input.email.trim() || !input.mobile.trim() || input.password.length < 6) return false;
       let credential;
       try {
@@ -741,6 +745,8 @@ function toCustomerOrder(id: string, data: Record<string, unknown>): PartXOrder 
   }) : undefined;
   return {
     id,
+    riderDeliveryId: typeof data.riderDeliveryId === "string" ? data.riderDeliveryId : undefined,
+    codCollected: data.codCollected === true,
     trackingId: String(data.trackingId ?? "PX-TRK-PENDING"),
     storeId: String(data.storeId ?? ""),
     storeName: String(data.storeName ?? "PartX seller"),
@@ -785,9 +791,9 @@ function isOrderStage(value: unknown): value is OrderStage {
 }
 
 function parseFirebaseUser(uid: string, authEmail: string, data: Record<string, unknown>): CustomerUser | null {
-  const roles = Array.isArray(data.roles) ? data.roles.filter((role): role is UserRole => role === "customer" || role === "seller") : [];
+  const roles = Array.isArray(data.roles) ? data.roles.filter((role): role is UserRole => role === "customer" || role === "seller" || role === "rider") : [];
   if (!roles.length) return null;
-  const requestedRole = data.activeRole === "seller" ? "seller" : "customer";
+  const requestedRole = data.activeRole === "rider" ? "rider" : data.activeRole === "seller" ? "seller" : "customer";
   const activeRole = roles.includes(requestedRole) ? requestedRole : roles[0];
   return {
     id: uid,

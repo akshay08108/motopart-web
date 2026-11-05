@@ -9,6 +9,7 @@ import { Icon } from "./icons";
 import { SellerShell } from "./seller-shell";
 import { CartFeedback } from "./cart-feedback";
 import { PartSearch } from "./part-search";
+import { RiderShell } from "./rider-portal";
 
 const nav = [
   ["/", "Home"], ["/shop", "Shop Parts"], ["/garage", "My Garage"], ["/orders", "Orders"], ["/offers", "Offers"],
@@ -29,6 +30,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const customerRoute = ["/account", "/order", "/orders", "/garage", "/checkout", "/support"].some((route) => pathname === route || pathname.startsWith(`${route}/`));
   const sellerRoute = pathname === "/seller" || pathname === "/seller-order" || pathname.startsWith("/seller/");
   const authRoute = pathname === "/login" || pathname.startsWith("/login/");
+  const riderRoute = pathname === "/rider" || pathname.startsWith("/rider/");
+  const isRider = Boolean(user?.roles.includes("rider"));
   const isCustomer = Boolean(user?.roles.includes("customer"));
   const isSeller = Boolean(user?.roles.includes("seller"));
   const liveUpdates = announcements.length ? [...announcements, ...fallbackAnnouncements] : fallbackAnnouncements;
@@ -36,12 +39,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!authHydrated) return;
     if (customerRoute && !isCustomer) router.replace("/login/customer");
+    if (riderRoute && !isRider) router.replace("/login/rider");
     if (!sellerRoute) return;
     if (!isSeller) router.replace("/login/seller");
     else if (pathname === "/seller/pending") router.replace("/seller");
-  }, [authHydrated, customerRoute, isCustomer, isSeller, pathname, router, sellerRoute]);
+  }, [authHydrated, customerRoute, isCustomer, isSeller, isRider, riderRoute, pathname, router, sellerRoute]);
 
   if (authRoute) return children;
+  if (riderRoute) {
+    if (!authHydrated || !isRider) return <AuthLoading label="Opening rider portal…"/>;
+    return <RiderShell key={user?.id}>{children}</RiderShell>;
+  }
   if (sellerRoute) {
     if (!authHydrated || !isSeller || pathname === "/seller/pending") return <AuthLoading label="Opening seller workspace…"/>;
     return <SellerShell>{children}</SellerShell>;

@@ -4,6 +4,8 @@ import { getMessaging } from "firebase-admin/messaging";
 import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { setGlobalOptions } from "firebase-functions/v2/options";
 
+export { dispatchPartXDelivery, updatePartXDelivery, getPartXDeliveryCode } from "./riders.js";
+
 initializeApp();
 setGlobalOptions({ region: "asia-south1", maxInstances: 10 });
 
@@ -105,4 +107,22 @@ export const notifyCustomerOfResolvedTicket = onDocumentUpdated("tickets/{ticket
     link: `/support?order=${encodeURIComponent(after.orderId || "")}`,
     tag: `ticket-${event.params.ticketId}`,
   });
+});
+
+export const notifyPartXRiderAssignment = onDocumentCreated("deliveries/{deliveryId}", async (event) => {
+  const delivery = event.data?.data();
+  if (!delivery) return;
+  await sendToUser(delivery.riderId, {
+    title: "New PartX delivery assignment", body: `Pickup from ${delivery.storeName}. Open PartX Rider to accept.`,
+    link: "/rider", tag: `delivery-${event.params.deliveryId}`,
+  });
+});
+
+export const notifyPartXDeliveryIssue = onDocumentUpdated("deliveries/{deliveryId}", async (event) => {
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
+  if (!before || !after) return;
+  if ((after.state === "DECLINED" && before.state !== after.state) || (after.issue?.reason && before.issue?.reportedAt?.toMillis() !== after.issue.reportedAt?.toMillis())) {
+    await sendToUser(after.sellerId, { title: "PartX delivery needs attention", body: `${after.orderId}: ${after.issue?.reason || after.closedReason}`, link: `/seller/orders/${after.orderId}`, tag: `delivery-${event.params.deliveryId}` });
+  }
 });
