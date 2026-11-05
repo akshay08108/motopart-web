@@ -104,9 +104,11 @@ test("rider assignments, OTP secrets, GPS and order completion are isolated by a
   for (const db of [rider, customer, seller]) {
     await assertFails(getDoc(doc(db, `deliverySecrets/${id}`)));
     await assertFails(updateDoc(doc(db, `deliveries/${id}`), { state: "DELIVERED" }));
+    await assertFails(updateDoc(doc(db, `deliveries/${id}`), { "earnings.amountPaise": 999999, "earnings.status": "PAID", "earnings.paidAt": serverTimestamp() }));
     await assertFails(updateDoc(doc(db, `orders/${id}`), { status: "Delivered", stage: "Delivered", deliveredAt: serverTimestamp() }));
   }
   await assertFails(updateDoc(doc(rider, "riders/rider-1"), { active: true, activeDeliveryId: null }));
+  await assertFails(updateDoc(doc(rider, "riders/rider-1"), { earningsPolicy: { amountPaise: 999999, payer: "store" } }));
   await assertSucceeds(updateDoc(doc(rider, "riders/rider-1"), { online: false, lastSeenAt: serverTimestamp(), updatedAt: serverTimestamp() }));
   await assertFails(setDoc(doc(rider, `deliveries/${id}/location/current`), { ...gps, latitude: 200 }));
   await assertFails(setDoc(doc(rider, `deliveries/${id}/location/current`), { ...gps, updatedAt: Timestamp.fromMillis(100) }));

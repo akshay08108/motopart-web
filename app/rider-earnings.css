@@ -1,0 +1,59 @@
+.rx-earnings-filters{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 22px}
+.rx-earnings-filters button{border:1px solid var(--rx-border);border-radius:24px;background:#fff;color:var(--rx-muted);padding:10px 16px;min-height:42px;font-size:12px;font-weight:700;cursor:pointer}
+.rx-earnings-filters button[aria-pressed=true]{background:#152b25;color:#fff;border-color:#152b25}
+.rx-earnings-stats{grid-template-columns:repeat(4,minmax(0,1fr))}
+.rx-earnings-stats>div{padding:22px 20px;min-width:0;gap:12px}
+.rx-earnings-stats b{font-size:clamp(22px,2.5vw,30px);overflow-wrap:anywhere;font-variant-numeric:tabular-nums;line-height:1.2}
+.rx-earnings-stats small{font-size:10px;color:var(--rx-muted);line-height:1.6}
+.rx-earnings-stats>div:first-child small{color:#b8cdc3}
+.rx-earnings-policy{display:flex;align-items:flex-start;gap:16px;margin-bottom:24px;padding:20px 24px}
+.rx-earnings-policy>svg{width:25px;height:25px;flex-shrink:0;color:#e91427;margin-top:2px}
+.rx-earnings-policy h2{font-size:16px;margin:0 0 8px;font-weight:750}
+.rx-earnings-policy p{font-size:12px;color:var(--rx-muted);line-height:1.8;margin:0;max-width:730px}
+.rx-earnings-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:28px 0 16px}
+.rx-earnings-heading h2{font-size:19px;margin:0}
+.rx-earnings-heading>span{font-size:11px;color:var(--rx-muted)}
+.rx-earning-list{display:grid;gap:12px}
+.rx-earning-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px 24px;padding:22px 24px}
+.rx-earning-order{min-width:0}
+.rx-earning-order>span{font-size:10px;color:var(--rx-muted);letter-spacing:.04em;overflow-wrap:anywhere}
+.rx-earning-order h3{font-size:16px;margin:8px 0;font-weight:750}
+.rx-earning-order p{font-size:11px;color:var(--rx-muted);margin:0 0 8px}
+.rx-earning-order>small{display:block;font-size:11px;color:#53675b;line-height:1.7;overflow-wrap:anywhere}
+.rx-earning-amount{display:flex;align-items:flex-end;flex-direction:column;gap:8px;text-align:right}
+.rx-earning-amount strong{font-size:22px;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.rx-earning-amount>small{font-size:10px;color:var(--rx-muted);line-height:1.6}
+.rx-earning-amount .is-pending{color:#795d20;background:#fff7df}
+.rx-earning-amount .is-paid{color:#156146;background:#eaf7ef}
+.rx-earning-cash{grid-column:1/-1;display:flex;align-items:center;gap:8px;border-top:1px solid var(--rx-border);padding-top:14px;color:var(--rx-muted);font-size:11px;line-height:1.6}
+.rx-earning-cash svg{width:15px;height:15px;flex-shrink:0}
+.rx-earnings-cash-summary{display:flex;align-items:center;gap:30px;margin-top:24px;background:#fffaf0;border-color:#e9dfc9}
+.rx-earnings-cash-summary>div{flex:0 0 180px;display:flex;flex-direction:column;gap:10px}
+.rx-earnings-cash-summary span{font-size:11px;color:#795d20}
+.rx-earnings-cash-summary b{font-size:25px;letter-spacing:-.03em;color:#604a21;font-variant-numeric:tabular-nums}
+.rx-earnings-cash-summary p{font-size:11px;color:#796c51;line-height:1.9;margin:0}
+.rx-earning-preview{font-size:12px;line-height:1.7;margin:0 0 22px;color:#53675b}
+.rx-earning-preview b{float:right;color:var(--rx-ink)}
+.rx-earning-preview small{display:block;clear:both;font-size:11px;color:var(--rx-muted);margin-top:6px}
+@media(max-width:700px){
+  .rx-navigation{gap:0;padding:0 10px}
+  .rx-navigation a{flex:1;justify-content:center;flex-direction:column;gap:6px;padding:11px 3px;font-size:10px;min-height:61px}
+  .rx-navigation svg{width:19px;height:19px}
+  .rx-earnings-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+  .rx-earnings-filters button{font-size:10px;padding:9px 3px;min-height:42px}
+  .rx-earnings-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .rx-earnings-stats>div{padding:18px 15px;gap:9px}
+  .rx-earnings-stats span{font-size:11px;min-height:0}
+  .rx-earnings-stats small{font-size:9px}
+  .rx-earnings-stats b{font-size:25px}
+  .rx-earnings-policy{padding:18px 16px;gap:12px}
+  .rx-earnings-policy h2{font-size:15px;line-height:1.5}
+  .rx-earnings-policy p{font-size:11px}
+  .rx-earning-row{padding:18px 16px;grid-template-columns:1fr;gap:15px}
+  .rx-earning-amount{align-items:flex-start;text-align:left;display:grid;grid-template-columns:1fr auto;gap:8px}
+  .rx-earning-amount strong{font-size:20px}
+  .rx-earning-amount>small{grid-column:1/-1}
+  .rx-earning-amount .rx-status{font-size:10px;padding:6px 8px}
+  .rx-earnings-cash-summary{align-items:flex-start;flex-direction:column;gap:16px}
+  .rx-earnings-cash-summary>div{flex-basis:auto}
+}

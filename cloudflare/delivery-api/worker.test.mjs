@@ -54,7 +54,7 @@ beforeEach(async () => {
   const order = { customerId: "customer", sellerId: "seller", storeId: "store", customer: { name: "Customer", phone: "+919999999999" }, status: "Packed", stage: "Preparing", orderStatus: "PLACED", paymentStatus: "PAYMENT_DUE", paymentMethod: "cod", fulfilment: "delivery", totalAmount: 199, total: 199, deliveryLocation: point, items: [{ productName: "Filter", partNumber: "F1", quantity: 2 }, { productName: "Oil", partNumber: "O1", quantity: 1 }] };
   await Promise.all([
     ...[["seller", "seller"], ["rider", "rider"], ["other-rider", "rider"], ["customer", "customer"], ["other-customer", "customer"]].map(([id, role]) => db.doc(`users/${id}`).set({ roles: [role] })),
-    db.doc("riders/rider").set({ active: true, online: true, name: "Rider", phone: "+918888888888", lastSeenAt: Timestamp.now(), activeDeliveryId: null }),
+    db.doc("riders/rider").set({ active: true, online: true, name: "Rider", phone: "+918888888888", lastSeenAt: Timestamp.now(), activeDeliveryId: null, earningsPolicy: { amountPaise: 5000, payer: "store" } }),
     db.doc("stores/store").set({ ownerId: "seller", name: "Test store", location: point }),
     db.doc("orders/order").set(order), db.doc("orders/other-order").set(order),
     ...["customer", "seller", "rider"].map((id) => db.doc(`notificationDevices/${id}`).set({ userId: id, token: `${id}-local-test-notification-token` })),
@@ -109,6 +109,8 @@ test("REST transactions deliver an order with OTP, exact server time, COD collec
   assert.equal(order.stage, "Delivered"); assert.equal(order.codCollected, true);
   assert.ok(order.deliveredAt.toMillis() > Date.now() - 10000); assert.equal(order.deliveredAt.toMillis(), delivery.deliveredAt.toMillis());
   assert.equal((await db.doc("riders/rider").get()).data().activeDeliveryId, null);
+  const earnings = (await db.doc(`deliveries/${deliveryId}`).get()).data().earnings;
+  assert.equal(earnings.amountPaise, 5000); assert.equal(earnings.status, "EARNED"); assert.ok(earnings.earnedAt.toMillis());
   assert.equal((await db.doc(`deliverySecrets/${deliveryId}`).get()).exists, false);
   await Promise.all(pending.splice(0)); assert.ok(notifications.some((message) => message.message.token.startsWith("rider-")));
   assert.ok(notifications.some((message) => message.message.data.title.includes("delivered")));

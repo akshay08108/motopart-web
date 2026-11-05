@@ -9,6 +9,7 @@ import "./cart.css";
 import "./order-experience.css";
 import "./search.css";
 import "./rider.css";
+import "./rider-earnings.css";
 import type { Metadata, Viewport } from "next";
 import { AppShell } from "@/components/partx/app-shell";
 import { PartXProvider } from "@/components/partx/app-provider";

@@ -7,7 +7,8 @@ import { firebaseApp, firebaseAuth, firestore } from "./firebase";
 
 export type DeliveryState = "ASSIGNED" | "ACCEPTED" | "PICKED_UP" | "DELIVERED" | "DECLINED" | "CANCELLED" | "RETURNED";
 export type DeliveryPoint = { address: string; latitude?: number; longitude?: number };
-export type RiderProfile = { id: string; name: string; phone: string; active: boolean; online: boolean; activeDeliveryId?: string; lastSeenAt?: number };
+export type RiderEarning = { amountPaise: number; currency: "INR"; payer: "store" | "partx"; status: "PENDING_DELIVERY" | "EARNED" | "PAID"; earnedAt?: number; paidAt?: number };
+export type RiderProfile = { id: string; name: string; phone: string; active: boolean; online: boolean; activeDeliveryId?: string; lastSeenAt?: number; earningsPolicy?: { amountPaise: number; payer: "store" | "partx" } };
 export type RiderDelivery = {
   id: string; orderId: string; riderId: string; riderName: string; riderPhone: string;
   storeId: string; storeName: string; storePhone: string; customerId: string;
@@ -16,6 +17,7 @@ export type RiderDelivery = {
   items: Array<{ name: string; partNumber: string; quantity: number; imageUrl?: string }>;
   assignedAt?: number; acceptedAt?: number; pickedUpAt?: number; deliveredAt?: number; closedAt?: number;
   issue?: { reason: string; reportedAt?: number }; closedReason?: string;
+  earnings?: RiderEarning | null;
 };
 export type RiderPosition = { latitude: number; longitude: number; accuracy: number; updatedAt?: number };
 export const deliveryLabels: Record<DeliveryState, string> = { ASSIGNED: "Waiting for acceptance", ACCEPTED: "Heading to pickup", PICKED_UP: "On the way", DELIVERED: "Delivered", DECLINED: "Rider declined", CANCELLED: "Assignment cancelled", RETURNED: "Returned to store" };
@@ -30,6 +32,10 @@ export function deliveryDate(value?: number) {
 function parseDelivery(id: string, data: Record<string, unknown>) {
   const result = { ...data, id } as unknown as RiderDelivery;
   for (const key of ["assignedAt", "acceptedAt", "pickedUpAt", "deliveredAt", "closedAt"] as const) result[key] = timestampMillis(data[key]);
+  if (data.earnings && typeof data.earnings === "object") {
+    const earnings = data.earnings as Record<string, unknown>;
+    result.earnings = { ...earnings, earnedAt: timestampMillis(earnings.earnedAt), paidAt: timestampMillis(earnings.paidAt) } as RiderEarning;
+  }
   if (data.issue && typeof data.issue === "object") {
     const issue = data.issue as Record<string, unknown>;
     result.issue = { reason: String(issue.reason), reportedAt: timestampMillis(issue.reportedAt) };

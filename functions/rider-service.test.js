@@ -53,6 +53,35 @@ test("simultaneous sellers cannot reserve a rider for two orders", async () => {
   assert.equal((await db.collection("deliveries").get()).size, 1);
 });
 
+test("earnings keep the assigned rate, accrue only on verified delivery and remain idempotent", async () => {
+  await db.doc("riders/rider").update({ earningsPolicy: { amountPaise: 5000, payer: "store" } });
+  const { deliveryId } = await assign();
+  const ref = db.doc(`deliveries/${deliveryId}`);
+  assert.deepEqual((await ref.get()).data().earnings, { amountPaise: 5000, currency: "INR", payer: "store", status: "PENDING_DELIVERY" });
+  await db.doc("riders/rider").update({ earningsPolicy: { amountPaise: 9000, payer: "partx" } });
+  await service.riderAction("rider", { action: "accept", deliveryId });
+  await service.riderAction("rider", { action: "pickup", deliveryId });
+  const { code } = await service.customerCode("cx", { deliveryId });
+  await service.riderAction("rider", { action: "complete", deliveryId, code, codCollected: true });
+  const earned = (await ref.get()).data().earnings;
+  assert.equal(earned.amountPaise, 5000); assert.equal(earned.payer, "store"); assert.equal(earned.status, "EARNED"); assert.ok(earned.earnedAt.toMillis());
+  await service.riderAction("rider", { action: "complete", deliveryId, code, codCollected: true });
+  assert.equal((await ref.get()).data().earnings.earnedAt.toMillis(), earned.earnedAt.toMillis());
+});
+
+test("missing rates stay unrecorded; cancelled jobs do not earn and invalid policies cannot assign", async () => {
+  const first = await assign();
+  assert.equal((await db.doc(`deliveries/${first.deliveryId}`).get()).data().earnings, null);
+  await service.dispatch("seller", { action: "cancel", deliveryId: first.deliveryId, reason: "Customer changed their mind" });
+  await db.doc("riders/rider").update({ earningsPolicy: { amountPaise: -100, payer: "store" } });
+  await rejected(assign(), "failed-precondition");
+  assert.equal((await db.doc("riders/rider").get()).data().activeDeliveryId, null);
+  await db.doc("riders/rider").update({ earningsPolicy: { amountPaise: 5000, payer: "store" } });
+  const second = await assign();
+  await service.dispatch("seller", { action: "cancel", deliveryId: second.deliveryId, reason: "Customer changed their mind" });
+  assert.equal((await db.doc(`deliveries/${second.deliveryId}`).get()).data().earnings.status, "PENDING_DELIVERY");
+});
+
 test("only the assigned rider can accept, pick up and complete with customer OTP and COD confirmation", async () => {
   const { deliveryId } = await assign();
   await rejected(service.riderAction("other-rider", { action: "accept", deliveryId }), "permission-denied");
@@ -67,6 +96,7 @@ test("only the assigned rider can accept, pick up and complete with customer OTP
   await rejected(service.riderAction("rider", { action: "complete", deliveryId, code }), "failed-precondition");
   await service.riderAction("rider", { action: "complete", deliveryId, code, codCollected: true });
   const delivered = (await db.doc("orders/order").get()).data();
+  assert.equal((await db.doc(`deliveries/${deliveryId}`).get()).data().earnings, null);
   assert.equal(delivered.status, "Delivered"); assert.equal(delivered.codCollected, true);
   assert.equal(delivered.codCollectedBy, "rider"); assert.ok(delivered.deliveredAt.toMillis());
   assert.equal((await db.doc("riders/rider").get()).data().activeDeliveryId, null);

@@ -20,6 +20,11 @@ function location(value, fallback = "") {
   }
   return result;
 }
+function assignmentEarnings(policy) {
+  if (policy == null) return null;
+  if (!Number.isSafeInteger(policy.amountPaise) || policy.amountPaise < 0 || policy.amountPaise > 100_000_000 || !["store", "partx"].includes(policy.payer)) fail("failed-precondition", "The rider earning rate needs to be corrected by PartX operations.");
+  return { amountPaise: policy.amountPaise, payer: policy.payer, currency: "INR", status: "PENDING_DELIVERY" };
+}
 
 // The database adapter must provide atomic transactions. Clients cannot create assignments,
 // change delivery states, read OTP secrets, or mark rider orders delivered.
@@ -72,7 +77,7 @@ export function createRiderCore(database, runtime) {
           customer: { name: text(order.customer?.name) || "Customer", phone: text(order.customer?.phone, 30) },
           pickup, destination, fulfilment: order.fulfilment, items, totalAmount: amount,
           codAmount: order.paymentMethod === "cod" && order.paymentStatus === "PAYMENT_DUE" ? amount : 0,
-          codCollected: false, state: "ASSIGNED", issue: null,
+          codCollected: false, state: "ASSIGNED", issue: null, earnings: assignmentEarnings(rider.earningsPolicy),
           assignedAt: stamp(), updatedAt: stamp(),
         });
         tx.update(riderRef, { activeDeliveryId: deliveryId, updatedAt: stamp() });
@@ -156,7 +161,7 @@ export function createRiderCore(database, runtime) {
           // Return the error after commit so attempts are not rolled back.
           return { incorrectCode: true };
         }
-        tx.update(deliveryRef, { state: "DELIVERED", codCollected: delivery.codAmount > 0, ...(delivery.codAmount > 0 ? { codCollectedAt: stamp() } : {}), deliveredAt: stamp(), updatedAt: stamp() });
+        tx.update(deliveryRef, { state: "DELIVERED", ...(delivery.earnings ? { earnings: { ...delivery.earnings, status: "EARNED", earnedAt: timestampNow() } } : {}), codCollected: delivery.codAmount > 0, ...(delivery.codAmount > 0 ? { codCollectedAt: stamp() } : {}), deliveredAt: stamp(), updatedAt: stamp() });
         tx.update(orderRef, { status: "Delivered", stage: "Delivered", eta: "Delivered", deliveredAt: stamp(), ...(delivery.codAmount > 0 ? { codCollected: true, codCollectedAt: stamp(), codCollectedBy: uid } : {}), updatedAt: stamp() });
         tx.update(riderRef, { activeDeliveryId: null, updatedAt: stamp() });
         tx.delete(secretRef);

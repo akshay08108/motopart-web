@@ -39,6 +39,14 @@ This is the browser pilot; no rider APK or background GPS service is included.
 - Existing orders without a rider keep the current seller fulfilment flow.
 - The Cloudflare API reuses existing FCM device registrations for rider assignments, pickup/completion, issues and cancelled assignments. Foreground assignments also show an in-portal notice; sound requires the rider to enable alerts in the current browser session. Unrelated legacy Firebase trigger functions are separate from this API.
 
+## Rider earnings
+
+- `/rider/earnings` shows live completed-delivery earnings, awaiting payment, confirmed payments and separate COD cash totals. Filters use India time: today, the last seven calendar days, this month and all time.
+- Operations can set `riders/{uid}.earningsPolicy` to `{ amountPaise: 5000, payer: "store" }` (example only; `payer` may also be `"partx"`). Only trusted administration can write this field. No rate is assumed by default.
+- The delivery backend snapshots the policy when assigning a job. Its `earnings.status` starts as `PENDING_DELIVERY` and becomes `EARNED` only after successful customer-code verification. Cancelling or retrying a completion cannot accrue duplicate earnings. Changing a rider's rate cannot change an existing assignment.
+- Old deliveries without a rate remain explicitly unrecorded until operations reconcile them. Do not calculate past earnings using today's rate.
+- Payment is not automatic. After actually paying and verifying it, trusted operations may record `earnings.status: "PAID"` with a Firestore `earnings.paidAt` timestamp on that delivery. Client apps cannot mark earnings paid. There is no automated payout or COD settlement system yet; COD collection never counts as commission.
+
 ## Tests
 
 Start the Firestore emulator on port 8082, then run:
@@ -47,6 +55,7 @@ Start the Firestore emulator on port 8082, then run:
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8082 node --test tests/firestore.rules.test.mjs
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8082 node --test functions/rider-service.test.js
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8082 node --test cloudflare/delivery-api/worker.test.mjs
+node --experimental-strip-types --test tests/rider-earnings.test.mjs
 ```
 
 All suites use demo projects and must not run against production data. Cloudflare tests verify signed-token authentication and real REST transactions against the local emulator, with mocked Google OAuth and FCM providers. The delivery lifecycle is shared by both backend adapters in `functions/rider-core.js`.
