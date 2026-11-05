@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { collection, doc, onSnapshot, query, where } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { firebaseApp, firestore } from "./firebase";
+import { firebaseApp, firebaseAuth, firestore } from "./firebase";
 
 export type DeliveryState = "ASSIGNED" | "ACCEPTED" | "PICKED_UP" | "DELIVERED" | "DECLINED" | "CANCELLED" | "RETURNED";
 export type DeliveryPoint = { address: string; latitude?: number; longitude?: number };
@@ -67,6 +67,24 @@ export function useRiderJobs(userId?: string) {
   return { jobs, profile, error, loaded };
 }
 export async function deliveryCall<T = { ok: boolean }>(name: "dispatchPartXDelivery" | "updatePartXDelivery" | "getPartXDeliveryCode", data: Record<string, unknown>): Promise<T> {
+  const localFunctions = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_FIREBASE_EMULATORS === "1" && !process.env.NEXT_PUBLIC_PARTX_DELIVERY_API_URL;
+  if (!localFunctions) {
+    const user = firebaseAuth.currentUser;
+    if (!user) throw new Error("Sign in before updating a delivery.");
+    const base = (process.env.NEXT_PUBLIC_PARTX_DELIVERY_API_URL || "https://partx-delivery-api.akshaysinghkam.workers.dev").replace(/\/$/, "");
+    if (!base.startsWith("https://") && !(process.env.NODE_ENV === "development" && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(base))) throw new Error("A secure delivery API address is required.");
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let response: Response;
+      try {
+        response = await fetch(`${base}/${name}`, { method: "POST", headers: { Authorization: `Bearer ${await user.getIdToken(attempt === 1)}`, "Content-Type": "application/json" }, body: JSON.stringify({ data }), signal: AbortSignal.timeout(30000) });
+      } catch { throw new Error("Could not reach the delivery service. Check your connection and try again."); }
+      if (response.status === 401 && attempt === 0) continue;
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.data || typeof payload.data !== "object") throw new Error(payload?.error?.message || "The delivery service is unavailable. Please try again or contact PartX support.");
+      return payload.data as T;
+    }
+    throw new Error("Your session has expired. Sign in again.");
+  }
   try {
     const result = await httpsCallable<Record<string, unknown>, T>(getFunctions(firebaseApp, "asia-south1"), name)(data);
     return result.data;

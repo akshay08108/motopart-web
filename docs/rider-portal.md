@@ -6,9 +6,8 @@ This is the browser pilot; no rider APK or background GPS service is included.
 
 ## First-time setup
 
-1. Deploy Firestore rules and the rider functions in `asia-south1`:
-   `firebase deploy --only firestore:rules,functions:dispatchPartXDelivery,functions:updatePartXDelivery,functions:getPartXDeliveryCode,functions:notifyPartXRiderAssignment,functions:notifyPartXDeliveryIssue --project partx-production`
-2. Firebase Cloud Functions requires a project with billing enabled. Do not expose OTP secrets or bypass the server functions if deployment is unavailable.
+1. Deploy Firestore rules: `firebase deploy --only firestore:rules --project partx-production`.
+2. Deploy the secure API on Cloudflare Workers using `cloudflare/delivery-api/wrangler.jsonc`. Firebase stays on Spark; Cloud Functions is not required for the rider workflow. See the setup guide in `cloudflare/delivery-api/README.md`.
 3. Operations creates rider accounts; public signup cannot grant the rider role.
    With Application Default Credentials on a trusted operations machine:
    `node functions/provision-rider.mjs --project=partx-production --email=rider@example.com --name="Rider name" --phone=+919876543210`
@@ -38,7 +37,7 @@ This is the browser pilot; no rider APK or background GPS service is included.
 - `deliverySecrets/{deliveryId}`: server-only OTP, expiry and attempt counter. No client reads or writes.
 - `orders/{orderId}.riderDeliveryId`: set by the server. Clients cannot forge assignments or bypass the delivery code by editing the order's status.
 - Existing orders without a rider keep the current seller fulfilment flow.
-- Notification functions reuse existing FCM device registrations. Foreground assignments also show an in-portal notice; sound requires the rider to enable alerts in the current browser session.
+- The Cloudflare API reuses existing FCM device registrations for rider assignments, pickup/completion, issues and cancelled assignments. Foreground assignments also show an in-portal notice; sound requires the rider to enable alerts in the current browser session. Unrelated legacy Firebase trigger functions are separate from this API.
 
 ## Tests
 
@@ -47,9 +46,10 @@ Start the Firestore emulator on port 8082, then run:
 ```
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8082 node --test tests/firestore.rules.test.mjs
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8082 node --test functions/rider-service.test.js
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8082 node --test cloudflare/delivery-api/worker.test.mjs
 ```
 
-Both suites use demo projects and must not run against production data.
+All suites use demo projects and must not run against production data. Cloudflare tests verify signed-token authentication and real REST transactions against the local emulator, with mocked Google OAuth and FCM providers. The delivery lifecycle is shared by both backend adapters in `functions/rider-core.js`.
 
 ## Native app follow-up
 

@@ -1,6 +1,7 @@
 # Only the web application is deployed to Vercel.
 android/
 functions/
+cloudflare/
 out/
 .capacitor-build/
 .capacitor-output-previous/

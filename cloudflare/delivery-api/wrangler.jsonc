@@ -1,0 +1,12 @@
+{
+  "name": "partx-delivery-api",
+  "main": "worker.js",
+  "compatibility_date": "2026-11-05",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "FIREBASE_PROJECT_ID": "partx-production",
+    "ALLOWED_ORIGINS": "https://motopart-web.vercel.app"
+  },
+  "observability": { "enabled": true }
+}

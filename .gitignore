@@ -1,6 +1,7 @@
 # dependencies
 /node_modules
 /functions/node_modules
+/cloudflare/delivery-api/node_modules
 /.pnpm-store
 /.pnp
 .pnp.*
@@ -36,3 +37,6 @@ yarn-debug.log*
 pnpm-debug.log*
 firebase-debug.log*
 firestore-debug.log*
+.wrangler/
+.dev.vars*
+!.dev.vars.example
