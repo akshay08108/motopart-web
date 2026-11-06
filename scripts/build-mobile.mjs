@@ -8,6 +8,7 @@ const stagingRoot = join(projectRoot, ".capacitor-build");
 const stagingOutput = join(stagingRoot, "out");
 const outputRoot = join(projectRoot, "out");
 const previousOutput = join(projectRoot, ".capacitor-output-previous");
+const riderBuild = process.env.PARTX_ANDROID_APP === "rider";
 
 const excludedAppPaths = [
   "app/api",
@@ -19,6 +20,11 @@ const excludedAppPaths = [
 
 function includeSource(sourcePath) {
   const pathFromRoot = relative(projectRoot, sourcePath).split("\\").join("/");
+  if (riderBuild && pathFromRoot.startsWith("app/")) {
+    const segments = pathFromRoot.split("/");
+    if (segments.length > 2 && !["rider", "login"].includes(segments[1])) return false;
+    if (segments[1] === "login" && segments.length > 2 && segments[2] !== "rider") return false;
+  }
   return !excludedAppPaths.some((excluded) => pathFromRoot === excluded || pathFromRoot.startsWith(`${excluded}/`));
 }
 
@@ -31,6 +37,7 @@ async function runNextBuild() {
         ...process.env,
         CAPACITOR_BUILD: "1",
         NEXT_PUBLIC_CAPACITOR_BUILD: "1",
+        NEXT_PUBLIC_PARTX_PORTAL: riderBuild ? "rider" : "",
       },
       stdio: "inherit",
     });
@@ -52,6 +59,9 @@ async function prepareStagingProject() {
     await cp(join(projectRoot, file), join(stagingRoot, file));
   }
   await symlink(join(projectRoot, "node_modules"), join(stagingRoot, "node_modules"), "dir");
+  if (riderBuild) {
+    await writeFile(join(stagingRoot, "app", "page.tsx"), 'export default function Page() { return null; }\n');
+  }
 
   const packageJsonPath = join(stagingRoot, "package.json");
   const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));

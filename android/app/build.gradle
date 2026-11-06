@@ -1,20 +1,25 @@
 apply plugin: 'com.android.application'
 
 def keystoreProperties = new Properties()
-def keystorePropertiesFile = rootProject.file('key.properties')
+def riderBuild = project.hasProperty('riderApp')
+def keystorePropertiesFile = rootProject.file(riderBuild ? 'rider-key.properties' : 'key.properties')
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+if (riderBuild && !keystorePropertiesFile.exists()) {
+    throw new GradleException('PartX Rider requires android/rider-key.properties. See docs/rider-android.md before building a signed release.')
 }
 
 android {
     namespace = "com.partx.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.partx.app"
+        applicationId riderBuild ? "com.partx.rider" : "com.partx.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.0"
+        versionName riderBuild ? "0.1.0" : "1.0"
+        manifestPlaceholders = [partxAppLabel: riderBuild ? "PartX Rider" : "PartX"]
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

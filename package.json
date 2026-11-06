@@ -19,6 +19,7 @@
     "android:debug": "pnpm build:mobile && pnpm cap:sync && cd android && ./gradlew assembleDebug",
     "android:release": "pnpm build:mobile && pnpm cap:sync && cd android && ./gradlew assembleRelease",
     "android:bundle": "pnpm build:mobile && pnpm cap:sync && cd android && ./gradlew bundleRelease",
+    "android:rider": "PARTX_ANDROID_APP=rider pnpm build:mobile && PARTX_ANDROID_APP=rider pnpm cap:sync && cd android && ./gradlew -PriderApp assembleRelease",
     "test:rules": "firebase emulators:exec --only firestore --project demo-partx-rules \"node --test tests/firestore.rules.test.mjs\"",
     "test:riders": "node --test functions/rider-service.test.js",
     "test:rider-earnings": "node --experimental-strip-types --test tests/rider-earnings.test.mjs",

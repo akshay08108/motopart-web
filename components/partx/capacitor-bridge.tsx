@@ -74,12 +74,14 @@ export function CapacitorBridge() {
     });
     void CapacitorApp.addListener("backButton", ({ canGoBack }) => {
       if (dismissTopLayer()) return;
-      if (pathnameRef.current === "/") {
+      const riderApp = process.env.NEXT_PUBLIC_PARTX_PORTAL === "rider";
+      const currentPath = pathnameRef.current.replace(/\/$/, "");
+      if (pathnameRef.current === "/" || (riderApp && ["/rider", "/login/rider"].includes(currentPath))) {
         void CapacitorApp.minimizeApp();
       } else if (canGoBack) {
         router.back();
       } else {
-        router.replace("/");
+        router.replace(riderApp ? "/rider" : "/");
       }
     }).then((listener) => {
       if (disposed) void listener.remove();

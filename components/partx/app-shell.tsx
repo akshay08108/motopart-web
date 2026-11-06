@@ -14,6 +14,7 @@ import { RiderShell } from "./rider-portal";
 const nav = [
   ["/", "Home"], ["/shop", "Shop Parts"], ["/garage", "My Garage"], ["/orders", "Orders"], ["/offers", "Offers"],
 ];
+const riderApp = process.env.NEXT_PUBLIC_PARTX_PORTAL === "rider";
 
 const fallbackAnnouncements = [
   { id: "arrival-mg", text: "MG Hector parts now available" },
@@ -37,6 +38,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const liveUpdates = announcements.length ? [...announcements, ...fallbackAnnouncements] : fallbackAnnouncements;
 
   useEffect(() => {
+    if (riderApp && !riderRoute && pathname.replace(/\/$/, "") !== "/login/rider") {
+      router.replace("/rider");
+      return;
+    }
     if (!authHydrated) return;
     if (customerRoute && !isCustomer) router.replace("/login/customer");
     if (riderRoute && !isRider) router.replace("/login/rider");
@@ -45,6 +50,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     else if (pathname === "/seller/pending") router.replace("/seller");
   }, [authHydrated, customerRoute, isCustomer, isSeller, isRider, riderRoute, pathname, router, sellerRoute]);
 
+  if (riderApp && !riderRoute && pathname.replace(/\/$/, "") !== "/login/rider") return <AuthLoading label="Opening PartX Rider…"/>;
   if (authRoute) return children;
   if (riderRoute) {
     if (!authHydrated || !isRider) return <AuthLoading label="Opening rider portal…"/>;

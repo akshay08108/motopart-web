@@ -21,6 +21,8 @@
 *.jks
 *.keystore
 /android/key.properties
+/android/rider-key.properties
+/outputs/
 .env*
 !.env.example
 

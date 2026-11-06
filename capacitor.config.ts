@@ -1,8 +1,9 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
+const riderBuild = process.env.PARTX_ANDROID_APP === "rider";
 const config: CapacitorConfig = {
-  appId: "com.partx.app",
-  appName: "PartX",
+  appId: riderBuild ? "com.partx.rider" : "com.partx.app",
+  appName: riderBuild ? "PartX Rider" : "PartX",
   webDir: "out",
   backgroundColor: "#0b0d11",
   server: {

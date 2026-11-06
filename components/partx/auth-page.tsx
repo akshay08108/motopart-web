@@ -82,7 +82,7 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
     <section className="px-auth-panel">
       <Link href="/" className="px-auth-mobile-brand" aria-label="PartX home"><Image src="/brand/partx-light.png" alt="" width={48} height={48} priority/><span>Part<b>X</b></span></Link>
       <div className="px-auth-form-wrap">
-        <Link className="px-auth-role-back" href="/login"><Icon name="back"/>Choose another account type</Link>
+        {process.env.NEXT_PUBLIC_PARTX_PORTAL !== "rider" ? <Link className="px-auth-role-back" href="/login"><Icon name="back"/>Choose another account type</Link> : null}
         <div className="px-auth-heading"><span>PARTX {copy.heading.toUpperCase()}</span><h2>{mode === "signin" ? "Welcome back" : role === "seller" ? "Register your store" : "Create your account"}</h2><p>{mode === "signin" ? copy.signInDescription : copy.registerDescription}</p></div>
         {role !== "rider" ? <div className="px-auth-tabs" role="tablist"><button type="button" className={mode === "signin" ? "active" : ""} onClick={() => changeMode("signin")}>Sign in</button><button type="button" className={mode === "register" ? "active" : ""} onClick={() => changeMode("register")}>{role === "seller" ? "Register store" : "Create account"}</button></div> : null}
         <form className="px-auth-form" onSubmit={complete}>

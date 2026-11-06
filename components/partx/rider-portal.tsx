@@ -20,7 +20,7 @@ export function RiderShell({ children }: { children: React.ReactNode }) {
   const { user, signOut, enableNotifications, notificationsEnabled, notificationError } = usePartX();
   const workspace = useRiderJobs(user?.id);
   const { profile, jobs, loaded, error } = workspace;
-  const pathname = usePathname();
+  const pathname = usePathname().replace(/\/$/, "");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const [connected, setConnected] = useState(true);
@@ -77,8 +77,9 @@ export function RiderShell({ children }: { children: React.ReactNode }) {
         {active?.state === "PICKED_UP" ? <RiderLocationSharing key={active.id} delivery={active}/> : null}
         {children}
       </>}
-      <section className="rx-alert-settings"><div><Icon name="bell"/><span><b>Stay ready for your next pickup</b><small>{notificationsEnabled ? "Push notifications enabled. Enable sound for this session." : "Enable assignment notifications and sound."}</small></span></div><button className="rx-secondary" type="button" onClick={() => {
+      <section className="rx-alert-settings"><div><Icon name="bell"/><span><b>Stay ready for your next pickup</b><small>{process.env.NEXT_PUBLIC_PARTX_PORTAL === "rider" ? "Keep this app open for live assignments. Enable sound for this session." : notificationsEnabled ? "Push notifications enabled. Enable sound for this session." : "Enable assignment notifications and sound."}</small></span></div><button className="rx-secondary" type="button" onClick={() => {
         try { if (!audio.current && "AudioContext" in window) audio.current = new AudioContext(); void audio.current?.resume().catch(() => undefined); } catch { /* Push alerts can still work without browser audio. */ }
+        if (process.env.NEXT_PUBLIC_PARTX_PORTAL === "rider") { setNotice("Assignment sound enabled for this session. Keep the app open to receive live updates."); return; }
         void enableNotifications().then((enabled) => setNotice(enabled ? "Assignment notifications enabled. Sound is available while this portal is open." : "Check notification permissions to receive assignment alerts.")).catch(() => setNotice("Notifications could not be enabled. Check your browser settings and try again."));
       }}>Enable alerts</button>{notificationError ? <p role="status">{notificationError}</p> : null}</section>
     </main><footer className="rx-footer">PartX Rider · Every part, delivered.</footer>

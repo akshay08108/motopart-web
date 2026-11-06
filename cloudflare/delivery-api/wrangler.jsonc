@@ -6,7 +6,7 @@
   "preview_urls": false,
   "vars": {
     "FIREBASE_PROJECT_ID": "partx-production",
-    "ALLOWED_ORIGINS": "https://motopart-web.vercel.app"
+    "ALLOWED_ORIGINS": "https://motopart-web.vercel.app,https://localhost"
   },
   "observability": { "enabled": true }
 }
