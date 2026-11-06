@@ -20,8 +20,17 @@ function location(value, fallback = "") {
   }
   return result;
 }
-function assignmentEarnings(policy) {
-  if (policy == null) return null;
+export const defaultRiderEarningsPolicy = { mode: "per_km", ratePaisePerKm: 500, payer: "partx", returnIncluded: true };
+function assignmentEarnings(configuredPolicy, oneWayKm) {
+  const policy = configuredPolicy ?? defaultRiderEarningsPolicy;
+  if (policy.mode === "per_km") {
+    if (!Number.isSafeInteger(policy.ratePaisePerKm) || policy.ratePaisePerKm < 0 || policy.ratePaisePerKm > 100000 || typeof policy.returnIncluded !== "boolean" || !["store", "partx"].includes(policy.payer)) fail("failed-precondition", "The rider earning rate needs to be corrected by PartX operations.");
+    if (typeof oneWayKm !== "number" || !Number.isFinite(oneWayKm) || oneWayKm <= 0 || oneWayKm > 1000 || Math.round(oneWayKm * 1000) < 1) fail("invalid-argument", "Enter the one-way road distance in kilometres before assigning a rider.");
+    const oneWayMeters = Math.round(oneWayKm * 1000);
+    const billableMeters = oneWayMeters * (policy.returnIncluded ? 2 : 1);
+    return { amountPaise: Math.round(policy.ratePaisePerKm * billableMeters / 1000), payer: policy.payer, currency: "INR", status: "PENDING_DELIVERY", pricing: { mode: "per_km", ratePaisePerKm: policy.ratePaisePerKm, oneWayMeters, billableMeters, returnIncluded: policy.returnIncluded, source: "seller_entered" } };
+  }
+  if (policy.mode && policy.mode !== "per_delivery") fail("failed-precondition", "The rider earning rate needs to be corrected by PartX operations.");
   if (!Number.isSafeInteger(policy.amountPaise) || policy.amountPaise < 0 || policy.amountPaise > 100_000_000 || !["store", "partx"].includes(policy.payer)) fail("failed-precondition", "The rider earning rate needs to be corrected by PartX operations.");
   return { amountPaise: policy.amountPaise, payer: policy.payer, currency: "INR", status: "PENDING_DELIVERY" };
 }
@@ -77,7 +86,7 @@ export function createRiderCore(database, runtime) {
           customer: { name: text(order.customer?.name) || "Customer", phone: text(order.customer?.phone, 30) },
           pickup, destination, fulfilment: order.fulfilment, items, totalAmount: amount,
           codAmount: order.paymentMethod === "cod" && order.paymentStatus === "PAYMENT_DUE" ? amount : 0,
-          codCollected: false, state: "ASSIGNED", issue: null, earnings: assignmentEarnings(rider.earningsPolicy),
+          codCollected: false, state: "ASSIGNED", issue: null, earnings: assignmentEarnings(rider.earningsPolicy, input.oneWayDistanceKm),
           assignedAt: stamp(), updatedAt: stamp(),
         });
         tx.update(riderRef, { activeDeliveryId: deliveryId, updatedAt: stamp() });

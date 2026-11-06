@@ -1,4 +1,20 @@
-import type { RiderDelivery, RiderEarning } from "./rider";
+import type { RiderDelivery, RiderEarning, RiderEarningsPolicy } from "./rider";
+
+// Keep the displayed default in sync with the server policy; contract-tested below.
+export const defaultRiderEarningsPolicy: RiderEarningsPolicy = { mode: "per_km", ratePaisePerKm: 500, payer: "partx", returnIncluded: true };
+export function riderPolicy(policy?: RiderEarningsPolicy): RiderEarningsPolicy { return policy ?? defaultRiderEarningsPolicy; }
+export function distanceEarningQuote(policy: RiderEarningsPolicy, oneWayKm: number) {
+  if (policy.mode !== "per_km" || !Number.isFinite(oneWayKm) || oneWayKm <= 0 || oneWayKm > 1000) return null;
+  const oneWayMeters = Math.round(oneWayKm * 1000);
+  if (oneWayMeters < 1) return null;
+  const billableMeters = oneWayMeters * (policy.returnIncluded ? 2 : 1);
+  return { amountPaise: Math.round(policy.ratePaisePerKm * billableMeters / 1000), oneWayMeters, billableMeters };
+}
+export function riderKilometers(meters: number) { return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 3 }).format(meters / 1000); }
+export function earningDistance(earning: RiderEarning) {
+  const pricing = earning.pricing;
+  return pricing ? `${riderKilometers(pricing.oneWayMeters)} km outward${pricing.returnIncluded ? ` + ${riderKilometers(pricing.oneWayMeters)} km return` : ""} · ${riderMoney(pricing.ratePaisePerKm)}/km · Seller-entered road distance` : "";
+}
 
 export type EarningsPeriod = "today" | "week" | "month" | "all";
 const dayFormatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" });

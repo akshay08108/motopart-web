@@ -7,8 +7,9 @@ import { firebaseApp, firebaseAuth, firestore } from "./firebase";
 
 export type DeliveryState = "ASSIGNED" | "ACCEPTED" | "PICKED_UP" | "DELIVERED" | "DECLINED" | "CANCELLED" | "RETURNED";
 export type DeliveryPoint = { address: string; latitude?: number; longitude?: number };
-export type RiderEarning = { amountPaise: number; currency: "INR"; payer: "store" | "partx"; status: "PENDING_DELIVERY" | "EARNED" | "PAID"; earnedAt?: number; paidAt?: number };
-export type RiderProfile = { id: string; name: string; phone: string; active: boolean; online: boolean; activeDeliveryId?: string; lastSeenAt?: number; earningsPolicy?: { amountPaise: number; payer: "store" | "partx" } };
+export type RiderEarningsPolicy = { mode: "per_km"; ratePaisePerKm: number; returnIncluded: boolean; payer: "store" | "partx" } | { mode?: "per_delivery"; amountPaise: number; payer: "store" | "partx" };
+export type RiderEarning = { amountPaise: number; currency: "INR"; payer: "store" | "partx"; status: "PENDING_DELIVERY" | "EARNED" | "PAID"; earnedAt?: number; paidAt?: number; pricing?: { mode: "per_km"; ratePaisePerKm: number; oneWayMeters: number; billableMeters: number; returnIncluded: boolean; source: "seller_entered" } };
+export type RiderProfile = { id: string; name: string; phone: string; active: boolean; online: boolean; activeDeliveryId?: string; lastSeenAt?: number; earningsPolicy?: RiderEarningsPolicy };
 export type RiderDelivery = {
   id: string; orderId: string; riderId: string; riderName: string; riderPhone: string;
   storeId: string; storeName: string; storePhone: string; customerId: string;

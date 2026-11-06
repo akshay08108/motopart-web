@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { earningsSummary, inEarningsPeriod, recordedEarning } from "../lib/rider-earnings.ts";
+import { defaultRiderEarningsPolicy, distanceEarningQuote, earningsSummary, inEarningsPeriod, recordedEarning } from "../lib/rider-earnings.ts";
+import { defaultRiderEarningsPolicy as serverPolicy } from "../functions/rider-core.js";
 
 const now = Date.parse("2026-11-06T00:15:00+05:30");
 const delivery = (id, extra = {}) => ({ id, state: "DELIVERED", deliveredAt: now - 60000, codAmount: 1050, codCollected: true, earnings: { amountPaise: 5000, currency: "INR", payer: "store", status: "EARNED" }, ...extra });
+test("displayed distance policy matches the server and includes the paid return", () => {
+  assert.deepEqual(defaultRiderEarningsPolicy, serverPolicy);
+  assert.deepEqual(distanceEarningQuote(defaultRiderEarningsPolicy, 5), { amountPaise: 5000, oneWayMeters: 5000, billableMeters: 10000 });
+  assert.deepEqual(distanceEarningQuote(defaultRiderEarningsPolicy, 3.257), { amountPaise: 3257, oneWayMeters: 3257, billableMeters: 6514 });
+  assert.equal(distanceEarningQuote(defaultRiderEarningsPolicy, 0), null);
+});
 test("only completed recorded earnings count; COD is kept separate", () => {
   const jobs = [delivery("earned"), delivery("paid", { earnings: { amountPaise: 7500, currency: "INR", payer: "partx", status: "PAID", paidAt: now } }), delivery("active", { state: "PICKED_UP" }), delivery("cancelled", { state: "CANCELLED" }), delivery("missing", { earnings: null })];
   const result = earningsSummary(jobs, "all", now);
