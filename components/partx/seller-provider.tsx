@@ -32,6 +32,7 @@ type SellerContextValue = {
   removeAnnouncement: (announcementId: string) => Promise<void>;
   confirmPayment: (orderId: string) => Promise<void>;
   markPaymentNotFound: (orderId: string) => Promise<void>;
+  setPaymentArchived: (orderId: string, archived: boolean) => Promise<void>;
   addTicket: (ticket: NewTicket) => Promise<SellerTicket>;
   resolveTicket: (ticketId: string, internalNote: string) => Promise<void>;
   addRating: (rating: Pick<StoreRating, "orderId" | "storeId" | "stars" | "comment">) => Promise<StoreRating>;
@@ -372,6 +373,18 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
         transaction.update(orderRef, { paymentStatus: "VERIFICATION_FAILED", orderStatus: "PAYMENT_VERIFICATION_PENDING", updatedAt: serverTimestamp() });
       });
     },
+    setPaymentArchived: async (orderId, archived) => {
+      if (!user || user.activeRole !== "seller") throw new Error("Sign in as the seller to manage this payment list.");
+      await runTransaction(firestore, async (transaction) => {
+        const ref = doc(firestore, "orders", orderId);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists()) throw new Error("The payment order could not be found.");
+        const data = snapshot.data();
+        if (!user.storeIds?.includes(String(data.storeId ?? ""))) throw new Error("You cannot manage another store's payment list.");
+        if (data.paymentStatus !== "VERIFICATION_FAILED") throw new Error("Only payments marked not found can be removed from this list.");
+        transaction.update(ref, { paymentArchivedAt: archived ? serverTimestamp() : null, updatedAt: serverTimestamp() });
+      });
+    },
     updateOrderStatus: async (orderId, status) => {
       if (!user || user.activeRole !== "seller") throw new Error("Sign in as the seller to update this order.");
       await runTransaction(firestore, async (transaction) => {
@@ -578,7 +591,9 @@ function toSellerOrder(id: string, data: Record<string, unknown>): FirestoreSell
     orderStatus: data.orderStatus === "PAYMENT_PENDING" || data.orderStatus === "PAYMENT_VERIFICATION_PENDING" || data.orderStatus === "PLACED" || data.orderStatus === "PAYMENT_EXPIRED" || data.orderStatus === "PAYMENT_CANCELLED" ? data.orderStatus : undefined,
     sellerUpiIdSnapshot: typeof data.sellerUpiIdSnapshot === "string" ? data.sellerUpiIdSnapshot : undefined,
     sellerUpiNameSnapshot: typeof data.sellerUpiNameSnapshot === "string" ? data.sellerUpiNameSnapshot : undefined,
-    paymentSubmittedAt: data.paymentSubmittedAt ? "Submitted" : undefined,
+    paymentSubmittedAt: formatDeliveryTime(data.paymentSubmittedAt),
+    paymentSubmittedAtMillis: firestoreTime(data.paymentSubmittedAt),
+    paymentArchivedAt: firestoreDate(data.paymentArchivedAt),
     expiresAt: firestoreDate(data.expiresAt),
     deliveredAt: formatDeliveryTime(data.deliveredAt),
     deadline: String(data.deadline ?? "Review order"),

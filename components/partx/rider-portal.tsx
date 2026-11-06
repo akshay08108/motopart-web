@@ -17,7 +17,7 @@ const RiderContext = createContext<Workspace | null>(null);
 function useRider() { const value = useContext(RiderContext); if (!value) throw new Error("Rider workspace is required"); return value; }
 
 export function RiderShell({ children }: { children: React.ReactNode }) {
-  const { user, signOut, enableNotifications, notificationPermission, notificationError } = usePartX();
+  const { user, signOut, enableNotifications, notificationsEnabled, notificationError } = usePartX();
   const workspace = useRiderJobs(user?.id);
   const { profile, jobs, loaded, error } = workspace;
   const pathname = usePathname();
@@ -77,7 +77,7 @@ export function RiderShell({ children }: { children: React.ReactNode }) {
         {active?.state === "PICKED_UP" ? <RiderLocationSharing key={active.id} delivery={active}/> : null}
         {children}
       </>}
-      <section className="rx-alert-settings"><div><Icon name="bell"/><span><b>Stay ready for your next pickup</b><small>{notificationPermission === "granted" ? "Push notifications enabled. Enable sound for this session." : "Enable assignment notifications and sound."}</small></span></div><button className="rx-secondary" type="button" onClick={() => {
+      <section className="rx-alert-settings"><div><Icon name="bell"/><span><b>Stay ready for your next pickup</b><small>{notificationsEnabled ? "Push notifications enabled. Enable sound for this session." : "Enable assignment notifications and sound."}</small></span></div><button className="rx-secondary" type="button" onClick={() => {
         try { if (!audio.current && "AudioContext" in window) audio.current = new AudioContext(); void audio.current?.resume().catch(() => undefined); } catch { /* Push alerts can still work without browser audio. */ }
         void enableNotifications().then((enabled) => setNotice(enabled ? "Assignment notifications enabled. Sound is available while this portal is open." : "Check notification permissions to receive assignment alerts.")).catch(() => setNotice("Notifications could not be enabled. Check your browser settings and try again."));
       }}>Enable alerts</button>{notificationError ? <p role="status">{notificationError}</p> : null}</section>

@@ -1,0 +1,8 @@
+.sx-payment-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 22px}
+.sx-payment-tabs button{display:flex;align-items:center;gap:9px;padding:11px 16px;min-height:44px;border:1px solid var(--px-line,#dce0e5);background:var(--px-card,#fff);color:var(--px-muted,#667579);font:700 12px "Plus Jakarta Sans Variable",sans-serif;cursor:pointer;border-radius:7px}
+.sx-payment-tabs button[aria-pressed=true]{color:#fff;background:#152023;border-color:#152023}
+.sx-payment-tabs span{display:grid;place-items:center;border-radius:20px;background:#87909324;padding:3px 7px;min-width:23px;font-size:10px}
+.sx-notification-error{display:flex;justify-content:space-between;gap:15px;align-items:center;flex-wrap:wrap;line-height:1.7}
+.sx-notification-error button{border:1px solid currentColor;color:inherit;background:transparent;border-radius:5px;min-height:40px;padding:7px 12px;font:700 12px "Plus Jakarta Sans Variable",sans-serif;cursor:pointer}
+.sx-payment-verification-list footer{flex-wrap:wrap;gap:12px}.sx-payment-verification-list footer>span{flex:1;min-width:180px;line-height:1.8}.sx-payment-verification-list footer button{flex-shrink:0;min-height:44px}.sx-payment-verification-list footer button svg{width:16px;height:16px}
+@media(max-width:700px){.sx-payment-tabs{gap:8px}.sx-payment-tabs button{flex:1;justify-content:center;font-size:11px;padding:10px 12px}.sx-payment-verification-list footer>span{min-width:0;flex-basis:100%}.sx-payment-verification-list footer button{width:100%}.sx-notification-error{font-size:12px}}

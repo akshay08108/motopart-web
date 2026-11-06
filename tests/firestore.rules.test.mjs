@@ -301,11 +301,36 @@ test("users can register only their own notification devices", async () => {
 
   const otherCustomer = environment.authenticatedContext("customer-2").firestore();
   await assertFails(getDoc(doc(otherCustomer, "notificationDevices", "device-customer-1")));
+  await assertFails(setDoc(doc(otherCustomer, "notificationDevices", "device-customer-1"), {
+    userId: "customer-2", token: "a-different-valid-registration-token", platform: "web", roles: ["customer"], activeRole: "customer", storeIds: [], updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(setDoc(doc(otherCustomer, "notificationDevices", "customer-2-own-device"), {
+    userId: "customer-2", token: "a-different-valid-registration-token", platform: "web", roles: ["customer"], activeRole: "customer", storeIds: [], updatedAt: serverTimestamp(),
+  }));
   await assertFails(setDoc(doc(otherCustomer, "notificationDevices", "forged-device"), {
     userId: "customer-1", token: "another-valid-registration-token", platform: "web",
     roles: ["customer"], activeRole: "customer", storeIds: [], updatedAt: serverTimestamp(),
   }));
   await assertSucceeds(deleteDoc(deviceRef));
+});
+
+test("only the owning seller can remove or restore a failed payment without changing money/status", async () => {
+  const id = "FAILED-ARCHIVE";
+  await environment.withSecurityRulesDisabled(async (context) => setDoc(doc(context.firestore(), "orders", id), { ...pendingUpiOrder(), paymentStatus: "VERIFICATION_FAILED", orderStatus: "PAYMENT_VERIFICATION_PENDING" }));
+  const seller = environment.authenticatedContext("seller-1").firestore();
+  const other = environment.authenticatedContext("seller-2").firestore();
+  const customer = environment.authenticatedContext("customer-1").firestore();
+  const archive = { paymentArchivedAt: serverTimestamp(), updatedAt: serverTimestamp() };
+  await assertFails(updateDoc(doc(other, "orders", id), archive));
+  await assertFails(updateDoc(doc(customer, "orders", id), archive));
+  await assertFails(updateDoc(doc(seller, "orders", id), { ...archive, paymentStatus: "PAID" }));
+  await assertSucceeds(updateDoc(doc(seller, "orders", id), archive));
+  const saved = (await getDoc(doc(seller, "orders", id))).data();
+  if (saved.paymentStatus !== "VERIFICATION_FAILED" || saved.totalAmount !== pendingUpiOrder().totalAmount) throw new Error("Archiving changed payment or amount");
+  await assertSucceeds(updateDoc(doc(seller, "orders", id), { paymentArchivedAt: null, updatedAt: serverTimestamp() }));
+  await environment.withSecurityRulesDisabled(async (context) => updateDoc(doc(context.firestore(), "orders", id), { paymentStatus: "PAYMENT_SUBMITTED" }));
+  await assertFails(updateDoc(doc(seller, "orders", id), archive));
+  await assertFails(setDoc(doc(customer, "orders", "FORGED-ARCHIVE"), { ...pendingUpiOrder(), paymentArchivedAt: serverTimestamp() }));
 });
 
 test("ticket reaches the selected store and can be resolved only by its seller", async () => {

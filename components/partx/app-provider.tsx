@@ -73,6 +73,7 @@ type AppContextValue = {
   register: (input: RegisterInput) => Promise<boolean>;
   resetPassword: (email: string) => Promise<boolean>;
   notificationPermission: NotificationPermission | "unsupported";
+  notificationsEnabled: boolean;
   notificationError: string;
   enableNotifications: () => Promise<boolean>;
   signOut: () => Promise<void>;
@@ -101,6 +102,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   const [firebaseHydrated, setFirebaseHydrated] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("default");
   const [notificationError, setNotificationError] = useState("");
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const ordersRef = useRef<PartXOrder[]>([]);
 
   useEffect(() => {
@@ -123,11 +125,16 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   }, [user?.id]);
 
   useEffect(() => {
-    if (!user || browserNotificationPermission() !== "granted") return;
+    let cancelled = false;
+    queueMicrotask(() => { if (!cancelled) { setNotificationError(""); setNotificationsEnabled(false); } });
+    if (!user || browserNotificationPermission() !== "granted") return () => { cancelled = true; };
     void registerPushNotifications(user).then((result) => {
+      if (cancelled) return;
       setNotificationPermission(browserNotificationPermission());
+      setNotificationsEnabled(result.enabled);
       setNotificationError(result.enabled ? "" : result.reason);
     });
+    return () => { cancelled = true; };
   }, [user]);
 
   useEffect(() => {
@@ -628,6 +635,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       try { await sendPasswordResetEmail(firebaseAuth, email.trim()); return true; } catch { return false; }
     },
     notificationPermission,
+    notificationsEnabled,
     notificationError,
     enableNotifications: async () => {
       if (!user) {
@@ -635,17 +643,20 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
       const result = await registerPushNotifications(user);
+      if (firebaseAuth.currentUser?.uid !== user.id) return false;
       setNotificationPermission(browserNotificationPermission());
+      setNotificationsEnabled(result.enabled);
       setNotificationError(result.enabled ? "" : result.reason);
       return result.enabled;
     },
     signOut: async () => {
-      if (user) await unregisterPushNotifications();
+      if (user) await unregisterPushNotifications(user.id);
+      setNotificationsEnabled(false); setNotificationError("");
       setUser(null);
       removeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY);
       await firebaseSignOut(firebaseAuth);
     },
-  }), [cartNotice, theme, resolvedCart, vehicles, activeVehicleId, location, garages, marketplaceStores, announcements, catalog, catalogById, storesById, orders, liveOrderUpdate, user, hydrated, firebaseHydrated, notificationPermission, notificationError]);
+  }), [cartNotice, theme, resolvedCart, vehicles, activeVehicleId, location, garages, marketplaceStores, announcements, catalog, catalogById, storesById, orders, liveOrderUpdate, user, hydrated, firebaseHydrated, notificationPermission, notificationError, notificationsEnabled]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

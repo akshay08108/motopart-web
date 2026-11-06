@@ -203,6 +203,8 @@ export type SellerOrder = {
   sellerUpiIdSnapshot?: string;
   sellerUpiNameSnapshot?: string;
   paymentSubmittedAt?: string;
+  paymentSubmittedAtMillis?: number;
+  paymentArchivedAt?: Date;
   expiresAt?: Date;
   deadline: string;
   status: SellerOrderStatus;

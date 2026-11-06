@@ -140,7 +140,7 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow create: if isCustomer()
-        && !request.resource.data.keys().hasAny(['deliveredAt', 'riderDeliveryId', 'codCollected', 'codCollectedAt', 'codCollectedBy'])
+        && !request.resource.data.keys().hasAny(['deliveredAt', 'riderDeliveryId', 'codCollected', 'codCollectedAt', 'codCollectedBy', 'paymentArchivedAt'])
         && request.resource.data.status == 'New'
         && request.resource.data.stage == 'Confirmed'
         && request.resource.data.customerId == request.auth.uid
@@ -242,6 +242,12 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'orderStatus', 'updatedAt'])
         && request.resource.data.paymentStatus == 'VERIFICATION_FAILED'
         && request.resource.data.orderStatus == 'PAYMENT_VERIFICATION_PENDING'
+      ) || (
+        ownsStore(resource.data.storeId)
+        && resource.data.paymentStatus == 'VERIFICATION_FAILED'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentArchivedAt', 'updatedAt'])
+        && (request.resource.data.paymentArchivedAt == null || request.resource.data.paymentArchivedAt == request.time)
+        && request.resource.data.updatedAt == request.time
       ) || (
         ownsStore(resource.data.storeId)
         && (!resource.data.keys().hasAny(['riderDeliveryId']) || !(get(/databases/$(database)/documents/deliveries/$(resource.data.riderDeliveryId)).data.state in ['ASSIGNED', 'ACCEPTED', 'PICKED_UP', 'DELIVERED']))

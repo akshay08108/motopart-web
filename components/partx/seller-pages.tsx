@@ -11,6 +11,7 @@ import { sellerOrderHref } from "@/lib/navigation";
 import { useSeller } from "./seller-provider";
 import { StoreLocationEditor } from "./store-location-editor";
 import { SellerDispatch } from "./seller-dispatch";
+import { isRemovedPayment } from "@/lib/seller-payment-state";
 
 const packStatuses: SellerOrderStatus[] = ["New", "Accepted", "Packing"];
 const nextStatus: Partial<Record<SellerOrderStatus, SellerOrderStatus>> = { New: "Accepted", Accepted: "Packing", Packing: "Packed", Packed: "Dispatched", Dispatched: "Delivered" };
@@ -49,22 +50,33 @@ export function SellerOrdersPage() {
 }
 
 export function SellerPaymentsPage() {
-  const { paymentVerifications, confirmPayment, markPaymentNotFound } = useSeller();
+  const { paymentVerifications, confirmPayment, markPaymentNotFound, setPaymentArchived } = useSeller();
+  const [removed, setRemoved] = useState(false);
+  const removedPayments = paymentVerifications.filter(isRemovedPayment);
+  const visiblePayments = paymentVerifications.filter((order) => !isRemovedPayment(order));
+  const shown = removed ? removedPayments : visiblePayments;
   const [workingId, setWorkingId] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const act = async (orderId: string, action: "confirm" | "missing") => {
+  const act = async (orderId: string, action: "confirm" | "missing" | "remove" | "restore") => {
     setWorkingId(orderId); setMessage(""); setError("");
     try {
-      if (action === "confirm") await confirmPayment(orderId); else await markPaymentNotFound(orderId);
-      setMessage(action === "confirm" ? `${orderId} is paid and has moved to the fulfilment queue.` : `${orderId} was marked payment not found. The customer can correct the UTR.`);
+      if (action === "confirm") await confirmPayment(orderId);
+      else if (action === "missing") await markPaymentNotFound(orderId);
+      else await setPaymentArchived(orderId, action === "remove");
+      setMessage(action === "confirm" ? `${orderId} is paid and has moved to the fulfilment queue.` : action === "missing" ? `${orderId} was marked payment not found. The customer can correct the UTR.` : action === "remove" ? `${orderId} was removed from this list. Restore it from the Removed tab.` : `${orderId} was restored to Needs attention.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The payment could not be updated.");
     } finally {
       setWorkingId("");
     }
   };
-  return <><SellerTitle title="Payments awaiting verification" subtitle="Confirm direct UPI receipts before orders enter the packing queue"/>{message ? <div className="sx-product-success" role="status"><Icon name="check"/>{message}</div> : null}{error ? <p className="sx-form-error" role="alert">{error}</p> : null}<section className="sx-payment-verification-list">{paymentVerifications.map((order) => <article className="sx-panel" key={order.id}><header><div><span>PARTX ORDER</span><h2>{order.id}</h2><p>{order.paymentSubmittedAt ?? order.placedAt}</p></div><Status status={order.paymentStatus === "VERIFICATION_FAILED" ? "Payment not found" : "Awaiting verification"}/></header><div className="sx-payment-amount"><span>Amount customer says they paid</span><strong>₹{order.total.toLocaleString("en-IN")}</strong><small>Direct to {order.sellerUpiNameSnapshot ?? order.storeName}</small></div><dl><div><dt>UPI reference / UTR</dt><dd>{order.paymentReference ?? "Not submitted"}</dd></div><div><dt>Customer</dt><dd>{order.customer.name}<small>{order.customer.phone}</small></dd></div><div><dt>Order items</dt><dd className="sx-payment-order-items">{sellerOrderItems(order).map((item) => <span key={`${item.productId ?? item.partNumber}-${item.productName}`}>{item.productName}<small>{item.partNumber} · Qty {item.quantity}</small></span>)}<small>{labelFulfilment(order.fulfilment)}</small></dd></div></dl>{order.paymentStatus === "PAYMENT_SUBMITTED" ? <footer><button className="sx-secondary" disabled={workingId === order.id} onClick={() => void act(order.id,"missing")}>Payment not found</button><button className="sx-primary" disabled={workingId === order.id} onClick={() => void act(order.id,"confirm")}>{workingId === order.id ? "Updating…" : "Confirm payment received"}</button></footer> : <footer><span>Waiting for the customer to submit a corrected reference.</span></footer>}</article>)}{!paymentVerifications.length ? <div className="sx-panel sx-payment-empty"><Icon name="check"/><h2>No payments waiting</h2><p>Submitted UPI references for this store will appear here in real time.</p></div> : null}</section></>;
+  return <><SellerTitle title="Payments awaiting verification" subtitle="Confirm direct UPI receipts before orders enter the packing queue"/>
+    <div className="sx-payment-tabs" role="group" aria-label="Payment list"><button type="button" aria-pressed={!removed} onClick={() => setRemoved(false)}>Needs attention <span>{visiblePayments.length}</span></button><button type="button" aria-pressed={removed} onClick={() => setRemoved(true)}>Removed <span>{removedPayments.length}</span></button></div>
+    {message ? <div className="sx-product-success" role="status"><Icon name="check"/>{message}</div> : null}{error ? <p className="sx-form-error" role="alert">{error}</p> : null}
+    <section className="sx-payment-verification-list">{shown.map((order) => <article className="sx-panel" key={order.id}><header><div><span>PARTX ORDER</span><h2>{order.id}</h2><p>{order.paymentSubmittedAt ?? order.placedAt}</p></div><Status status={order.paymentStatus === "VERIFICATION_FAILED" ? "Payment not found" : "Awaiting verification"}/></header><div className="sx-payment-amount"><span>Amount customer says they paid</span><strong>₹{order.total.toLocaleString("en-IN")}</strong><small>Direct to {order.sellerUpiNameSnapshot ?? order.storeName}</small></div><dl><div><dt>UPI reference / UTR</dt><dd>{order.paymentReference ?? "Not submitted"}</dd></div><div><dt>Customer</dt><dd>{order.customer.name}<small>{order.customer.phone}</small></dd></div><div><dt>Order items</dt><dd className="sx-payment-order-items">{sellerOrderItems(order).map((item) => <span key={`${item.productId ?? item.partNumber}-${item.productName}`}>{item.productName}<small>{item.partNumber} · Qty {item.quantity}</small></span>)}<small>{labelFulfilment(order.fulfilment)}</small></dd></div></dl>
+      {removed ? <footer><span>Removed from the active list. Order and payment history are retained.</span><button className="sx-secondary" disabled={workingId === order.id} onClick={() => void act(order.id,"restore")}>Restore to list</button></footer> : order.paymentStatus === "PAYMENT_SUBMITTED" ? <footer><button className="sx-secondary" disabled={workingId === order.id} onClick={() => void act(order.id,"missing")}>Payment not found</button><button className="sx-primary" disabled={workingId === order.id} onClick={() => void act(order.id,"confirm")}>{workingId === order.id ? "Updating…" : "Confirm payment received"}</button></footer> : <footer><span>Waiting for a corrected reference. Removing this entry keeps its history; a new submission reappears automatically.</span><button className="sx-secondary" disabled={workingId === order.id} onClick={() => void act(order.id,"remove")}><Icon name="trash"/>{workingId === order.id ? "Removing…" : "Remove from list"}</button></footer>}
+    </article>)}{!shown.length ? <div className="sx-panel sx-payment-empty"><Icon name="check"/><h2>{removed ? "No removed payments" : "No payments waiting"}</h2><p>{removed ? "Entries you remove can be restored from here." : "New and corrected UPI submissions will appear here in real time."}</p></div> : null}</section></>;
 }
 
 export function SellerPackingPage() {
