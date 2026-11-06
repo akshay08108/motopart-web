@@ -38,6 +38,8 @@
 .rx-assignment-distance input{width:100%;padding:12px;border:1px solid #ccd8d1;border-radius:6px;background:var(--px-card,#fff);color:var(--px-ink,#152023);font:400 16px "Plus Jakarta Sans Variable",sans-serif;min-height:46px}
 .rx-assignment-quote{display:grid;gap:8px;padding:16px;border:1px solid #c8dfd0;background:#ecf8f0;border-radius:8px;max-width:500px;color:#184c36}
 .rx-assignment-quote>b{font-size:16px}.rx-assignment-quote>span{font-size:12px;line-height:1.7}.rx-assignment-quote>small{color:#50695b;font-size:11px;line-height:1.7}
+.rx-code-actions{display:flex;gap:8px;flex-wrap:wrap}.rx-code-display .rx-code-expired{font-size:15px;color:#a71925}.rx-customer-otp .rx-code-help{flex:0 0 100%;max-width:none;margin:0;font-size:10px;line-height:1.8}.rx-code-actions button{white-space:normal}
+.rx-reservation-note{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 16px;margin:0 0 22px;border:1px solid #ecdfbe;border-radius:8px;background:#fff9eb;color:#795d20;font-size:12px;line-height:1.8}.rx-reservation-note p{margin:0;flex:1;min-width:180px}.rx-reservation-note a{font-weight:750;color:#a71925;white-space:nowrap}
 @media(max-width:700px){
   .rx-navigation{gap:0;padding:0 10px}
   .rx-navigation a{flex:1;justify-content:center;flex-direction:column;gap:6px;padding:11px 3px;font-size:10px;min-height:61px}

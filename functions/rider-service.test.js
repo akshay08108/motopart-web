@@ -134,6 +134,34 @@ test("expired codes cannot complete delivery and can be renewed by their custome
   await rejected(service.riderAction("rider", { action: "complete", deliveryId, code, codCollected: true }), "failed-precondition");
   const renewed = await service.customerCode("cx", { deliveryId });
   assert.ok(renewed.expiresAt > Date.now());
+  assert.notEqual(renewed.code, code);
+  await service.riderAction("rider", { action: "complete", deliveryId, code: renewed.code, codCollected: true });
+  assert.equal((await db.doc("riders/rider").get()).data().activeDeliveryId, null);
+});
+
+test("customers can replace a valid code without resetting wrong attempts or bypassing cooldown/lock", async () => {
+  const deliveryId = await pickup();
+  const initial = await service.customerCode("cx", { deliveryId });
+  await rejected(service.customerCode("other-cx", { deliveryId, regenerate: true }), "permission-denied");
+  await rejected(service.customerCode("cx", { deliveryId, regenerate: true }), "resource-exhausted");
+  const ref = db.doc(`deliverySecrets/${deliveryId}`);
+  await ref.update({ createdAt: Timestamp.fromMillis(Date.now() - 31_000), attempts: 3 });
+  const fresh = await service.customerCode("cx", { deliveryId, regenerate: true });
+  assert.notEqual(fresh.code, initial.code);
+  assert.equal((await ref.get()).data().attempts, 3);
+  await rejected(service.riderAction("rider", { action: "complete", deliveryId, code: initial.code, codCollected: true }), "invalid-argument");
+  assert.equal((await ref.get()).data().attempts, 4);
+  await rejected(service.riderAction("rider", { action: "complete", deliveryId, code: initial.code, codCollected: true }), "invalid-argument");
+  await rejected(service.customerCode("cx", { deliveryId, regenerate: true }), "resource-exhausted");
+});
+
+test("code generation is blocked for a closed assignment or unconfirmed payment state", async () => {
+  const deliveryId = await pickup();
+  await db.doc("orders/order").update({ paymentStatus: "PAYMENT_SUBMITTED" });
+  await rejected(service.customerCode("cx", { deliveryId, regenerate: true }), "failed-precondition");
+  await db.doc("orders/order").update({ paymentStatus: "PAYMENT_DUE" });
+  await db.doc("riders/rider").update({ activeDeliveryId: null });
+  await rejected(service.customerCode("cx", { deliveryId, regenerate: true }), "failed-precondition");
 });
 
 test("declines retain history, release the rider and permit a new assignment", async () => {

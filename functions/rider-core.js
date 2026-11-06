@@ -188,15 +188,24 @@ export function createRiderCore(database, runtime) {
     return database.runTransaction(async (tx) => {
       const delivery = (await tx.get(database.doc(`deliveries/${deliveryId}`))).data();
       if (!delivery || delivery.customerId !== uid) fail("permission-denied", "This is not your delivery.");
-      if (delivery.state !== "PICKED_UP") fail("failed-precondition", "Delivery codes are available after the rider picks up your order.");
+      if (delivery.state !== "PICKED_UP") fail("failed-precondition", "This delivery is not awaiting a confirmation code. Refresh your order for its latest status.");
+      const [orderSnapshot, riderSnapshot] = await Promise.all([tx.get(database.doc(`orders/${delivery.orderId}`)), tx.get(database.doc(`riders/${delivery.riderId}`))]);
+      const order = orderSnapshot.data();
+      if (!order || order.riderDeliveryId !== deliveryId || order.orderStatus !== "PLACED" || riderSnapshot.data()?.activeDeliveryId !== deliveryId) fail("failed-precondition", "This delivery is no longer awaiting confirmation. Refresh your order for its latest status.");
+      if (!["PAID", "PAYMENT_DUE"].includes(order.paymentStatus)) fail("failed-precondition", "Your seller must confirm the payment before a delivery code can be generated.");
       const ref = database.doc(`deliverySecrets/${deliveryId}`);
       const secret = (await tx.get(ref)).data();
       if (millis(secret?.lockedUntil) > Date.now()) fail("resource-exhausted", "Delivery code entry is temporarily locked. Please try again in five minutes.");
-      if (secret && millis(secret.expiresAt) > Date.now() && !secret.lockedUntil) return { code: secret.code, expiresAt: millis(secret.expiresAt) };
-      const code = generateCode();
-      const expiresAt = Date.now() + 30 * 60_000;
-      tx.set(ref, { code, expiresAt: timestampFromMillis(expiresAt), attempts: 0, createdAt: stamp() });
-      return { code, expiresAt };
+      const currentTime = Date.now();
+      const validSecret = secret && millis(secret.expiresAt) > currentTime && !secret.lockedUntil;
+      const regenerateAfter = millis(secret?.createdAt) + 30_000;
+      if (validSecret && input.regenerate !== true) return { code: secret.code, expiresAt: millis(secret.expiresAt), regenerateAfter };
+      if (validSecret && currentTime < regenerateAfter) fail("resource-exhausted", "Wait 30 seconds between generating delivery codes. You can still show the current code.");
+      let code = generateCode();
+      if (code === secret?.code) code = String(100000 + (Number(code) - 100000 + 1) % 900000);
+      const expiresAt = currentTime + 30 * 60_000;
+      tx.set(ref, { code, expiresAt: timestampFromMillis(expiresAt), attempts: validSecret ? secret.attempts || 0 : 0, createdAt: stamp() });
+      return { code, expiresAt, regenerateAfter: currentTime + 30_000 };
     });
   }
   return { dispatch, riderAction, customerCode };
