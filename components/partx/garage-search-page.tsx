@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { Garage, Vehicle } from "@/lib/types";
 import { vehicleDetails, vehicleName } from "@/lib/vehicle-display";
@@ -29,8 +30,13 @@ type VariantGuide = {
 const preferredMakes = ["Maruti Suzuki", "Hyundai", "Tata Motors", "Mahindra", "Toyota", "Kia", "Honda", "MG Motor"];
 
 export function GarageSearchPage() {
-  const { vehicles, activeVehicleId, setActiveVehicleId, addVehicle, location, garages, addGarage } = usePartX();
-  const [vehicleOpen, setVehicleOpen] = useState(false);
+  const router = useRouter();
+  const { vehicles, activeVehicleId, setActiveVehicleId, addVehicle, location, garages, addGarage, needsVehicle, skipVehicleSetup } = usePartX();
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [manual, setManual] = useState(false);
+  const [vehicleDialog, setVehicleOpen] = useState(false);
+  const vehicleOpen = vehicleDialog || needsVehicle;
   const [garageOpen, setGarageOpen] = useState(false);
   const [garageLocation,setGarageLocation] = useState<AppLocation>({ id:"garage-draft", label:"Garage", address:"" });
   const [locationOpen, setLocationOpen] = useState(false);
@@ -119,6 +125,8 @@ export function GarageSearchPage() {
 
   const resetVehicleDialog = () => {
     setVehicleOpen(false);
+    setManual(false);
+    setSaveError("");
     setQuery("");
     setMake("");
     setResults([]);
@@ -130,22 +138,35 @@ export function GarageSearchPage() {
     setSearchError("");
   };
 
+  const saveVehicle = async (vehicle?: Vehicle) => {
+    setSaving(true);
+    setSaveError("");
+    try {
+      if (vehicle) await addVehicle(vehicle);
+      else await skipVehicleSetup();
+      resetVehicleDialog();
+      if (needsVehicle) router.replace("/");
+    } catch {
+      setSaveError("Could not save your vehicle settings. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const addSelectedVehicle = () => {
     if (!selected) return;
-    const vehicle: Vehicle = {
-      id: `vehicle-${Date.now()}-${selected.vehicleModelId}`,
+    void saveVehicle({
+      id: crypto.randomUUID(),
       vehicleModelId: selected.vehicleModelId,
       make: selected.make,
       model: selected.model,
       variant: variant.trim() || undefined,
       fuel: fuel || undefined,
       registration: registration.trim() || undefined,
-    };
-    addVehicle(vehicle);
-    resetVehicleDialog();
+    });
   };
 
-  const saveGarage = (event: React.FormEvent<HTMLFormElement>) => {
+  const saveGarage = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const garage: Garage = {
@@ -153,11 +174,20 @@ export function GarageSearchPage() {
       name: String(data.get("name")),
       phone: String(data.get("phone")),
       services: String(data.get("services")),
-      distanceKm: 2.5,
+      distanceKm: 0,
       location: { ...garageLocation, id: `garage-location-${Date.now()}`, label: "Garage", address: String(data.get("address")) },
     };
-    addGarage(garage);
-    setGarageOpen(false);
+    setSaving(true);
+    setSaveError("");
+    try {
+      await addGarage(garage);
+      setGarageLocation({ id: "garage-draft", label: "Garage", address: "" });
+      setGarageOpen(false);
+    } catch {
+      setSaveError("Could not save this garage. Try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return <div className="px-page px-container">
@@ -173,17 +203,38 @@ export function GarageSearchPage() {
     </section> : null}
 
     <div className="px-dashboard-grid">
-      <section className="px-panel px-panel-wide"><div className="px-panel-head"><div><span>MY VEHICLES</span><h2>Select your active vehicle</h2></div></div>
-        <div className="px-vehicle-list">{vehicles.map((vehicle) => <button className={activeVehicleId === vehicle.id ? "active" : ""} onClick={() => setActiveVehicleId(vehicle.id)} key={vehicle.id}><Image src="/vehicle-suv.png" alt="" width={220} height={120}/><div><b>{vehicleName(vehicle)}</b><span>{vehicleDetails(vehicle)}</span><small>{vehicle.registration}</small></div>{activeVehicleId === vehicle.id ? <em><Icon name="check"/>Active</em> : null}</button>)}</div>
+      <section className="px-panel px-panel-wide"><div className="px-panel-head"><div><span>MY VEHICLES</span><h2>{vehicles.length ? "Select your active vehicle" : "Select your vehicle"}</h2></div></div>
+        {!vehicles.length ? <p>Your garage is empty. Add a vehicle to shop for compatible parts.</p> : null}
+        {!vehicleOpen && !garageOpen && saveError && <p role="alert">{saveError}</p>}
+        <div className="px-vehicle-list">{vehicles.map((vehicle) => <button className={activeVehicleId === vehicle.id ? "active" : ""} onClick={() => void setActiveVehicleId(vehicle.id).catch(() => setSaveError("Could not change your active vehicle. Try again."))} key={vehicle.id}><Image src="/vehicle-suv.png" alt="" width={220} height={120}/><div><b>{vehicleName(vehicle)}</b><span>{vehicleDetails(vehicle)}</span><small>{vehicle.registration}</small></div>{activeVehicleId === vehicle.id ? <em><Icon name="check"/>Active</em> : null}</button>)}</div>
       </section>
       <section className="px-panel"><div className="px-panel-head"><div><span>DELIVERY LOCATION</span><h2>{location.label}</h2></div><button onClick={() => setLocationOpen(true)}>Edit</button></div><p className="px-address"><Icon name="pin"/>{location.address}</p></section>
       <section className="px-panel"><div className="px-panel-head"><div><span>TRUSTED GARAGES</span><h2>{garages.length} saved</h2></div><button onClick={() => setGarageOpen(true)}>Add</button></div>{garages.map((garage) => <div className="px-garage-row" key={garage.id}><div className="px-square-icon"><Icon name="garage"/></div><div><b>{garage.name}</b><span>{garage.services}</span><small>{garage.location.address}</small></div></div>)}</section>
     </div>
 
-    {vehicleOpen ? <div className={styles.backdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) resetVehicleDialog(); }}>
+    {vehicleOpen ? <div className={styles.backdrop} role="presentation" onMouseDown={(event) => { if (!needsVehicle && !saving && event.target === event.currentTarget) resetVehicleDialog(); }}>
       <div className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="vehicle-search-title">
-        <header className={styles.dialogHeader}><div><span>PARTX VEHICLE FINDER</span><h2 id="vehicle-search-title">Search & add your car</h2><p>Find the model in the PartX India vehicle catalog and save it to your garage.</p></div><button onClick={resetVehicleDialog} aria-label="Close vehicle search"><Icon name="close"/></button></header>
+        <header className={styles.dialogHeader}><div><span>PARTX VEHICLE FINDER</span><h2 id="vehicle-search-title">Select your vehicle</h2><p>Find the model in the PartX India vehicle catalog and save it to your garage.</p></div>{!needsVehicle && <button onClick={resetVehicleDialog} disabled={saving} aria-label="Close vehicle search"><Icon name="close"/></button>}</header>
         <div className={styles.searchBody}>
+          {saveError && <p role="alert">{saveError}</p>}
+          <div className="px-garage-setup-actions">
+            <button className="px-btn px-btn-outline" type="button" disabled={saving} onClick={() => setManual((value) => !value)}>{manual ? "Search the catalog" : "Enter vehicle manually"}</button>
+            {needsVehicle && <button className="px-link-button" type="button" disabled={saving} onClick={() => void saveVehicle()}>Add later</button>}
+          </div>
+          {manual ? <form className="px-form" onSubmit={(event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            const make = String(data.get("make") ?? "").trim();
+            const model = String(data.get("model") ?? "").trim();
+            if (!make || !model) { setSaveError("Enter the make and model of your vehicle."); return; }
+            void saveVehicle({ id: crypto.randomUUID(), make, model, fuel: String(data.get("fuel") ?? ""), variant: String(data.get("variant") ?? "").trim() });
+          }}>
+            <label>Make<input name="make" required maxLength={60}/></label>
+            <label>Model<input name="model" required maxLength={60}/></label>
+            <label>Fuel type<select name="fuel"><option value="">Choose fuel type</option><option>Petrol</option><option>Diesel</option><option>Electric</option><option>Hybrid</option><option>CNG</option><option>LPG</option></select></label>
+            <label>Variant / trim<input name="variant" maxLength={60}/></label>
+            <button type="submit" className="px-btn px-btn-red" disabled={saving}>Add to My Garage</button>
+          </form> : <>
           <label className={styles.searchBox}><Icon name="search"/><input autoFocus value={query} onChange={(event) => { setQuery(event.target.value); setSelected(null); setVariantGuide(null); }} placeholder="Search model, e.g. Swift, Creta, Thar"/><span>{searching ? "Searching…" : ""}</span></label>
           <div className={styles.filters}><label>Make<select value={make} onChange={(event) => { setMake(event.target.value); setSelected(null); setVariantGuide(null); }}><option value="">Any make</option>{makes.map((item) => <option value={item.name} key={item.id}>{item.name}</option>)}</select></label></div>
           <div className={styles.popular}><span>Popular makes</span>{preferredMakes.filter((item) => makes.some((makeItem) => makeItem.name === item)).map((item) => <button type="button" className={make === item ? styles.selectedChip : ""} key={item} onClick={() => { setMake(make === item ? "" : item); setSelected(null); setVariantGuide(null); }}>{item}</button>)}</div>
@@ -199,13 +250,14 @@ export function GarageSearchPage() {
             {variantGuide?.fuelTypes.length ? <label>Fuel type<select value={fuel} onChange={(event) => setFuel(event.target.value)}><option value="">Not specified</option>{variantGuide.fuelTypes.map((item) => <option key={item}>{item}</option>)}</select></label> : null}
             <label>Variant / trim<input value={variant} onChange={(event) => setVariant(event.target.value)} placeholder="Optional · enter from your RC"/></label>
             <label>Registration number <input value={registration} onChange={(event) => setRegistration(event.target.value.toUpperCase())} placeholder="Optional · TS 09 AB 1234"/></label>
-            <button className="px-btn px-btn-red" onClick={addSelectedVehicle}>Add to My Garage <Icon name="arrow"/></button>
+            <button className="px-btn px-btn-red" disabled={saving} onClick={addSelectedVehicle}>Add to My Garage <Icon name="arrow"/></button>
           </section> : null}
+          </>}
         </div>
       </div>
     </div> : null}
 
-    {garageOpen ? <SimpleModal title="Add a trusted garage" close={() => setGarageOpen(false)}><form className="px-form" onSubmit={saveGarage}><label>Garage name<input name="name" required/></label><label>Phone<input name="phone" required/></label><label>Services<input name="services" placeholder="Installation, diagnostics" required/></label><LocationPicker value={garageLocation} onSelect={setGarageLocation} label="Garage address"/><button className="px-btn px-btn-red" type="submit">Save garage</button></form></SimpleModal> : null}
+    {garageOpen ? <SimpleModal title="Add a trusted garage" close={() => setGarageOpen(false)}><form className="px-form" onSubmit={(event) => void saveGarage(event)}><label>Garage name<input name="name" required/></label><label>Phone<input name="phone" required/></label><label>Services<input name="services" placeholder="Installation, diagnostics" required/></label><LocationPicker value={garageLocation} onSelect={setGarageLocation} label="Garage address"/>{saveError && <p role="alert">{saveError}</p>}<button className="px-btn px-btn-red" type="submit" disabled={saving}>{saving ? "Saving…" : "Save garage"}</button></form></SimpleModal> : null}
     {locationOpen ? <DeliveryLocationPicker close={() => setLocationOpen(false)}/> : null}
   </div>;
 }

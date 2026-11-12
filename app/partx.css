@@ -56,10 +56,8 @@ button, select { cursor: pointer; }
 .px-menu-button { display: none; }
 .px-ticker { display: flex; align-items: center; height: 34px; overflow: hidden; background: #0b0d11; color: #fff; font-size: 11px; letter-spacing: .08em; }
 .px-ticker > span { z-index: 1; display: grid; place-items: center; align-self: stretch; min-width: 138px; padding-inline: 20px; background: var(--px-red); font-weight: 900; }
-.px-ticker > div { display: flex; align-items: center; width: max-content; padding-left: 38px; white-space: nowrap; animation: px-ticker 24s linear infinite; }
-.px-ticker-item { display:flex; align-items:center; gap:38px; margin-right:38px; }
-.px-ticker i { width: 4px; height: 4px; border-radius: 50%; background: var(--px-red); }
-@keyframes px-ticker { from { transform: translateX(0); } to { transform: translateX(-35%); } }
+.px-ticker > div { display: flex; align-items: center; min-width: 0; overflow-x: auto; padding-inline: 16px; white-space: nowrap; scrollbar-width: thin; }
+.px-ticker-item { flex: none; margin-right: 24px; color: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 
 .px-hero { position:relative; background:linear-gradient(125deg,var(--px-surface),color-mix(in srgb,var(--px-red) 4%,var(--px-card))); }
 .px-hero-grid { display:block; }
@@ -667,3 +665,9 @@ html[data-native="true"] .px-auth-loading { min-height: 100dvh; padding-top: env
 .px-hero-part-search .px-search-dropdown { left:0; right:auto; text-align:left; }
 .px-hero .px-hero-facts { justify-content:center; }
 @media(max-width:860px) { .px-hero h1 { font-size:clamp(30px,7vw,48px); } .px-hero-part-search { border-right:0; } .px-hero-part-search .px-search-form input { font-size:16px; } }
+
+.px-garage-setup-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; align-items: center; }
+
+.px-delivery-rates { margin-top: 20px; }
+.px-delivery-rates table { width: 100%; border-collapse: collapse; }
+.px-delivery-rates th, .px-delivery-rates td { padding: 12px 8px; border-bottom: 1px solid var(--px-line, #ddd); text-align: left; }

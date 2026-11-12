@@ -26,8 +26,12 @@ const categories = [
 export function HomePage() {
   const router = useRouter();
   const { vehicles, activeVehicleId, setActiveVehicleId, catalog } = usePartX();
+  const [vehicleError, setVehicleError] = useState("");
   const [term, setTerm] = useState("");
   const activeVehicle = vehicles.find((vehicle) => vehicle.id === activeVehicleId) ?? vehicles[0];
+  const compatibleParts = activeVehicle ? catalog.filter((product) =>
+    product.compatibleVehicleIds.includes(activeVehicle.id)
+    || Boolean(activeVehicle.vehicleModelId && product.compatibleVehicleIds.includes(activeVehicle.vehicleModelId))) : [];
   const go = () => router.push(`/shop${term.trim() ? `?q=${encodeURIComponent(term)}` : ""}`);
 
   return <>
@@ -38,10 +42,14 @@ export function HomePage() {
           <div className="px-hero-headline"><h1><span className="px-hero-line">Find the exact part</span> <span className="px-hero-line">for your <span className="px-hero-accent">vehicle.</span></span></h1></div>
           <p>Vehicle-verified parts from trusted stores, ready for pickup or delivery.</p>
           <div className="px-vehicle-finder">
-            <label>Your vehicle<select value={activeVehicleId} onChange={(event) => setActiveVehicleId(event.target.value)}>{vehicles.map((vehicle) => <option value={vehicle.id} key={vehicle.id}>{vehicleName(vehicle)} · {vehicle.variant || "Model"}</option>)}</select></label>
+            {vehicles.length ? <label>Your vehicle<select value={activeVehicle?.id ?? ""} onChange={(event) => {
+              setVehicleError("");
+              void setActiveVehicleId(event.target.value).catch(() => setVehicleError("Could not change your vehicle. Try again."));
+            }}>{vehicles.map((vehicle) => <option value={vehicle.id} key={vehicle.id}>{vehicleName(vehicle)} · {vehicle.variant || "Model"}</option>)}</select></label> : <Link href="/garage" className="px-btn px-btn-outline"><Icon name="garage"/>Select your vehicle</Link>}
             <div className="px-hero-part-search"><span>Part or part number</span><PartSearch value={term} onChange={setTerm} label="Search hero parts" placeholder="e.g. brake pads, LX-3541"/></div>
             <button className="px-btn px-btn-red" onClick={go}>Find parts <Icon name="arrow"/></button>
           </div>
+          {vehicleError && <p role="alert">{vehicleError}</p>}
           <div className="px-hero-facts"><span><Icon name="check"/>Fitment checked</span><DeliveryLocationButton/></div>
         </div>
       </div>
@@ -56,8 +64,8 @@ export function HomePage() {
 
     <section className="px-section">
       <div className="px-container">
-        <div className="px-section-head"><div><span>SELECTED FOR YOUR GARAGE</span><h2>Recommended for your {activeVehicle.model}</h2></div><Link href="/shop">Shop all <Icon name="arrow"/></Link></div>
-        <div className="px-product-grid">{catalog.slice(0, 5).map((product) => <ProductCard product={product} key={product.id}/>)}</div>
+        <div className="px-section-head"><div><h2>{activeVehicle && compatibleParts.length ? `Recommended for your ${activeVehicle.model}` : "Browse parts"}</h2></div><Link href="/shop">Shop all <Icon name="arrow"/></Link></div>
+        <div className="px-product-grid">{(compatibleParts.length ? compatibleParts : catalog).slice(0, 5).map((product) => <ProductCard product={product} key={product.id}/>)}</div>
       </div>
     </section>
 

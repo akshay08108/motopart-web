@@ -27,7 +27,6 @@ export function RoleChoicePage() {
           <RoleChoice role="customer" title="Customer" description="Buy parts, compare stores and track orders"/>
           <RoleChoice role="seller" title="Seller" description="Manage products, prices, packing and support"/>
         </div>
-        <Link className="px-role-home" href="/"><Icon name="back"/>Back to PartX home</Link>
       </div>
     </section>
   </main>;
@@ -49,8 +48,8 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
   const copy = roleCopy[role];
 
   useEffect(() => {
-    if (!authHydrated || !user || !user.roles.includes(role)) return;
-    router.replace(role === "rider" ? "/rider" : role === "seller" ? "/seller" : "/account");
+    if (!authHydrated || !user || user.activeRole !== role) return;
+    router.replace(role === "rider" ? "/rider" : role === "seller" ? "/seller" : "/");
   }, [authHydrated, role, router, user]);
 
   const complete = async (event: FormEvent<HTMLFormElement>) => {
@@ -61,7 +60,7 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
       success = await register({ name: String(data.get("name")), email: String(data.get("email")), mobile: String(data.get("mobile")), password: String(data.get("password")), role, storeName: String(data.get("storeName") ?? "") });
     } else success = await signIn(identifier, String(data.get("password")), role);
     setBusy(false);
-    if (success) router.replace(role === "rider" ? "/rider" : role === "seller" ? "/seller" : "/account");
+    if (success) router.replace(role === "rider" ? "/rider" : role === "seller" ? "/seller" : "/");
     else setError(`We could not sign you in as a ${role}. Check your email, password and selected account type.`);
   };
 

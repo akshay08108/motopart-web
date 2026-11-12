@@ -9,6 +9,7 @@ import { Icon } from "./icons";
 import { SellerShell } from "./seller-shell";
 import { CartFeedback } from "./cart-feedback";
 import { PartSearch } from "./part-search";
+import { sameDeliveryArea } from "@/lib/delivery-pricing";
 import { RiderShell } from "./rider-portal";
 
 const nav = [
@@ -16,51 +17,45 @@ const nav = [
 ];
 const riderApp = process.env.NEXT_PUBLIC_PARTX_PORTAL === "rider";
 
-const fallbackAnnouncements = [
-  { id: "arrival-mg", text: "MG Hector parts now available" },
-  { id: "arrival-bmw", text: "BMW air filters back in stock" },
-  { id: "seller-new", text: "New PartX sellers joining soon" },
-] as const;
-
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+  const pathname = usePathname().replace(/\/$/, "") || "/";
   const router = useRouter();
-  const { theme, toggleTheme, cartCount, cartNotice, announcements, user, authHydrated } = usePartX();
+  const { theme, toggleTheme, cartCount, cartNotice, announcements, stores, location, garageReady, needsVehicle, user, authHydrated } = usePartX();
   const [open, setOpen] = useState(false);
   const active = (href: string) => href === "/" ? pathname === "/" : pathname.startsWith(href);
-  const customerRoute = ["/account", "/order", "/orders", "/garage", "/checkout", "/support"].some((route) => pathname === route || pathname.startsWith(`${route}/`));
   const sellerRoute = pathname === "/seller" || pathname === "/seller-order" || pathname.startsWith("/seller/");
   const authRoute = pathname === "/login" || pathname.startsWith("/login/");
   const riderRoute = pathname === "/rider" || pathname.startsWith("/rider/");
-  const isRider = Boolean(user?.roles.includes("rider"));
   const isCustomer = Boolean(user?.roles.includes("customer"));
   const isSeller = Boolean(user?.roles.includes("seller"));
-  const liveUpdates = announcements.length ? [...announcements, ...fallbackAnnouncements] : fallbackAnnouncements;
 
-  useEffect(() => {
-    if (riderApp && !riderRoute && pathname.replace(/\/$/, "") !== "/login/rider") {
-      router.replace("/rider");
-      return;
+  let destination: string | undefined;
+  if (riderApp && !riderRoute && pathname !== "/login/rider") destination = "/rider";
+  else if (authHydrated) {
+    if (riderRoute && !user?.roles.includes("rider")) destination = "/login/rider";
+    else if (!authRoute && !user) destination = "/login";
+    else if (sellerRoute && !isSeller) destination = "/";
+    else if (sellerRoute && pathname === "/seller/pending") destination = "/seller";
+    else if (user && !authRoute && !sellerRoute && !riderRoute) {
+      if (!isCustomer) destination = isSeller ? "/seller" : "/rider";
+      else if (needsVehicle && pathname !== "/garage") destination = "/garage";
+      else if (pathname === "/" && user.activeRole === "seller") destination = "/seller";
     }
-    if (!authHydrated) return;
-    if (customerRoute && !isCustomer) router.replace("/login/customer");
-    if (riderRoute && !isRider) router.replace("/login/rider");
-    if (!sellerRoute) return;
-    if (!isSeller) router.replace("/login/seller");
-    else if (pathname === "/seller/pending") router.replace("/seller");
-  }, [authHydrated, customerRoute, isCustomer, isSeller, isRider, riderRoute, pathname, router, sellerRoute]);
+  }
+  useEffect(() => {
+    if (destination) router.replace(destination);
+  }, [destination, router]);
 
-  if (riderApp && !riderRoute && pathname.replace(/\/$/, "") !== "/login/rider") return <AuthLoading label="Opening PartX Rider…"/>;
+  if (destination) return <AuthLoading label="Opening PartX…"/>;
   if (authRoute) return children;
-  if (riderRoute) {
-    if (!authHydrated || !isRider) return <AuthLoading label="Opening rider portal…"/>;
-    return <RiderShell key={user?.id}>{children}</RiderShell>;
-  }
-  if (sellerRoute) {
-    if (!authHydrated || !isSeller || pathname === "/seller/pending") return <AuthLoading label="Opening seller workspace…"/>;
-    return <SellerShell>{children}</SellerShell>;
-  }
-  if (customerRoute && (!authHydrated || !isCustomer)) return <AuthLoading label="Opening your account…"/>;
+  if (!authHydrated || !user) return <AuthLoading label="Opening PartX…"/>;
+  if (riderRoute) return <RiderShell key={user.id}>{children}</RiderShell>;
+  if (sellerRoute) return <SellerShell>{children}</SellerShell>;
+  if (!garageReady) return <AuthLoading label="Loading your garage…"/>;
+  const liveUpdates = announcements.filter((announcement) => {
+    const store = stores.find((item) => item.id === announcement.storeId);
+    return store && sameDeliveryArea(location, store.location);
+  });
 
   return <div className="px-app">
     <header className="px-header">
@@ -82,7 +77,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     </header>
-    <div className="px-ticker" aria-label="Latest parts and sellers"><span>LIVE UPDATES</span><div>{liveUpdates.map((announcement, index) => <span className="px-ticker-item" key={announcement.id}><b>{announcement.text}</b>{index < liveUpdates.length - 1 ? <i/> : null}</span>)}</div></div>
+    {liveUpdates.length > 0 && <div className="px-ticker" aria-label="Local store updates"><span>LIVE UPDATES</span><div>{liveUpdates.map((announcement) => <Link className="px-ticker-item" key={announcement.id} href={`/shop?store=${encodeURIComponent(announcement.storeId)}`}>{announcement.text}</Link>)}</div></div>}
     <main>{children}</main>
     <CartFeedback/>
     <footer className="px-footer">

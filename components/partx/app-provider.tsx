@@ -1,22 +1,26 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createUserWithEmailAndPassword, deleteUser, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut as firebaseSignOut, updateProfile } from "firebase/auth";
-import { collection, doc, getDoc, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
+import { arrayUnion, collection, doc, getDoc, getDocsFromServer, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import type { AppLocation, CartLine, CustomerUser, Garage, LiveAnnouncement, Order, OrderStage, PartnerStore, PaymentMethod, PaymentOrderStatus, Product, SellerPaymentStatus, SellerProduct, StorePaymentSettings, UserRole, Vehicle } from "@/lib/types";
-import { getDemoCatalog, vehicles as initialVehicles } from "@/lib/demo-data";
+import { getDemoCatalog } from "@/lib/demo-data";
 import { firebaseAuth, firestore } from "@/lib/firebase";
-import { demoGarages, demoStores } from "@/lib/marketplace-data";
+import { demoStores } from "@/lib/marketplace-data";
 import { createPartXId } from "@/lib/seller-data";
 import { createPaymentOrderId, developmentPaymentSettings, isValidUtr, normalizeUtr, paymentExpiresAt } from "@/lib/upi-payments";
 import { readBrowserStorage, removeBrowserStorage, writeBrowserStorage } from "@/lib/browser-storage";
 import { browserNotificationPermission, registerPushNotifications, unregisterPushNotifications } from "@/lib/push-notifications";
 import { formatDeliveryTime } from "@/lib/delivery-time";
+import { freeDeliverySlots, occupiesDeliveryOffer, quoteDelivery } from "@/lib/delivery-pricing";
 
 const AUTH_PROFILE_CACHE_KEY = "partx-firebase-profile-v1";
 
 export type PartXOrder = Order & {
   riderDeliveryId?: string;
+  deliveryCharge?: number;
+  deliveryPricingV1?: boolean;
+  deliveryOfferSlot?: string;
   codCollected?: boolean;
   deliveredAt?: string;
   items?: CartLine[];
@@ -50,19 +54,24 @@ type AppContextValue = {
   removeFromCart: (id: string) => void;
   vehicles: Vehicle[];
   activeVehicleId: string;
-  setActiveVehicleId: (id: string) => void;
-  addVehicle: (vehicle: Vehicle) => void;
+  setActiveVehicleId: (id: string) => Promise<void>;
+  addVehicle: (vehicle: Vehicle) => Promise<void>;
+  garageReady: boolean;
+  needsVehicle: boolean;
+  skipVehicleSetup: () => Promise<void>;
   location: AppLocation;
   setLocation: (location: AppLocation) => Promise<void>;
   garages: Garage[];
-  addGarage: (garage: Garage) => void;
+  addGarage: (garage: Garage) => Promise<void>;
   stores: PartnerStore[];
   announcements: LiveAnnouncement[];
   catalog: Product[];
   addStore: (store: PartnerStore) => void;
   submitStoreRating: (storeId: string, stars: number) => void;
   orders: PartXOrder[];
-  placeOrder: (fulfilment: PartXOrder["fulfilment"], payment: PaymentMethod, attemptId?: string) => Promise<PartXOrder>;
+  ordersReady: boolean;
+  freeDeliveriesRemaining: number;
+  placeOrder: (fulfilment: PartXOrder["fulfilment"], payment: PaymentMethod, attemptId?: string, expectedFee?: number | null) => Promise<PartXOrder>;
   submitUpiReference: (orderId: string, reference: string) => Promise<void>;
   cancelPayment: (orderId: string) => Promise<void>;
   updateOrderStage: (orderId: string, stage: OrderStage) => void;
@@ -81,21 +90,23 @@ type AppContextValue = {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
+const emptyGarage = { vehicles: [] as Vehicle[], garages: [] as Garage[], activeVehicleId: "", needsVehicle: false };
+const emptyOrders: PartXOrder[] = [];
+const emptyLocation: AppLocation = { id: "default", label: "Home", address: "" };
+
 export function PartXProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [cartNotice, setCartNotice] = useState<AppContextValue["cartNotice"]>(null);
   const cartNoticeSequence = useRef(0);
-  const [vehicles, setVehicles] = useState<Vehicle[]>(initialVehicles);
-  const [activeVehicleId, setActiveVehicleId] = useState(initialVehicles[0].id);
-  const [location, setLocation] = useState<AppLocation>({ id: "default", label: "Home", address: "" });
-  const [garages, setGarages] = useState<Garage[]>(demoGarages);
+  const [savedGarage, setSavedGarage] = useState<(typeof emptyGarage & { uid: string }) | null>(null);
+  const [savedLocation, setSavedLocation] = useState<{ uid: string; value: AppLocation } | null>(null);
   const [stores, setStores] = useState<PartnerStore[]>(demoStores);
   const [firebaseStores, setFirebaseStores] = useState<FirebaseStoreRecord[]>([]);
   const [firebaseProducts, setFirebaseProducts] = useState<SellerProduct[]>([]);
   const [firebaseRatings, setFirebaseRatings] = useState<Array<{ storeId: string; stars: number }>>([]);
   const [announcements, setAnnouncements] = useState<LiveAnnouncement[]>([]);
-  const [orders, setOrders] = useState<PartXOrder[]>([]);
+  const [orderState, setOrderState] = useState<{ uid: string; entries: PartXOrder[]; ready: boolean } | null>(null);
   const [liveOrderUpdate, setLiveOrderUpdate] = useState<{ orderId: string; stage: OrderStage } | null>(null);
   const [user, setUser] = useState<CustomerUser | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -105,24 +116,37 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const ordersRef = useRef<PartXOrder[]>([]);
 
-  useEffect(() => {
-    ordersRef.current = orders;
-  }, [orders]);
+  const customerId = user?.roles.includes("customer") ? user.id : undefined;
+  const orders = customerId && orderState?.uid === customerId ? orderState.entries : emptyOrders;
+  const ordersReady = Boolean(customerId && orderState?.uid === customerId && orderState.ready);
+  const freeDeliveriesRemaining = Math.max(0, freeDeliverySlots.length - orders.filter((order) =>
+    occupiesDeliveryOffer(order) && (!order.deliveryPricingV1 || order.deliveryOfferSlot)).length);
+  const garageReady = Boolean(customerId && savedGarage?.uid === customerId);
+  const { vehicles, garages, activeVehicleId, needsVehicle } = garageReady && savedGarage ? savedGarage : emptyGarage;
+  const location = customerId && savedLocation?.uid === customerId ? savedLocation.value : emptyLocation;
 
   useEffect(() => {
-    queueMicrotask(() => {
-      let next:AppLocation = { id:"default", label:"Home", address:"" };
-      if (!user?.id) {
-        try { const saved = JSON.parse(readBrowserStorage("local", "partx-guest-location-v1") ?? "null"); if (saved && typeof saved.address === "string" && typeof saved.label === "string") next = saved; } catch {}
-      }
-      setLocation(next);
-    });
-    if (!user?.id) return;
-    return onSnapshot(doc(firestore, "users", user.id, "deliveryLocations", "default"), (snapshot) => {
+    if (!customerId) return;
+    return onSnapshot(doc(firestore, "users", customerId, "preferences", "garage"), { includeMetadataChanges: true }, (snapshot) => {
+      if (!snapshot.exists() && snapshot.metadata.fromCache) return;
       const data = snapshot.data();
-      if (data && typeof data.address === "string") setLocation(data as AppLocation);
-    }, () => { /* Saving reports any connection or permission error in the address picker. */ });
-  }, [user?.id]);
+      setSavedGarage({
+        uid: customerId,
+        vehicles: Array.isArray(data?.vehicles) ? data.vehicles : [],
+        garages: Array.isArray(data?.garages) ? data.garages : [],
+        activeVehicleId: typeof data?.activeVehicleId === "string" ? data.activeVehicleId : "",
+        needsVehicle: data?.needsVehicle === true,
+      });
+    });
+  }, [customerId]);
+
+  useEffect(() => {
+    if (!customerId) return;
+    return onSnapshot(doc(firestore, "users", customerId, "deliveryLocations", "default"), (snapshot) => {
+      const data = snapshot.data();
+      setSavedLocation({ uid: customerId, value: data && typeof data.address === "string" ? data as AppLocation : emptyLocation });
+    });
+  }, [customerId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,9 +182,9 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user?.id || !isCustomer) return;
     ordersRef.current = [];
-    queueMicrotask(() => setOrders([]));
     return onSnapshot(
       query(collection(firestore, "orders"), where("customerId", "==", user.id)),
+      { includeMetadataChanges: true },
       (snapshot) => {
         const liveOrders = snapshot.docs.map((orderDoc) => toCustomerOrder(orderDoc.id, orderDoc.data()));
         const previous = ordersRef.current;
@@ -169,12 +193,12 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
           return current && current.stage !== nextOrder.stage;
         });
         ordersRef.current = liveOrders;
-        setOrders(liveOrders);
+        setOrderState({ uid: user.id, entries: liveOrders, ready: !snapshot.metadata.fromCache });
         if (changed) setLiveOrderUpdate({ orderId: changed.id, stage: changed.stage });
       },
       () => {
         ordersRef.current = [];
-        setOrders([]);
+        setOrderState({ uid: user.id, entries: [], ready: false });
       },
     );
   }, [isCustomer, user?.id]);
@@ -212,9 +236,6 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       try {
         if (savedProfile) {
           const profile = JSON.parse(savedProfile);
-          if (Array.isArray(profile.vehicles)) setVehicles(profile.vehicles);
-          if (typeof profile.activeVehicleId === "string") setActiveVehicleId(profile.activeVehicleId);
-          if (Array.isArray(profile.garages)) setGarages(profile.garages);
           if (Array.isArray(profile.stores)) setStores(profile.stores.map((saved: PartnerStore) => {
             const seed = demoStores.find((store) => store.id === saved.id);
             if (!seed || (saved.ratingCount ?? 0) >= (seed.ratingCount ?? 0)) return saved;
@@ -282,8 +303,8 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!hydrated) return;
     writeBrowserStorage("local", "partx-cart-v1", JSON.stringify(cart));
-    writeBrowserStorage("local", "partx-profile-v1", JSON.stringify({ vehicles, activeVehicleId, location, garages, stores }));
-  }, [cart, vehicles, activeVehicleId, location, garages, stores, hydrated]);
+    writeBrowserStorage("local", "partx-profile-v1", JSON.stringify({ stores }));
+  }, [cart, stores, hydrated]);
 
   const marketplaceStores = useMemo(() => {
     const combined = new Map(stores.map((store) => [store.id, store]));
@@ -332,6 +353,11 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     };
   }), [cart, catalogById, storesById]);
 
+  const saveGaragePreferences = useCallback(async (data: Record<string, unknown>) => {
+    if (!customerId || firebaseAuth.currentUser?.uid !== customerId) throw new Error("Sign in as a customer to update My Garage.");
+    await setDoc(doc(firestore, "users", customerId, "preferences", "garage"), data, { merge: true });
+  }, [customerId]);
+
   const value = useMemo<AppContextValue>(() => ({
     cartNotice,
     dismissCartNotice: (id) => setCartNotice((current) => current?.id === id ? null : current),
@@ -373,17 +399,26 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     },
     vehicles,
     activeVehicleId,
-    setActiveVehicleId,
-    addVehicle: (vehicle) => { setVehicles((current) => [...current, vehicle]); setActiveVehicleId(vehicle.id); },
+    garageReady,
+    needsVehicle,
+    setActiveVehicleId: (id) => saveGaragePreferences({ activeVehicleId: id }),
+    addVehicle: (vehicle) => saveGaragePreferences({
+      vehicles: arrayUnion(Object.fromEntries(Object.entries(vehicle).filter(([, value]) => value !== undefined))),
+      activeVehicleId: vehicle.id,
+      needsVehicle: false,
+    }),
+    skipVehicleSetup: () => saveGaragePreferences({ needsVehicle: false }),
     location,
     setLocation: async (nextLocation) => {
       const saved = Object.fromEntries(Object.entries(nextLocation).filter(([, value]) => value !== undefined)) as AppLocation;
-      if (user) await setDoc(doc(firestore, "users", user.id, "deliveryLocations", "default"), saved);
-      else writeBrowserStorage("local", "partx-guest-location-v1", JSON.stringify(saved));
-      setLocation(saved);
+      if (!customerId || firebaseAuth.currentUser?.uid !== customerId) throw new Error("Sign in as a customer to save a delivery address.");
+      await setDoc(doc(firestore, "users", customerId, "deliveryLocations", "default"), saved);
     },
     garages,
-    addGarage: (garage) => setGarages((current) => [...current, garage]),
+    addGarage: (garage) => saveGaragePreferences({ garages: arrayUnion({
+      ...garage,
+      location: Object.fromEntries(Object.entries(garage.location).filter(([, value]) => value !== undefined)),
+    }) }),
     stores: marketplaceStores,
     announcements,
     catalog,
@@ -394,8 +429,10 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       return { ...store, rating: Number(((store.rating * count + stars) / (count + 1)).toFixed(1)), ratingCount: count + 1 };
     })),
     orders,
-    placeOrder: async (fulfilment, payment, attemptId) => {
-      if (!user) throw new Error("Sign in as a customer before placing an order.");
+    ordersReady,
+    freeDeliveriesRemaining,
+    placeOrder: async (fulfilment, payment, attemptId, expectedFee) => {
+      if (!user || !customerId || firebaseAuth.currentUser?.uid !== customerId) throw new Error("Sign in as a customer before placing an order.");
       if (!resolvedCart.length) throw new Error("Your cart is empty.");
       if (fulfilment === "garage" && (!garages[0] || garages[0].location.address.trim().length < 10)) throw new Error("Add a garage with a full address before ordering a garage delivery.");
       if (fulfilment === "delivery" && location.address.trim().length < 10) throw new Error("Choose a full delivery address before placing your order.");
@@ -408,9 +445,14 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       if (payment === "upi" && (!paymentSettings?.upiEnabled || !paymentSettings.upiId)) throw new Error(`${selectedStore.name} has not enabled UPI payments.`);
       if (payment === "cod" && !paymentSettings?.codEnabled) throw new Error(`${selectedStore.name} has not enabled cash on delivery.`);
       const subtotal = resolvedCart.reduce((sum, line) => sum + (line.unitPrice ?? line.product.price) * line.quantity, 0);
-      const deliveryCharge = fulfilment === "delivery" && subtotal < 999 ? 99 : 0;
+      const mode = fulfilment ?? "delivery";
+      const address = mode === "garage" ? garages[0]?.location : location;
+      const history = mode === "pickup" ? null : await getDocsFromServer(query(collection(firestore, "orders"), where("customerId", "==", customerId)));
+      const priorDeliveries = history?.docs.filter((entry) => {
+        const data = entry.data();
+        return !data.deliveryPricingV1 && occupiesDeliveryOffer(data);
+      }).length ?? 0;
       const discount = 0;
-      const totalAmount = subtotal + deliveryCharge - discount;
       const orderId = attemptId ?? createPaymentOrderId();
       const expiresAt = payment === "upi" ? paymentExpiresAt() : undefined;
       const order: PartXOrder = {
@@ -421,7 +463,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         placedAt: "Just now",
         eta: payment === "upi" ? "Waiting for payment verification" : fulfilment === "pickup" ? "Ready in 45 minutes" : "Tomorrow by 11 AM",
         stage: "Confirmed",
-        total: totalAmount,
+        total: subtotal,
         items: resolvedCart,
         fulfilment,
         paymentMethod: payment,
@@ -445,14 +487,11 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         stage: order.stage,
         status: "New",
         subtotal,
-        deliveryCharge,
         discount,
-        total: totalAmount,
-        totalAmount,
         currency: "INR",
-        fulfilment,
+        fulfilment: mode,
         paymentStatus: order.paymentStatus,
-        ...(["delivery", "garage"].includes(fulfilment ?? "") ? { deliveryLocation: Object.fromEntries(Object.entries(fulfilment === "garage" ? garages[0].location : location).filter(([, value]) => value !== undefined)) } : {}),
+        ...(mode !== "pickup" && address ? { deliveryLocation: Object.fromEntries(Object.entries(address).filter(([, value]) => value !== undefined)) } : {}),
         paymentMethod: payment,
         paymentMode: "live",
         orderStatus: order.orderStatus,
@@ -497,6 +536,30 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
             return data;
           }
         }
+        const slots = mode === "pickup" ? [] : freeDeliverySlots.slice(0, Math.max(0, freeDeliverySlots.length - priorDeliveries));
+        const claims = await Promise.all(slots.map(async (slot) => {
+          const ref = doc(firestore, "users", customerId, "deliveryOffer", slot);
+          const claim = await transaction.get(ref);
+          const claimedOrderId = claim.data()?.orderId;
+          if (typeof claimedOrderId !== "string") return { slot, ref, available: true };
+          const claimedOrder = await transaction.get(doc(firestore, "orders", claimedOrderId));
+          return { slot, ref, available: claimedOrder.exists() && !occupiesDeliveryOffer(claimedOrder.data()) };
+        }));
+        const claim = claims.find((candidate) => candidate.available);
+        const quote = quoteDelivery(mode, selectedStore, address, Boolean(claim));
+        if (quote.fee === null) throw new Error(quote.message);
+        if (expectedFee !== undefined && quote.fee !== expectedFee) {
+          throw new Error("Your delivery fee changed. Review the updated total and try again.");
+        }
+        const totalAmount = subtotal + quote.fee - discount;
+        const pricedOrder = {
+          ...orderData,
+          total: totalAmount,
+          totalAmount,
+          deliveryCharge: quote.fee,
+          deliveryPricingV1: true,
+          ...(claim ? { deliveryOfferSlot: claim.slot } : {}),
+        };
         const productRefs = resolvedCart.map((item) => doc(firestore, "products", item.product.id));
         const productSnapshots = await Promise.all(productRefs.map((productRef) => transaction.get(productRef)));
         productSnapshots.forEach((productSnapshot, index) => {
@@ -516,11 +579,14 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
             });
           }
         });
-        transaction.set(orderRef, orderData);
-        return orderData;
+        transaction.set(orderRef, pricedOrder);
+        if (claim) transaction.set(claim.ref, { orderId: order.id });
+        return pricedOrder;
       });
       const savedOrder = toCustomerOrder(order.id, savedData as Record<string, unknown>);
-      setOrders((current) => [savedOrder, ...current.filter((item) => item.id !== savedOrder.id)]);
+      setOrderState((current) => current && current.uid === customerId
+        ? { ...current, entries: [savedOrder, ...current.entries.filter((item) => item.id !== savedOrder.id)] }
+        : current);
       if (payment === "cod") setCart([]);
       return savedOrder;
     },
@@ -557,16 +623,16 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
           updatedAt: serverTimestamp(),
         });
       });
-      setOrders((current) => current.map((item) => item.id === orderId ? { ...item, paymentReference: normalizedReference, paymentStatus: "PAYMENT_SUBMITTED", orderStatus: "PAYMENT_VERIFICATION_PENDING", paymentSubmittedAt: "Just now", eta: "Payment verification in progress" } : item));
+      setOrderState((current) => current && current.uid === customerId ? { ...current, entries: current.entries.map((item) => item.id === orderId ? { ...item, paymentReference: normalizedReference, paymentStatus: "PAYMENT_SUBMITTED", orderStatus: "PAYMENT_VERIFICATION_PENDING", paymentSubmittedAt: "Just now", eta: "Payment verification in progress" } : item) } : current);
       setCart([]);
     },
     cancelPayment: async (orderId) => {
       if (!user) throw new Error("Sign in before cancelling a payment attempt.");
       await updateDoc(doc(firestore, "orders", orderId), { paymentStatus: "PAYMENT_CANCELLED", orderStatus: "PAYMENT_CANCELLED", updatedAt: serverTimestamp() });
-      setOrders((current) => current.map((item) => item.id === orderId ? { ...item, paymentStatus: "PAYMENT_CANCELLED", orderStatus: "PAYMENT_CANCELLED" } : item));
+      setOrderState((current) => current && current.uid === customerId ? { ...current, entries: current.entries.map((item) => item.id === orderId ? { ...item, paymentStatus: "PAYMENT_CANCELLED", orderStatus: "PAYMENT_CANCELLED" } : item) } : current);
     },
     updateOrderStage: (orderId, stage) => {
-      setOrders((current) => current.map((order) => order.id === orderId ? { ...order, stage, eta: stage === "Delivered" ? order.deliveredAt ? `Delivered ${order.deliveredAt}` : "Delivery time unavailable" : order.eta } : order));
+      setOrderState((current) => current && current.uid === customerId ? { ...current, entries: current.entries.map((order) => order.id === orderId ? { ...order, stage, eta: stage === "Delivered" ? order.deliveredAt ? `Delivered ${order.deliveredAt}` : "Delivery time unavailable" : order.eta } : order) } : current);
       setLiveOrderUpdate({ orderId, stage });
     },
     liveOrderUpdate,
@@ -620,6 +686,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         };
         const batch = writeBatch(firestore);
         batch.set(doc(firestore, "users", credential.user.uid), { ...profileData, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        if (input.role === "customer") batch.set(doc(firestore, "users", credential.user.uid, "preferences", "garage"), { ...emptyGarage, needsVehicle: true });
         if (storeId) batch.set(doc(firestore, "stores", storeId), { ownerId: credential.user.uid, name: input.storeName?.trim(), status: "approved", rating: 0, ratingCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
         await batch.commit();
         setUser(profile);
@@ -656,7 +723,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       removeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY);
       await firebaseSignOut(firebaseAuth);
     },
-  }), [cartNotice, theme, resolvedCart, vehicles, activeVehicleId, location, garages, marketplaceStores, announcements, catalog, catalogById, storesById, orders, liveOrderUpdate, user, hydrated, firebaseHydrated, notificationPermission, notificationError, notificationsEnabled]);
+  }), [cartNotice, theme, saveGaragePreferences, resolvedCart, vehicles, activeVehicleId, location, garages, garageReady, needsVehicle, customerId, marketplaceStores, announcements, catalog, catalogById, storesById, orders, ordersReady, freeDeliveriesRemaining, liveOrderUpdate, user, hydrated, firebaseHydrated, notificationPermission, notificationError, notificationsEnabled]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
@@ -756,6 +823,9 @@ function toCustomerOrder(id: string, data: Record<string, unknown>): PartXOrder 
   }) : undefined;
   return {
     id,
+    deliveryCharge: typeof data.deliveryCharge === "number" ? data.deliveryCharge : undefined,
+    deliveryPricingV1: data.deliveryPricingV1 === true,
+    deliveryOfferSlot: typeof data.deliveryOfferSlot === "string" ? data.deliveryOfferSlot : undefined,
     riderDeliveryId: typeof data.riderDeliveryId === "string" ? data.riderDeliveryId : undefined,
     codCollected: data.codCollected === true,
     trackingId: String(data.trackingId ?? "PX-TRK-PENDING"),

@@ -70,6 +70,42 @@ service cloud.firestore {
         && request.resource.data.activeRole in resource.data.roles;
       allow delete: if false;
 
+      match /deliveryOffer/{slot} {
+        function claimOrder() {
+          return getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data;
+        }
+        function previousOrder() {
+          return get(/databases/$(database)/documents/orders/$(resource.data.orderId)).data;
+        }
+        function validClaim() {
+          return ownsUser(uid) && isCustomer() && slot in ['first', 'second']
+            && request.resource.data.keys().hasOnly(['orderId'])
+            && request.resource.data.orderId is string
+            && !exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId))
+            && claimOrder().customerId == uid
+            && claimOrder().deliveryPricingV1 == true
+            && claimOrder().deliveryOfferSlot == slot
+            && claimOrder().deliveryCharge == 0;
+        }
+        allow read: if ownsUser(uid);
+        allow create: if validClaim();
+        allow update: if validClaim()
+          && previousOrder().customerId == uid
+          && previousOrder().paymentStatus in ['PAYMENT_CANCELLED', 'PAYMENT_EXPIRED'];
+      }
+
+      match /preferences/garage {
+        allow read: if ownsUser(uid);
+        allow create, update: if ownsUser(uid)
+          && request.resource.data.keys().hasOnly(['vehicles', 'garages', 'activeVehicleId', 'needsVehicle'])
+          && request.resource.data.get('vehicles', []) is list
+          && request.resource.data.get('vehicles', []).size() <= 100
+          && request.resource.data.get('garages', []) is list
+          && request.resource.data.get('garages', []).size() <= 100
+          && request.resource.data.get('activeVehicleId', '') is string
+          && request.resource.data.get('needsVehicle', false) is bool;
+      }
+
       match /deliveryLocations/{locationId} {
         allow read, delete: if ownsUser(uid);
         allow create, update: if ownsUser(uid)
@@ -148,6 +184,23 @@ service cloud.firestore {
         && request.resource.data.sellerId is string
         && request.resource.data.subtotal is number
         && request.resource.data.deliveryCharge is number
+        && (!('deliveryPricingV1' in request.resource.data) || (
+          request.resource.data.deliveryPricingV1 == true
+          && (
+            (request.resource.data.fulfilment == 'pickup' && request.resource.data.deliveryCharge == 0 && !('deliveryOfferSlot' in request.resource.data))
+            || (
+              request.resource.data.fulfilment in ['delivery', 'garage']
+              && (
+                (!('deliveryOfferSlot' in request.resource.data)
+                  && ((request.resource.data.fulfilment == 'delivery' && request.resource.data.deliveryCharge in [49, 79, 99])
+                    || (request.resource.data.fulfilment == 'garage' && request.resource.data.deliveryCharge in [59, 89, 99])))
+                || (request.resource.data.deliveryOfferSlot in ['first', 'second']
+                  && request.resource.data.deliveryCharge == 0
+                  && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/deliveryOffer/$(request.resource.data.deliveryOfferSlot)).data.orderId == orderId)
+              )
+            )
+          )
+        ))
         && request.resource.data.discount is number
         && request.resource.data.totalAmount is number
         && request.resource.data.totalAmount == request.resource.data.subtotal + request.resource.data.deliveryCharge - request.resource.data.discount

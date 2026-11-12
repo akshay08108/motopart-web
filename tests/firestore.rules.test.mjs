@@ -5,7 +5,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { collection, deleteDoc, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, where } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, where, writeBatch } from "firebase/firestore";
 
 const projectId = "demo-partx-rules";
 let environment;
@@ -132,6 +132,42 @@ test("delivery addresses belong only to their customer", async () => {
   await assertFails(getDoc(doc(other, "users/customer-1/deliveryLocations/default")));
   await assertFails(setDoc(doc(other, "users/customer-1/deliveryLocations/default"), address));
   await assertFails(updateDoc(doc(owner, "users/customer-1/deliveryLocations/default"), { latitude: 200 }));
+});
+
+test("only the account owner can access saved vehicles and garages", async () => {
+  const owner = environment.authenticatedContext("customer-1").firestore();
+  const other = environment.authenticatedContext("customer-2").firestore();
+  const path = "users/customer-1/preferences/garage";
+  const garage = { vehicles: [{ id: "nexon", make: "Tata", model: "Nexon" }], garages: [], activeVehicleId: "nexon", needsVehicle: false };
+  await assertSucceeds(setDoc(doc(owner, path), garage));
+  await assertSucceeds(getDoc(doc(owner, path)));
+  await assertFails(getDoc(doc(other, path)));
+  await assertFails(updateDoc(doc(other, path), { activeVehicleId: "" }));
+});
+
+test("free delivery requires an atomic order claim and a live claim cannot be reassigned", async () => {
+  const customer = environment.authenticatedContext("customer-1").firestore();
+  const order = { ...pendingUpiOrder(), fulfilment: "delivery", deliveryPricingV1: true, deliveryOfferSlot: "first" };
+  const slot = doc(customer, "users/customer-1/deliveryOffer/first");
+  await assertFails(setDoc(doc(customer, "orders/offer-without-claim"), order));
+
+  const initial = writeBatch(customer);
+  initial.set(doc(customer, "orders/offer-first"), order);
+  initial.set(slot, { orderId: "offer-first" });
+  await assertSucceeds(initial.commit());
+
+  const replacement = writeBatch(customer);
+  replacement.set(doc(customer, "orders/offer-reuse"), order);
+  replacement.set(slot, { orderId: "offer-reuse" });
+  await assertFails(replacement.commit());
+  await assertSucceeds(updateDoc(doc(customer, "orders/offer-first"), {
+    paymentStatus: "PAYMENT_CANCELLED", orderStatus: "PAYMENT_CANCELLED", updatedAt: serverTimestamp(),
+  }));
+
+  const afterCancellation = writeBatch(customer);
+  afterCancellation.set(doc(customer, "orders/offer-reuse"), order);
+  afterCancellation.set(slot, { orderId: "offer-reuse" });
+  await assertSucceeds(afterCancellation.commit());
 });
 
 test("store owners can update map locations but other sellers cannot", async () => {

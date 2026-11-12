@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useState } from "react";
-import type { FulfilmentMode, Garage, PartnerStore, PaymentMethod, Vehicle } from "@/lib/types";
+import type { FulfilmentMode, PartnerStore, PaymentMethod } from "@/lib/types";
 import { QRCodeSVG } from "qrcode.react";
 import { createAndroidUpiIntent, createIosUpiLink, createUpiUri, isValidUpiId, isValidUtr } from "@/lib/upi-payments";
 import { usePartX, type PartXOrder } from "./app-provider";
@@ -16,43 +16,15 @@ import { orderHref } from "@/lib/navigation";
 import { DeliveryLocationPicker } from "./delivery-location-picker";
 import { LocationPicker } from "../location-picker";
 import type { AppLocation } from "@/lib/types";
+import { deliveryRates, quoteDelivery } from "@/lib/delivery-pricing";
 import { BuyAgain } from "./buy-again";
 import { DeliveryLocationButton } from "./delivery-location-button";
-
-export function GaragePage() {
-  const { vehicles, activeVehicleId, setActiveVehicleId, addVehicle, location, garages, addGarage } = usePartX();
-  const [vehicleOpen, setVehicleOpen] = useState(false);
-  const [garageOpen, setGarageOpen] = useState(false);
-  const [garageLocation,setGarageLocation] = useState<AppLocation>({ id:"garage-draft", label:"Garage", address:"" });
-  const [locationOpen, setLocationOpen] = useState(false);
-  const saveVehicle = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); const data = new FormData(event.currentTarget);
-    const vehicle: Vehicle = { id: `vehicle-${Date.now()}`, year: Number(data.get("year")), make: String(data.get("make")), model: String(data.get("model")), variant: String(data.get("variant")), fuel: String(data.get("fuel")), transmission: String(data.get("transmission")), registration: String(data.get("registration")) };
-    addVehicle(vehicle); setVehicleOpen(false);
-  };
-  const saveGarage = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); const data = new FormData(event.currentTarget);
-    const garage: Garage = { id: `garage-${Date.now()}`, name: String(data.get("name")), phone: String(data.get("phone")), services: String(data.get("services")), distanceKm: 2.5, location: { ...garageLocation, id: `garage-location-${Date.now()}`, label: "Garage", address: String(data.get("address")) } };
-    addGarage(garage); setGarageOpen(false);
-  };
-  return <div className="px-page px-container">
-    <div className="px-page-heading-row"><div className="px-page-title"><span>FITMENT PROFILE</span><h1>My garage</h1><p>Save vehicles, installers, and delivery locations for faster, more accurate shopping.</p></div><button className="px-btn px-btn-red" onClick={() => setVehicleOpen(true)}><Icon name="plus"/>Add vehicle</button></div>
-    <div className="px-dashboard-grid">
-      <section className="px-panel px-panel-wide"><div className="px-panel-head"><div><span>MY VEHICLES</span><h2>Select your active vehicle</h2></div></div><div className="px-vehicle-list">{vehicles.map((vehicle) => <button className={activeVehicleId === vehicle.id ? "active" : ""} onClick={() => setActiveVehicleId(vehicle.id)} key={vehicle.id}><Image src="/vehicle-suv.png" alt="" width={220} height={120}/><div><b>{vehicle.year} {vehicle.make} {vehicle.model}</b><span>{vehicle.variant} · {vehicle.fuel} · {vehicle.transmission}</span><small>{vehicle.registration}</small></div>{activeVehicleId === vehicle.id && <em><Icon name="check"/>Active</em>}</button>)}</div></section>
-      <section className="px-panel"><div className="px-panel-head"><div><span>DELIVERY LOCATION</span><h2>{location.label}</h2></div><button onClick={() => setLocationOpen(true)}>Edit</button></div><p className="px-address"><Icon name="pin"/>{location.address}</p></section>
-      <section className="px-panel"><div className="px-panel-head"><div><span>TRUSTED GARAGES</span><h2>{garages.length} saved</h2></div><button onClick={() => setGarageOpen(true)}>Add</button></div>{garages.map((garage) => <div className="px-garage-row" key={garage.id}><div className="px-square-icon"><Icon name="garage"/></div><div><b>{garage.name}</b><span>{garage.services}</span><small>{garage.location.address}</small></div></div>)}</section>
-    </div>
-    {vehicleOpen && <Modal title="Add a vehicle" close={() => setVehicleOpen(false)}><form className="px-form" onSubmit={saveVehicle}><div className="px-form-grid"><label>Year<input name="year" type="number" defaultValue="2022" required/></label><label>Make<input name="make" defaultValue="MG" required/></label><label>Model<input name="model" defaultValue="Hector" required/></label><label>Variant<input name="variant" defaultValue="Sharp 1.5" required/></label><label>Fuel<select name="fuel"><option>Petrol</option><option>Diesel</option><option>Electric</option></select></label><label>Transmission<select name="transmission"><option>Manual</option><option>Automatic</option><option>CVT</option></select></label></div><label>Registration<input name="registration" placeholder="MH 02 AB 1234"/></label><button className="px-btn px-btn-red" type="submit">Save vehicle</button></form></Modal>}
-    {garageOpen && <Modal title="Add a trusted garage" close={() => setGarageOpen(false)}><form className="px-form" onSubmit={saveGarage}><label>Garage name<input name="name" required/></label><label>Phone<input name="phone" required/></label><label>Services<input name="services" placeholder="Installation, diagnostics" required/></label><LocationPicker value={garageLocation} onSelect={setGarageLocation} label="Garage address"/><button className="px-btn px-btn-red" type="submit">Save garage</button></form></Modal>}
-    {locationOpen && <DeliveryLocationPicker close={() => setLocationOpen(false)}/>}
-  </div>;
-}
 
 export { CartPage } from "./cart-page";
 
 export function CheckoutPage() {
   const router = useRouter();
-  const { cart, cartTotal, location, garages, stores, placeOrder, submitUpiReference, cancelPayment, user } = usePartX();
+  const { cart, cartTotal, location, garages, stores, placeOrder, submitUpiReference, cancelPayment, user, orders, ordersReady, freeDeliveriesRemaining } = usePartX();
   const [fulfilment, setFulfilment] = useState<FulfilmentMode>("delivery");
   const [payment, setPayment] = useState<PaymentMethod>("upi");
   const [processing, setProcessing] = useState(false);
@@ -63,28 +35,35 @@ export function CheckoutPage() {
   const [upiAppOpened, setUpiAppOpened] = useState(false);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
-  const delivery = fulfilment === "delivery" && cartTotal < 999 ? 99 : 0;
   const selectedStore = stores.find((store) => store.id === cart[0]?.storeId) ?? stores[0];
-  const total = cartTotal + delivery;
+  const quote = quoteDelivery(fulfilment, selectedStore, fulfilment === "garage" ? garages[0]?.location : location, freeDeliveriesRemaining > 0);
+  const quoteReady = fulfilment === "pickup" || ordersReady;
   const paymentSettings = selectedStore?.paymentSettings;
   const enabledMethods = ([paymentSettings?.upiEnabled ? "upi" : null, paymentSettings?.codEnabled ? "cod" : null].filter(Boolean)) as PaymentMethod[];
   const selectedPayment = enabledMethods.includes(payment) ? payment : enabledMethods[0];
   const upiUri = attempt?.sellerUpiIdSnapshot && attempt.sellerUpiNameSnapshot && isValidUpiId(attempt.sellerUpiIdSnapshot) ? createUpiUri({ upiId: attempt.sellerUpiIdSnapshot, displayName: attempt.sellerUpiNameSnapshot, amount: attempt.total, orderId: attempt.id }) : "";
   if (!cart.length) return <div className="px-page px-container"><div className="px-empty"><h1>No items to checkout</h1><p>Add a part before starting checkout.</p><Link href="/shop" className="px-btn px-btn-red">Shop parts</Link></div></div>;
   const attemptKey = `partx-payment-attempt:${user?.id ?? "guest"}:${selectedStore.id}:${fulfilment}:${cart.map((line) => `${line.product.id}-${line.quantity}`).join("|")}`;
+  const savedAttemptId = selectedPayment === "upi" ? readBrowserStorage("session", attemptKey) ?? undefined : undefined;
+  const pendingAttempt = orders.find((order) => order.id === savedAttemptId && order.paymentStatus === "PENDING" && (!order.expiresAt || order.expiresAt.getTime() > Date.now()));
+  const currentAttempt = attempt ?? pendingAttempt;
+  const delivery = currentAttempt?.deliveryCharge ?? (quoteReady ? quote.fee : null);
+  const total = currentAttempt?.total ?? cartTotal + (delivery ?? 0);
+  const canStart = Boolean(pendingAttempt || (quoteReady && quote.fee !== null));
   const startPayment = async () => {
     if (!selectedPayment) { setCheckoutError(`${selectedStore.name} has not enabled a payment method yet.`); return; }
+    if (!canStart) return;
     setProcessing(true); setCheckoutError("");
     try {
-      const savedAttemptId = selectedPayment === "upi" ? readBrowserStorage("session", attemptKey) ?? undefined : undefined;
       let order;
       try {
-        order = await placeOrder(fulfilment, selectedPayment, savedAttemptId);
+        order = await placeOrder(fulfilment, selectedPayment, savedAttemptId, quote.fee);
       } catch (reason) {
         const errorCode = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "";
         if (savedAttemptId && reason instanceof Error && (reason.message === "SAVED_PAYMENT_ATTEMPT_INACTIVE" || errorCode === "permission-denied")) {
           removeBrowserStorage("session", attemptKey);
-          order = await placeOrder(fulfilment, selectedPayment);
+          if (!quoteReady || quote.fee === null) throw new Error(quote.message ?? "Wait for the updated delivery fee, then try again.");
+          order = await placeOrder(fulfilment, selectedPayment, undefined, quote.fee);
         } else {
           throw reason;
         }
@@ -144,9 +123,11 @@ export function CheckoutPage() {
   return <div className="px-page px-container"><Link className="px-back-link" href="/cart"><Icon name="back"/>Back to cart</Link><div className="px-page-title"><span>SECURE CHECKOUT</span><h1>Choose how you receive it</h1><p>Pay the selected seller directly by UPI or choose cash on delivery.</p></div>
     {fulfilment === "delivery" ? <div className="px-delivery-checkout"><span><Icon name="pin"/>{location.address || "Choose your delivery address"}</span><button type="button" className="px-btn px-btn-outline" disabled={Boolean(attempt)} onClick={() => setLocationOpen(true)}>Change delivery location</button></div> : null}
     {locationOpen && <DeliveryLocationPicker close={() => setLocationOpen(false)}/>}
-    <div className="px-checkout-layout"><div className="px-checkout-main"><section className="px-panel"><div className="px-step-title"><b>1</b><div><span>FULFILMENT</span><h2>Delivery, pickup or garage</h2></div></div><div className="px-choice-grid">{(["delivery", "pickup", "garage"] as FulfilmentMode[]).map((mode) => <button className={fulfilment === mode ? "active" : ""} onClick={() => setFulfilment(mode)} key={mode}><Icon name={mode === "delivery" ? "pin" : mode === "pickup" ? "orders" : "garage"}/><b>{mode === "delivery" ? "Deliver to me" : mode === "pickup" ? "Self pickup" : "Send to garage"}</b><span>{mode === "delivery" ? location.address : mode === "pickup" ? `${selectedStore.name} · ${selectedStore.distanceKm} km` : garages[0]?.name ?? "Add a garage first"}</span></button>)}</div></section>
+    <div className="px-checkout-layout"><div className="px-checkout-main"><section className="px-panel"><div className="px-step-title"><b>1</b><div><span>FULFILMENT</span><h2>Delivery, pickup or garage</h2></div></div><div className="px-choice-grid">{(["delivery", "pickup", "garage"] as FulfilmentMode[]).map((mode) => <button className={fulfilment === mode ? "active" : ""} disabled={Boolean(attempt) || processing} onClick={() => setFulfilment(mode)} key={mode}><Icon name={mode === "delivery" ? "pin" : mode === "pickup" ? "orders" : "garage"}/><b>{mode === "delivery" ? "Deliver to me" : mode === "pickup" ? "Self pickup" : "Send to garage"}</b><span>{mode === "delivery" ? location.address : mode === "pickup" ? `${selectedStore.name} · ${selectedStore.distanceKm} km` : garages[0]?.name ?? "Add a garage first"}</span></button>)}</div></section>
       <section className="px-panel"><div className="px-step-title"><b>2</b><div><span>PAYMENT</span><h2>Pay the seller directly</h2></div></div>{enabledMethods.length ? <div className="px-payment-row">{enabledMethods.map((method) => <button className={selectedPayment === method ? "active" : ""} disabled={Boolean(attempt)} onClick={() => setPayment(method)} key={method}>{method === "upi" ? "UPI" : "Cash on delivery"}</button>)}</div> : <div className="px-payment-unavailable" role="alert">{selectedStore.name} has not enabled UPI or cash on delivery. Contact the seller before ordering.</div>}{selectedPayment === "upi" && !attempt ? <div className="px-upi"><b>Direct seller payment</b><span>Your payment goes to {selectedStore.name}. PartX does not collect or hold the money.</span></div> : null}{attempt && upiUri ? <div className="px-upi-payment"><div className="px-upi-heading"><span>PAYMENT ATTEMPT {attempt.id}</span><h3>Paying ₹{attempt.total.toLocaleString("en-IN")} to {attempt.sellerUpiNameSnapshot}</h3><p>UPI ID <b>{attempt.sellerUpiIdSnapshot}</b><button type="button" onClick={() => navigator.clipboard?.writeText(attempt.sellerUpiIdSnapshot ?? "")}><Icon name="copy"/>Copy</button></p></div>{showQr ? <div className="px-upi-qr"><QRCodeSVG value={upiUri} size={210} level="M" marginSize={2}/><small>Exact amount · INR · Reference {attempt.id}</small></div> : null}<div className="px-upi-apps"><b>Choose a UPI app</b><div><button type="button" onClick={() => launchUpi("com.google.android.apps.nbu.paisa.user")}>Google Pay</button><button type="button" onClick={() => launchUpi("com.phonepe.app")}>PhonePe</button><button type="button" onClick={() => launchUpi("net.one97.paytm")}>Paytm</button><button type="button" onClick={() => launchUpi("in.org.npci.upiapp")}>BHIM</button></div><small>Use a verified merchant UPI ID. A personal VPA may be flagged or declined by the selected payment app.</small></div><div className="px-upi-actions"><button type="button" className="px-btn px-btn-red" onClick={() => launchUpi()}>Open installed UPI apps <Icon name="arrow"/></button><button type="button" className="px-btn px-btn-outline" onClick={() => setShowQr((shown) => !shown)}>{showQr ? "Hide QR code" : "Show QR code"}</button></div><form className="px-utr-form" onSubmit={submitReference}><h3>Payment completed?</h3><p>Only continue after the UPI app shows success. Copy the bank UTR—not the PartX order ID—from the payment details.</p><label>Bank UTR (12–35 digits)<input value={transactionReference} onChange={(event) => setTransactionReference(event.target.value.replace(/\D/g, "").slice(0, 35))} autoComplete="off" inputMode="numeric" pattern="[0-9]{12,35}" minLength={12} maxLength={35} required placeholder="e.g. 423456789012"/></label><label className="px-payment-confirm"><input type="checkbox" checked={paymentConfirmed} onChange={(event) => setPaymentConfirmed(event.target.checked)}/>I confirm my UPI app showed this payment as successful.</label><div><button className="px-btn px-btn-red" type="submit" disabled={processing || !upiAppOpened || !paymentConfirmed || !isValidUtr(transactionReference)}>{processing ? "Submitting…" : "Send for seller verification"}</button><button className="px-btn px-btn-outline" type="button" onClick={() => launchUpi()}>Try another UPI app</button><button className="px-link-button" type="button" onClick={() => void cancel()}>Cancel</button></div><small>This is still manual verification. The seller must confirm the money in their bank or UPI statement before accepting the order.</small></form></div> : null}</section></div>
-      <aside className="px-summary"><span>ORDER SUMMARY</span><h2>{cart.length} item{cart.length > 1 ? "s" : ""}</h2><div className="px-checkout-products">{cart.map(({ product, quantity, unitPrice }) => <div key={product.id}><Image src={product.imageUrl ?? `/parts/${product.imageIndex}-v2.png`} alt={product.name} width={72} height={58}/><span><b>{product.name}</b><small>{product.partNumber} · Qty {quantity}</small></span><strong>₹{((unitPrice ?? product.price) * quantity).toLocaleString("en-IN")}</strong></div>)}</div><p className="px-summary-seller"><Icon name="store"/>Seller: <b>{cart[0]?.storeName ?? cart[0]?.product.seller}</b></p><dl><div><dt>Subtotal</dt><dd>₹{cartTotal.toLocaleString("en-IN")}</dd></div><div><dt>Delivery</dt><dd>{delivery ? `₹${delivery}` : "FREE"}</dd></div><div><dt>Discount</dt><dd>₹0</dd></div><div className="total"><dt>Total amount</dt><dd>₹{total.toLocaleString("en-IN")}</dd></div></dl>{checkoutError ? <p className="px-checkout-error" role="alert">{checkoutError}</p> : null}{!attempt ? <button className="px-btn px-btn-red px-btn-large" onClick={() => void startPayment()} disabled={processing || !selectedPayment}>{processing ? "Creating order…" : selectedPayment === "cod" ? `Place COD order · ₹${total.toLocaleString("en-IN")}` : `Continue with UPI · ₹${total.toLocaleString("en-IN")}`}<Icon name="arrow"/></button> : <div className="px-payment-pending-note"><b>Order not confirmed yet</b><span>Submit your UTR, then wait for the seller to verify the payment.</span></div>}<small>PartX charges 0% commission and does not hold this payment.</small></aside></div>
+      <aside className="px-summary"><span>ORDER SUMMARY</span><h2>{cart.length} item{cart.length > 1 ? "s" : ""}</h2><div className="px-checkout-products">{cart.map(({ product, quantity, unitPrice }) => <div key={product.id}><Image src={product.imageUrl ?? `/parts/${product.imageIndex}-v2.png`} alt={product.name} width={72} height={58}/><span><b>{product.name}</b><small>{product.partNumber} · Qty {quantity}</small></span><strong>₹{((unitPrice ?? product.price) * quantity).toLocaleString("en-IN")}</strong></div>)}</div><p className="px-summary-seller"><Icon name="store"/>Seller: <b>{cart[0]?.storeName ?? cart[0]?.product.seller}</b></p><dl><div><dt>Subtotal</dt><dd>₹{cartTotal.toLocaleString("en-IN")}</dd></div><div><dt>Delivery</dt><dd>{delivery === null ? "Pending" : delivery ? `₹${delivery}` : "FREE"}</dd></div><div><dt>Discount</dt><dd>₹0</dd></div><div className="total"><dt>Total amount</dt><dd>{delivery === null ? "Pending" : `₹${total.toLocaleString("en-IN")}`}</dd></div></dl>{!currentAttempt && (!quoteReady || quote.message) && <p className="px-form-note">{!quoteReady ? "Checking your delivery offer…" : quote.message}</p>}
+      {!attempt && fulfilment !== "pickup" && quote.distance !== null && quoteReady && <p className="px-form-note">{quote.distance.toFixed(1)} km from the store (straight-line distance)</p>}
+      {checkoutError ? <p className="px-checkout-error" role="alert">{checkoutError}</p> : null}{!attempt ? <button className="px-btn px-btn-red px-btn-large" onClick={() => void startPayment()} disabled={processing || !selectedPayment || !canStart}>{processing ? "Creating order…" : delivery === null ? "Delivery fee pending" : selectedPayment === "cod" ? `Place COD order · ₹${total.toLocaleString("en-IN")}` : `Continue with UPI · ₹${total.toLocaleString("en-IN")}`}<Icon name="arrow"/></button> : <div className="px-payment-pending-note"><b>Order not confirmed yet</b><span>Submit your UTR, then wait for the seller to verify the payment.</span></div>}<small>PartX charges 0% commission and does not hold this payment.</small></aside></div>
   </div>;
 }
 
@@ -183,7 +164,24 @@ export function OrderDetailPage({ id }: { id: string }) {
 }
 
 export function OffersPage() {
-  return <div className="px-page px-container"><div className="px-page-title"><span>SAVE ON THE RIGHT PART</span><h1>Offers</h1><p>Clear savings with no hidden conditions.</p></div><div className="px-offers-grid"><article className="secondary"><span>DELIVERY</span><strong>₹0<small>ABOVE ₹999</small></strong><h2>Free doorstep delivery</h2><p>Available on eligible parts and serviceable Mumbai locations.</p><Link href="/shop" className="px-btn px-btn-dark">Shop eligible parts</Link></article></div></div>;
+  const { freeDeliveriesRemaining, ordersReady } = usePartX();
+  return <div className="px-page px-container">
+    <div className="px-page-title"><h1>Offers</h1></div>
+    <section className="px-panel">
+      <h2>Free delivery on your first two delivery orders</h2>
+      <p>{ordersReady ? `${freeDeliveriesRemaining} of 2 free deliveries remaining` : "Checking your delivery offer…"}</p>
+      <p>The offer applies to doorstep and garage delivery. Self pickup is free and keeps your delivery offer available.</p>
+      <Link href="/shop" className="px-btn px-btn-dark">Shop parts</Link>
+    </section>
+    <section className="px-panel px-delivery-rates">
+      <h2>Delivery fees after your offer</h2>
+      <p>Checkout uses the straight-line distance from the store to the selected address, within the store’s delivery range.</p>
+      <table>
+        <thead><tr><th scope="col">Distance</th><th scope="col">Doorstep</th><th scope="col">Garage</th></tr></thead>
+        <tbody>{deliveryRates.map((rate) => <tr key={rate.range}><th scope="row">{rate.range}</th><td>₹{rate.delivery}</td><td>₹{rate.garage}</td></tr>)}</tbody>
+      </table>
+    </section>
+  </div>;
 }
 
 export function AccountPage() {
