@@ -680,7 +680,7 @@ html[data-native="true"] .px-auth-loading { min-height: 100dvh; padding-top: env
 .px-after-sales { margin-block: 1rem; }
 .px-after-sale-item { border-top: 1px solid var(--px-line, #ddd); padding-block: .8rem; overflow-wrap: anywhere; }
 .px-after-sale-item h3, .px-after-sale-item p { margin-block: .45rem; }
-.px-after-sale-actions { display: flex; gap: .6rem; flex-wrap: wrap; }
+.px-after-sale-actions, .px-checkout-recovery { display: flex; gap: .6rem; flex-wrap: wrap; }
 .rx-dispatch { overflow-wrap: anywhere; }
 
 .px-category-card[data-category="Fluids"] span { display: block; }
