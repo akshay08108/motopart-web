@@ -409,6 +409,7 @@ body:has(.px-auth), body:has(.px-seller-pending) { padding-bottom: 0; }
 .px-auth-demo b { margin-right: 7px; color: var(--px-red); letter-spacing: .1em; }
 .px-auth-role-back { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 28px; color: #70757e; font-size: 10px; font-weight: 850; text-transform: uppercase; }
 .px-auth-role-back svg { width: 16px; }
+.px-auth-seller-link { margin-bottom: 20px; }
 .px-role-panel { padding-inline: clamp(34px,4.5vw,82px); }
 .px-role-wrap { width: min(650px,100%); }
 .px-role-heading > span { color: var(--px-red); font-size: 10px; font-weight: 900; letter-spacing: .19em; }
