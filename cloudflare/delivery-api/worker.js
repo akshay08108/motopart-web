@@ -2,7 +2,7 @@ import { createRiderCore, DeliveryError } from "../../functions/rider-core.js";
 import { createFirestoreRest, RestTimestamp, SERVER_TIMESTAMP } from "./firestore-rest.js";
 import { createGoogleAuth, readServiceAccount } from "./google-auth.js";
 
-const operations = { dispatchPartXDelivery: "dispatch", updatePartXDelivery: "riderAction", getPartXDeliveryCode: "customerCode" };
+const operations = { dispatchPartXDelivery: "dispatch", updatePartXDelivery: "riderAction", getPartXDeliveryCode: "customerCode", requestPartXAfterSale: "requestAfterSale" };
 const statuses = { "invalid-argument": 400, unauthenticated: 401, "permission-denied": 403, "not-found": 404, "failed-precondition": 409, "already-exists": 409, "resource-exhausted": 429, unavailable: 503 };
 const json = (value, status, cors = {}) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", ...cors } });
 const runtime = {
@@ -42,6 +42,7 @@ function notificationFor(name, input, delivery) {
   if (name === "dispatchPartXDelivery" && input.action === "assign") return { userId: delivery.riderId, title: "New PartX delivery assignment", body: `Pickup from ${delivery.storeName}. Open PartX Rider to accept.`, link: "/rider" };
   if (name === "dispatchPartXDelivery") return { userId: delivery.riderId, title: "PartX assignment updated", body: `Delivery for ${delivery.orderId}: ${delivery.state.toLowerCase()}.`, link: "/rider" };
   if (name === "updatePartXDelivery" && ["decline", "issue"].includes(input.action)) return { userId: delivery.sellerId, title: "PartX delivery needs attention", body: `Order ${delivery.orderId}: ${input.action === "decline" ? "Rider declined the assignment" : "Rider reported a delivery issue"}.`, link: `/seller/orders/${delivery.orderId}` };
+  if (name === "updatePartXDelivery" && delivery.kind && delivery.kind !== "delivery") return null;
   if (name === "updatePartXDelivery" && ["pickup", "complete"].includes(input.action)) return { userId: delivery.customerId, title: input.action === "pickup" ? "Your parts are on the way" : "Your PartX order was delivered", body: `Order ${delivery.orderId} · ${delivery.storeName}`, link: `/orders/${delivery.orderId}` };
   return null;
 }
@@ -49,7 +50,7 @@ function notificationFor(name, input, delivery) {
 export function createWorker({ fetcher = fetch } = {}) {
   const auth = createGoogleAuth(fetcher);
   async function notify(database, env, name, input, result) {
-    if (name === "getPartXDeliveryCode") return;
+    if (name === "getPartXDeliveryCode" || name === "requestPartXAfterSale") return;
     const id = result.deliveryId || input.deliveryId;
     if (!id) return;
     const delivery = (await database.doc(`deliveries/${id}`).get()).data();
@@ -89,7 +90,7 @@ export function createWorker({ fetcher = fetch } = {}) {
       try {
         const authorization = request.headers.get("Authorization");
         if (!authorization?.startsWith("Bearer ")) throw new DeliveryError("unauthenticated", "Sign in to continue.");
-        const uid = await auth.verifyFirebaseToken(authorization.slice(7), env.FIREBASE_PROJECT_ID);
+        const uid = await auth.verifyFirebaseToken(authorization.slice(7), env.FIREBASE_PROJECT_ID, name === "requestPartXAfterSale");
         const input = await readInput(request);
         readServiceAccount(env);
         const database = createFirestoreRest({ projectId: env.FIREBASE_PROJECT_ID, accessToken: () => auth.accessToken(env), fetcher });

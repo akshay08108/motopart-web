@@ -4,7 +4,7 @@ import { getMessaging } from "firebase-admin/messaging";
 import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { setGlobalOptions } from "firebase-functions/v2/options";
 
-export { dispatchPartXDelivery, updatePartXDelivery, getPartXDeliveryCode } from "./riders.js";
+export { dispatchPartXDelivery, updatePartXDelivery, getPartXDeliveryCode, requestPartXAfterSale } from "./riders.js";
 
 initializeApp();
 setGlobalOptions({ region: "asia-south1", maxInstances: 10 });

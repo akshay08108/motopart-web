@@ -20,19 +20,22 @@ const riderApp = process.env.NEXT_PUBLIC_PARTX_PORTAL === "rider";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname().replace(/\/$/, "") || "/";
   const router = useRouter();
-  const { theme, toggleTheme, cartCount, cartNotice, announcements, stores, location, garageReady, needsVehicle, user, authHydrated } = usePartX();
+  const { theme, toggleTheme, cartCount, cartNotice, announcements, stores, location, garageReady, needsVehicle, user, authHydrated, customerDevice, emailVerified } = usePartX();
   const [open, setOpen] = useState(false);
   const active = (href: string) => href === "/" ? pathname === "/" : pathname.startsWith(href);
   const sellerRoute = pathname === "/seller" || pathname === "/seller-order" || pathname.startsWith("/seller/");
   const authRoute = pathname === "/login" || pathname.startsWith("/login/");
   const riderRoute = pathname === "/rider" || pathname.startsWith("/rider/");
   const isCustomer = Boolean(user?.roles.includes("customer"));
-  const isSeller = Boolean(user?.roles.includes("seller"));
+  const isSeller = user?.activeRole === "seller";
 
   let destination: string | undefined;
   if (riderApp && !riderRoute && pathname !== "/login/rider") destination = "/rider";
   else if (authHydrated) {
-    if (riderRoute && !user?.roles.includes("rider")) destination = "/login/rider";
+    if (customerDevice && ["/login", "/login/seller"].includes(pathname)) destination = "/login/customer";
+    else if (user?.activeRole === "customer" && !emailVerified && !riderRoute && pathname !== "/login/customer") destination = "/login/customer";
+    else if (user?.activeRole === "customer" && pathname === "/sell") destination = "/";
+    else if (riderRoute && !user?.roles.includes("rider")) destination = "/login/rider";
     else if (!authRoute && !user) destination = "/login";
     else if (sellerRoute && !isSeller) destination = "/";
     else if (sellerRoute && pathname === "/seller/pending") destination = "/seller";
@@ -47,7 +50,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [destination, router]);
 
   if (destination) return <AuthLoading label="Opening PartX…"/>;
-  if (authRoute) return children;
+  if (authRoute) return authHydrated || pathname === "/login/rider" ? children : <AuthLoading label="Opening PartX…"/>;
   if (!authHydrated || !user) return <AuthLoading label="Opening PartX…"/>;
   if (riderRoute) return <RiderShell key={user.id}>{children}</RiderShell>;
   if (sellerRoute) return <SellerShell>{children}</SellerShell>;
@@ -85,7 +88,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div><div className="px-footer-brand">Part<span>X</span></div><p>The right part. The first time.</p></div>
         <div><b>Shop</b><Link href="/shop">All parts</Link><Link href="/offers">Offers</Link><Link href="/garage">My garage</Link></div>
         <div><b>Help</b><Link href="/support">Contact support</Link><Link href="/orders">Track order</Link><Link href="/account">Account</Link></div>
-        <div><b>Partners</b><Link href="/sell">Add your store</Link><p>Sell parts at your prices.</p></div>
       </div>
       <div className="px-container px-footer-bottom">© 2026 PartX · Built with Codex</div>
     </footer>

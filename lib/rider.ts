@@ -11,7 +11,9 @@ export type RiderEarningsPolicy = { mode: "per_km"; ratePaisePerKm: number; retu
 export type RiderEarning = { amountPaise: number; currency: "INR"; payer: "store" | "partx"; status: "PENDING_DELIVERY" | "EARNED" | "PAID"; earnedAt?: number; paidAt?: number; pricing?: { mode: "per_km"; ratePaisePerKm: number; oneWayMeters: number; billableMeters: number; returnIncluded: boolean; source: "seller_entered" } };
 export type RiderProfile = { id: string; name: string; phone: string; active: boolean; online: boolean; activeDeliveryId?: string; lastSeenAt?: number; earningsPolicy?: RiderEarningsPolicy };
 export type RiderDelivery = {
-  id: string; orderId: string; riderId: string; riderName: string; riderPhone: string;
+  id: string; orderId: string; trackingId?: string; pickupId?: string;
+  kind?: "delivery" | "return" | "replacement"; requestId?: string; exchangeAt?: number;
+  riderId: string; riderName: string; riderPhone: string;
   storeId: string; storeName: string; storePhone: string; customerId: string;
   customer: { name: string; phone: string }; pickup: DeliveryPoint; destination: DeliveryPoint;
   fulfilment: "delivery" | "garage"; state: DeliveryState; totalAmount: number; codAmount: number; codCollected: boolean;
@@ -32,7 +34,7 @@ export function deliveryDate(value?: number) {
 }
 function parseDelivery(id: string, data: Record<string, unknown>) {
   const result = { ...data, id } as unknown as RiderDelivery;
-  for (const key of ["assignedAt", "acceptedAt", "pickedUpAt", "deliveredAt", "closedAt"] as const) result[key] = timestampMillis(data[key]);
+  for (const key of ["assignedAt", "acceptedAt", "pickedUpAt", "deliveredAt", "closedAt", "exchangeAt"] as const) result[key] = timestampMillis(data[key]);
   if (data.earnings && typeof data.earnings === "object") {
     const earnings = data.earnings as Record<string, unknown>;
     result.earnings = { ...earnings, earnedAt: timestampMillis(earnings.earnedAt), paidAt: timestampMillis(earnings.paidAt) } as RiderEarning;
@@ -73,7 +75,31 @@ export function useRiderJobs(userId?: string) {
   }, [userId]);
   return { jobs, profile, error, loaded };
 }
-export async function deliveryCall<T = { ok: boolean }>(name: "dispatchPartXDelivery" | "updatePartXDelivery" | "getPartXDeliveryCode", data: Record<string, unknown>): Promise<T> {
+export const rideTrackingId = (delivery: RiderDelivery) => delivery.trackingId ?? `PX-RIDE-${delivery.id}`;
+
+export type AfterSaleRequest = {
+  id: string;
+  kind: "return" | "replacement";
+  itemIndex: number;
+  item: { productName: string; partNumber: string; quantity: number };
+  state: "REQUESTED" | "ASSIGNED" | "COMPLETED";
+  deliveryId?: string;
+  reason: string;
+};
+
+export function useAfterSales(orderId: string, userId?: string) {
+  const [result, setResult] = useState<{ key: string; requests: AfterSaleRequest[]; error?: string }>();
+  const key = `${userId}:${orderId}`;
+  useEffect(() => {
+    if (!userId || !orderId) return;
+    return onSnapshot(collection(firestore, "orders", orderId, "afterSales"),
+      (snapshot) => setResult({ key, requests: snapshot.docs.map((item) => ({ ...item.data(), id: item.id }) as AfterSaleRequest) }),
+      () => setResult({ key, requests: [], error: "Could not load return and replacement requests." }));
+  }, [key, orderId, userId]);
+  return result?.key === key ? result : { requests: [], error: undefined };
+}
+
+export async function deliveryCall<T = { ok: boolean }>(name: "dispatchPartXDelivery" | "updatePartXDelivery" | "getPartXDeliveryCode" | "requestPartXAfterSale", data: Record<string, unknown>): Promise<T> {
   const localFunctions = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_FIREBASE_EMULATORS === "1" && !process.env.NEXT_PUBLIC_PARTX_DELIVERY_API_URL;
   if (!localFunctions) {
     const user = firebaseAuth.currentUser;

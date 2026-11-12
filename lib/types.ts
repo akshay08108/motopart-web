@@ -13,6 +13,8 @@ export type Vehicle = {
 export type ProductKind = "Genuine/OEM" | "OEM-equivalent" | "Premium aftermarket" | "Budget aftermarket";
 
 export type Product = {
+  returnable?: boolean;
+  replaceable?: boolean;
   id: string;
   brand: string;
   name: string;
@@ -35,6 +37,8 @@ export type Product = {
 };
 
 export type SellerProduct = {
+  returnable?: boolean;
+  replaceable?: boolean;
   id: string;
   sellerId: string;
   storeId: string;
@@ -175,6 +179,7 @@ export type SellerOrderItem = {
 };
 
 export type SellerOrder = {
+  afterSalesCount?: number;
   riderDeliveryId?: string;
   codCollected?: boolean;
   deliveredAt?: string;

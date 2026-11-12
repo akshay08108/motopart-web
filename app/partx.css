@@ -671,3 +671,16 @@ html[data-native="true"] .px-auth-loading { min-height: 100dvh; padding-top: env
 .px-delivery-rates { margin-top: 20px; }
 .px-delivery-rates table { width: 100%; border-collapse: collapse; }
 .px-delivery-rates th, .px-delivery-rates td { padding: 12px 8px; border-bottom: 1px solid var(--px-line, #ddd); text-align: left; }
+
+.px-product-policy { margin: 0; font-size: .8rem; }
+.sx-product-policy { display: flex; gap: .75rem; flex-wrap: wrap; margin: .45rem 0; }
+.sx-product-policy label { display: inline-flex; gap: .35rem; align-items: center; }
+.sx-product-policy input[type="checkbox"] { width: auto; }
+
+.px-after-sales { margin-block: 1rem; }
+.px-after-sale-item { border-top: 1px solid var(--px-line, #ddd); padding-block: .8rem; overflow-wrap: anywhere; }
+.px-after-sale-item h3, .px-after-sale-item p { margin-block: .45rem; }
+.px-after-sale-actions { display: flex; gap: .6rem; flex-wrap: wrap; }
+.rx-dispatch { overflow-wrap: anywhere; }
+
+.px-category-card[data-category="Fluids"] span { display: block; }

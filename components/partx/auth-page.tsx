@@ -38,7 +38,7 @@ function RoleChoice({ role, title, description }: { role: UserRole; title: strin
 
 export function RoleAuthPage({ role }: { role: UserRole }) {
   const router = useRouter();
-  const { signIn, register, resetPassword, user, authHydrated } = usePartX();
+  const { signIn, register, resetPassword, user, authHydrated, customerDevice, emailVerified, requestEmailVerification, refreshEmailVerification, signOut } = usePartX();
   const [mode, setMode] = useState<AuthMode>("signin");
   const [showPassword, setShowPassword] = useState(false);
   const [identifier, setIdentifier] = useState("");
@@ -48,9 +48,9 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
   const copy = roleCopy[role];
 
   useEffect(() => {
-    if (!authHydrated || !user || user.activeRole !== role) return;
+    if (!authHydrated || !user || user.activeRole !== role || (role === "customer" && !emailVerified)) return;
     router.replace(role === "rider" ? "/rider" : role === "seller" ? "/seller" : "/");
-  }, [authHydrated, role, router, user]);
+  }, [authHydrated, emailVerified, role, router, user]);
 
   const complete = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setError(""); setNotice(""); setBusy(true);
@@ -60,8 +60,9 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
       success = await register({ name: String(data.get("name")), email: String(data.get("email")), mobile: String(data.get("mobile")), password: String(data.get("password")), role, storeName: String(data.get("storeName") ?? "") });
     } else success = await signIn(identifier, String(data.get("password")), role);
     setBusy(false);
-    if (success) router.replace(role === "rider" ? "/rider" : role === "seller" ? "/seller" : "/");
-    else setError(`We could not sign you in as a ${role}. Check your email, password and selected account type.`);
+    if (!success) setError(mode === "register"
+      ? "We could not create this account. Check your details. If you already registered, sign in or reset your password."
+      : `We could not sign you in as a ${role}. Check your email, password and selected account type.`);
   };
 
   const changeMode = (next: AuthMode) => { setMode(next); setError(""); setNotice(""); };
@@ -76,12 +77,47 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
     else setError("We could not send a reset email. Check the address and try again.");
   };
 
+  if (role === "customer" && user?.activeRole === "customer" && !emailVerified) {
+    const confirmEmail = async (resend: boolean) => {
+      setBusy(true);
+      setError("");
+      setNotice("");
+      try {
+        if (resend) {
+          await requestEmailVerification();
+          setNotice("Verification email sent.");
+        } else if (!await refreshEmailVerification()) {
+          setError("Open the verification link in your inbox, then try again.");
+        }
+      } catch {
+        setError("Could not verify your email right now. Try again shortly.");
+      } finally {
+        setBusy(false);
+      }
+    };
+    return <main className="px-auth px-auth-customer">
+      <AuthStory role="customer"/>
+      <section className="px-auth-panel">
+        <div className="px-auth-form-wrap">
+          <div className="px-auth-heading"><h1>Verify your email</h1><p>Open the verification link for {user.email}. Request a new link if you need one.</p></div>
+          <div className="px-auth-form">
+            <button className="px-btn px-btn-red" disabled={busy} onClick={() => void confirmEmail(false)}>I’ve verified my email</button>
+            <button className="px-btn px-btn-outline" disabled={busy} onClick={() => void confirmEmail(true)}>Send verification email</button>
+            <button className="px-link-button" disabled={busy} onClick={() => void signOut()}>Sign out</button>
+            {error && <p role="alert">{error}</p>}
+            {notice && <p role="status">{notice}</p>}
+          </div>
+        </div>
+      </section>
+    </main>;
+  }
+
   return <main className={`px-auth px-auth-${role}`}>
     <AuthStory role={role}/>
     <section className="px-auth-panel">
       <Link href="/" className="px-auth-mobile-brand" aria-label="PartX home"><Image src="/brand/partx-light.png" alt="" width={48} height={48} priority/><span>Part<b>X</b></span></Link>
       <div className="px-auth-form-wrap">
-        {process.env.NEXT_PUBLIC_PARTX_PORTAL !== "rider" ? <Link className="px-auth-role-back" href="/login"><Icon name="back"/>Choose another account type</Link> : null}
+        {!customerDevice && process.env.NEXT_PUBLIC_PARTX_PORTAL !== "rider" ? <Link className="px-auth-role-back" href="/login"><Icon name="back"/>Choose another account type</Link> : null}
         <div className="px-auth-heading"><span>PARTX {copy.heading.toUpperCase()}</span><h2>{mode === "signin" ? "Welcome back" : role === "seller" ? "Register your store" : "Create your account"}</h2><p>{mode === "signin" ? copy.signInDescription : copy.registerDescription}</p></div>
         {role !== "rider" ? <div className="px-auth-tabs" role="tablist"><button type="button" className={mode === "signin" ? "active" : ""} onClick={() => changeMode("signin")}>Sign in</button><button type="button" className={mode === "register" ? "active" : ""} onClick={() => changeMode("register")}>{role === "seller" ? "Register store" : "Create account"}</button></div> : null}
         <form className="px-auth-form" onSubmit={complete}>

@@ -17,8 +17,8 @@ android {
         applicationId riderBuild ? "com.partx.rider" : "com.partx.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName riderBuild ? "0.1.0" : "1.0"
+        versionCode riderBuild ? 2 : 1
+        versionName riderBuild ? "0.2.0" : "1.0"
         manifestPlaceholders = [partxAppLabel: riderBuild ? "PartX Rider" : "PartX"]
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

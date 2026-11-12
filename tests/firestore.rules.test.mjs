@@ -63,7 +63,7 @@ after(async () => {
 });
 
 test("rider roles and dispatch profiles cannot be self-provisioned or escalated", async () => {
-  const customer = environment.authenticatedContext("customer-1").firestore();
+  const customer = environment.authenticatedContext("customer-1", { email_verified: true }).firestore();
   const newAccount = environment.authenticatedContext("uninvited-rider").firestore();
   await assertFails(setDoc(doc(newAccount, "users/uninvited-rider"), { roles: ["rider"], activeRole: "rider" }));
   await assertFails(updateDoc(doc(customer, "users/customer-1"), { roles: ["customer", "rider"] }));
@@ -83,8 +83,8 @@ test("rider assignments, OTP secrets, GPS and order completion are isolated by a
   });
   const rider = environment.authenticatedContext("rider-1").firestore();
   const otherRider = environment.authenticatedContext("rider-2").firestore();
-  const customer = environment.authenticatedContext("customer-1").firestore();
-  const otherCustomer = environment.authenticatedContext("customer-2").firestore();
+  const customer = environment.authenticatedContext("customer-1", { email_verified: true }).firestore();
+  const otherCustomer = environment.authenticatedContext("customer-2", { email_verified: true }).firestore();
   const seller = environment.authenticatedContext("seller-1").firestore();
   const otherSeller = environment.authenticatedContext("seller-2").firestore();
   const gps = { riderId: "rider-1", latitude: 19.06, longitude: 72.83, accuracy: 12, updatedAt: serverTimestamp() };
@@ -117,15 +117,15 @@ test("rider assignments, OTP secrets, GPS and order completion are isolated by a
 });
 
 test("customer checkout cannot forge rider assignment, delivery completion or cash collection", async () => {
-  const customer = environment.authenticatedContext("customer-1").firestore();
+  const customer = environment.authenticatedContext("customer-1", { email_verified: true }).firestore();
   for (const extra of [{ riderDeliveryId: "fake" }, { codCollected: true }, { deliveredAt: serverTimestamp() }, { status: "Delivered", stage: "Delivered" }]) {
     await assertFails(setDoc(doc(customer, "orders/forged-rider-checkout"), { ...pendingUpiOrder(), ...extra }));
   }
 });
 
 test("delivery addresses belong only to their customer", async () => {
-  const owner = environment.authenticatedContext("customer-1").firestore();
-  const other = environment.authenticatedContext("customer-2").firestore();
+  const owner = environment.authenticatedContext("customer-1", { email_verified: true }).firestore();
+  const other = environment.authenticatedContext("customer-2", { email_verified: true }).firestore();
   const address = { id: "default", label: "Home", address: "Bandra West, Mumbai 400050", latitude: 19.06, longitude: 72.83 };
   await assertSucceeds(setDoc(doc(owner, "users/customer-1/deliveryLocations/default"), address));
   await assertSucceeds(getDoc(doc(owner, "users/customer-1/deliveryLocations/default")));
@@ -135,8 +135,8 @@ test("delivery addresses belong only to their customer", async () => {
 });
 
 test("only the account owner can access saved vehicles and garages", async () => {
-  const owner = environment.authenticatedContext("customer-1").firestore();
-  const other = environment.authenticatedContext("customer-2").firestore();
+  const owner = environment.authenticatedContext("customer-1", { email_verified: true }).firestore();
+  const other = environment.authenticatedContext("customer-2", { email_verified: true }).firestore();
   const path = "users/customer-1/preferences/garage";
   const garage = { vehicles: [{ id: "nexon", make: "Tata", model: "Nexon" }], garages: [], activeVehicleId: "nexon", needsVehicle: false };
   await assertSucceeds(setDoc(doc(owner, path), garage));
@@ -146,7 +146,7 @@ test("only the account owner can access saved vehicles and garages", async () =>
 });
 
 test("free delivery requires an atomic order claim and a live claim cannot be reassigned", async () => {
-  const customer = environment.authenticatedContext("customer-1").firestore();
+  const customer = environment.authenticatedContext("customer-1", { email_verified: true }).firestore();
   const order = { ...pendingUpiOrder(), fulfilment: "delivery", deliveryPricingV1: true, deliveryOfferSlot: "first" };
   const slot = doc(customer, "users/customer-1/deliveryOffer/first");
   await assertFails(setDoc(doc(customer, "orders/offer-without-claim"), order));
@@ -225,7 +225,7 @@ test("delivery time is server recorded once and cannot be forged or overwritten"
     await setDoc(doc(context.firestore(), "orders", id), { ...pendingUpiOrder(), status:"Dispatched", stage:"On the way", paymentStatus:"PAID", orderStatus:"PLACED" });
   });
   const seller = environment.authenticatedContext("seller-1").firestore();
-  const customer = environment.authenticatedContext("customer-1").firestore();
+  const customer = environment.authenticatedContext("customer-1", { email_verified: true }).firestore();
   const otherSeller = environment.authenticatedContext("seller-2").firestore();
   const markDelivered = { status:"Delivered", stage:"Delivered", eta:"Delivered", deliveredAt:serverTimestamp(), updatedAt:serverTimestamp() };
   await assertFails(updateDoc(doc(customer, "orders", id), markDelivered));
@@ -239,7 +239,7 @@ test("delivery time is server recorded once and cannot be forged or overwritten"
 });
 
 test("customer can create an ARR-style pending UPI order", async () => {
-  const database = environment.authenticatedContext("customer-1").firestore();
+  const database = environment.authenticatedContext("customer-1", { email_verified: true }).firestore();
   await assertSucceeds(setDoc(doc(database, "orders", "PRTX-TEST-CUSTOMER"), pendingUpiOrder()));
 });
 
@@ -249,7 +249,7 @@ test("seller cannot use customer checkout to create an order", async () => {
 });
 
 test("customer can submit a new UTR without reading a nonexistent reference", async () => {
-  const database = environment.authenticatedContext("customer-1").firestore();
+  const database = environment.authenticatedContext("customer-1", { email_verified: true }).firestore();
   const orderRef = doc(database, "orders", "PRTX-TEST-REFERENCE");
   await assertSucceeds(setDoc(orderRef, pendingUpiOrder()));
 
@@ -304,7 +304,7 @@ test("seller can publish, unpublish and remove a store announcement", async () =
 });
 
 test("customer cannot publish a seller announcement", async () => {
-  const database = environment.authenticatedContext("customer-1").firestore();
+  const database = environment.authenticatedContext("customer-1", { email_verified: true }).firestore();
   await assertFails(setDoc(doc(database, "announcements", "forged-announcement"), {
     type: "seller",
     text: "Untrusted seller joining soon",
@@ -327,7 +327,7 @@ test("vehicle master data is publicly readable but client writes are denied", as
 });
 
 test("users can register only their own notification devices", async () => {
-  const customer = environment.authenticatedContext("customer-1").firestore();
+  const customer = environment.authenticatedContext("customer-1", { email_verified: true }).firestore();
   const deviceRef = doc(customer, "notificationDevices", "device-customer-1");
   await assertSucceeds(setDoc(deviceRef, {
     userId: "customer-1", token: "valid-firebase-registration-token", platform: "web",
@@ -335,7 +335,7 @@ test("users can register only their own notification devices", async () => {
   }));
   await assertSucceeds(getDoc(deviceRef));
 
-  const otherCustomer = environment.authenticatedContext("customer-2").firestore();
+  const otherCustomer = environment.authenticatedContext("customer-2", { email_verified: true }).firestore();
   await assertFails(getDoc(doc(otherCustomer, "notificationDevices", "device-customer-1")));
   await assertFails(setDoc(doc(otherCustomer, "notificationDevices", "device-customer-1"), {
     userId: "customer-2", token: "a-different-valid-registration-token", platform: "web", roles: ["customer"], activeRole: "customer", storeIds: [], updatedAt: serverTimestamp(),
@@ -355,7 +355,7 @@ test("only the owning seller can remove or restore a failed payment without chan
   await environment.withSecurityRulesDisabled(async (context) => setDoc(doc(context.firestore(), "orders", id), { ...pendingUpiOrder(), paymentStatus: "VERIFICATION_FAILED", orderStatus: "PAYMENT_VERIFICATION_PENDING" }));
   const seller = environment.authenticatedContext("seller-1").firestore();
   const other = environment.authenticatedContext("seller-2").firestore();
-  const customer = environment.authenticatedContext("customer-1").firestore();
+  const customer = environment.authenticatedContext("customer-1", { email_verified: true }).firestore();
   const archive = { paymentArchivedAt: serverTimestamp(), updatedAt: serverTimestamp() };
   await assertFails(updateDoc(doc(other, "orders", id), archive));
   await assertFails(updateDoc(doc(customer, "orders", id), archive));
@@ -375,7 +375,7 @@ test("ticket reaches the selected store and can be resolved only by its seller",
       ...pendingUpiOrder(), storeId: "store-1b", storeName: "F1 Automotives", stage: "Delivered",
     });
   });
-  const customer = environment.authenticatedContext("customer-1").firestore();
+  const customer = environment.authenticatedContext("customer-1", { email_verified: true }).firestore();
   const ticketRef = doc(customer, "tickets", "TKT-STORE-1B");
   await assertSucceeds(setDoc(ticketRef, {
     id: "TKT-STORE-1B", orderId: "ORDER-TICKET-1", storeId: "store-1b", storeName: "F1 Automotives",
@@ -397,7 +397,7 @@ test("ticket reaches the selected store and can be resolved only by its seller",
 });
 
 test("only the customer can review the delivered order once", async () => {
-  const customer = environment.authenticatedContext("customer-1").firestore();
+  const customer = environment.authenticatedContext("customer-1", { email_verified: true }).firestore();
   const rating = {
     id: "ORDER-TICKET-1", orderId: "ORDER-TICKET-1", storeId: "store-1b", storeName: "F1 Automotives",
     customerId: "customer-1", customerName: "Customer", stars: 5, comment: "Correct replacement and helpful service.",
@@ -407,6 +407,6 @@ test("only the customer can review the delivered order once", async () => {
   await assertSucceeds(getDocs(collection(environment.unauthenticatedContext().firestore(), "ratings")));
   await assertFails(updateDoc(doc(customer, "ratings", "ORDER-TICKET-1"), { stars: 1 }));
 
-  const otherCustomer = environment.authenticatedContext("customer-2").firestore();
+  const otherCustomer = environment.authenticatedContext("customer-2", { email_verified: true }).firestore();
   await assertFails(setDoc(doc(otherCustomer, "ratings", "ORDER-TICKET-1"), { ...rating, customerId: "customer-2" }));
 });

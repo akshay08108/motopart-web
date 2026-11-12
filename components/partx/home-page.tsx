@@ -20,6 +20,7 @@ const categories = [
   { name: "Engine", image: "/categories/5-v2.png", description: "Engine & service parts", href: "/shop?category=Engine" },
   { name: "Ignition", image: "/parts/3-v2.png", description: "Spark plugs, coils & leads", href: "/shop?q=spark%20plug" },
   { name: "Wipers", image: "/parts/4-v2.png", description: "Blades, arms & washers", href: "/shop?q=wiper" },
+  { name: "Fluids", image: "/categories/fluids.webp", description: "Coolant, power steering fluid & DEF", href: "/shop?category=Fluids" },
   { name: "Oil filters", image: "/parts/5-v2.png", description: "Spin-on & cartridge filters", href: "/shop?q=oil%20filter" },
 ] as const;
 
@@ -45,7 +46,7 @@ export function HomePage() {
             {vehicles.length ? <label>Your vehicle<select value={activeVehicle?.id ?? ""} onChange={(event) => {
               setVehicleError("");
               void setActiveVehicleId(event.target.value).catch(() => setVehicleError("Could not change your vehicle. Try again."));
-            }}>{vehicles.map((vehicle) => <option value={vehicle.id} key={vehicle.id}>{vehicleName(vehicle)} · {vehicle.variant || "Model"}</option>)}</select></label> : <Link href="/garage" className="px-btn px-btn-outline"><Icon name="garage"/>Select your vehicle</Link>}
+            }}>{vehicles.map((vehicle) => <option value={vehicle.id} key={vehicle.id}>{vehicleName(vehicle)} · {vehicle.variant || "Model"}</option>)}</select></label> : <Link href="/garage?add=vehicle" className="px-btn px-btn-outline"><Icon name="plus"/>Add your vehicle</Link>}
             <div className="px-hero-part-search"><span>Part or part number</span><PartSearch value={term} onChange={setTerm} label="Search hero parts" placeholder="e.g. brake pads, LX-3541"/></div>
             <button className="px-btn px-btn-red" onClick={go}>Find parts <Icon name="arrow"/></button>
           </div>
@@ -58,7 +59,7 @@ export function HomePage() {
     <section className="px-section px-categories-section">
       <div className="px-container">
         <div className="px-section-head"><div><span>SHOP BY SYSTEM</span><h2>Popular categories</h2></div><Link href="/shop">View all parts <Icon name="arrow"/></Link></div>
-        <div className="px-category-grid">{categories.map((category) => <Link href={category.href} className="px-category-card" key={category.name}><div><Image src={category.image} alt={`${category.name} auto parts`} width={360} height={260}/></div><b>{category.name}</b><span>{category.description}</span><Icon name="arrow"/></Link>)}</div>
+        <div className="px-category-grid">{categories.map((category) => <Link href={category.href} className="px-category-card" data-category={category.name} key={category.name}><div><Image src={category.image} alt={`${category.name} auto parts`} width={360} height={260}/></div><b>{category.name}</b><span>{category.description}</span><Icon name="arrow"/></Link>)}</div>
       </div>
     </section>
 

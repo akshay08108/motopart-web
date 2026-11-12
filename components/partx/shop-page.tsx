@@ -12,7 +12,7 @@ import { ProductCard } from "./product-card";
 import { PartSearch } from "./part-search";
 import { searchParts } from "@/lib/catalog-search";
 
-const preferredCategories = ["Brakes", "Filters", "Batteries", "Engine", "Electrical", "Suspension", "Accessories", "Other"];
+const preferredCategories = ["Brakes", "Filters", "Batteries", "Engine", "Electrical", "Suspension", "Fluids", "Accessories", "Other"];
 
 export function ShopPage() {
   const params = useSearchParams();
@@ -35,7 +35,7 @@ function ShopResults() {
   const activeCategory = categories.includes(category) ? category : "All";
   const vehicle = vehicles.find((item) => item.id === activeVehicleId);
   const products = useMemo(() => {
-    const list = searchParts(storeId ? catalog.filter((product) => storeProductIds.has(product.id)) : catalog, query).filter((product) => activeCategory === "All" || product.category === activeCategory);
+    const list = searchParts(storeId ? catalog.filter((product) => storeProductIds.has(product.id)) : catalog, query).filter((product) => activeCategory === "All" || product.category === activeCategory || (activeCategory === "Fluids" && /coolant|antifreeze|steering fluid|brake fluid|transmission fluid|diesel exhaust fluid|\bdef\b|adblue/i.test(`${product.name} ${product.category}`)));
     if (sort === "low") list.sort((a, b) => a.price - b.price);
     if (sort === "high") list.sort((a, b) => b.price - a.price);
     if (sort === "rating") list.sort((a, b) => b.rating - a.rating);

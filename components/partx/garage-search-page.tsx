@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { Garage, Vehicle } from "@/lib/types";
 import { vehicleDetails, vehicleName } from "@/lib/vehicle-display";
@@ -27,15 +27,15 @@ type VariantGuide = {
   trimLadder: string;
 };
 
-const preferredMakes = ["Maruti Suzuki", "Hyundai", "Tata Motors", "Mahindra", "Toyota", "Kia", "Honda", "MG Motor"];
 
 export function GarageSearchPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { vehicles, activeVehicleId, setActiveVehicleId, addVehicle, location, garages, addGarage, needsVehicle, skipVehicleSetup } = usePartX();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [manual, setManual] = useState(false);
-  const [vehicleDialog, setVehicleOpen] = useState(false);
+  const [vehicleDialog, setVehicleOpen] = useState(searchParams.get("add") === "vehicle");
   const vehicleOpen = vehicleDialog || needsVehicle;
   const [garageOpen, setGarageOpen] = useState(false);
   const [garageLocation,setGarageLocation] = useState<AppLocation>({ id:"garage-draft", label:"Garage", address:"" });
@@ -125,6 +125,7 @@ export function GarageSearchPage() {
 
   const resetVehicleDialog = () => {
     setVehicleOpen(false);
+    if (searchParams.has("add")) router.replace("/garage");
     setManual(false);
     setSaveError("");
     setQuery("");
@@ -214,7 +215,7 @@ export function GarageSearchPage() {
 
     {vehicleOpen ? <div className={styles.backdrop} role="presentation" onMouseDown={(event) => { if (!needsVehicle && !saving && event.target === event.currentTarget) resetVehicleDialog(); }}>
       <div className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="vehicle-search-title">
-        <header className={styles.dialogHeader}><div><span>PARTX VEHICLE FINDER</span><h2 id="vehicle-search-title">Select your vehicle</h2><p>Find the model in the PartX India vehicle catalog and save it to your garage.</p></div>{!needsVehicle && <button onClick={resetVehicleDialog} disabled={saving} aria-label="Close vehicle search"><Icon name="close"/></button>}</header>
+        <header className={styles.dialogHeader}><div><span>PARTX VEHICLE FINDER</span><h2 id="vehicle-search-title">Select your vehicle</h2><p>Search by make or model.</p></div>{!needsVehicle && <button onClick={resetVehicleDialog} disabled={saving} aria-label="Close vehicle search"><Icon name="close"/></button>}</header>
         <div className={styles.searchBody}>
           {saveError && <p role="alert">{saveError}</p>}
           <div className="px-garage-setup-actions">
@@ -235,15 +236,15 @@ export function GarageSearchPage() {
             <label>Variant / trim<input name="variant" maxLength={60}/></label>
             <button type="submit" className="px-btn px-btn-red" disabled={saving}>Add to My Garage</button>
           </form> : <>
-          <label className={styles.searchBox}><Icon name="search"/><input autoFocus value={query} onChange={(event) => { setQuery(event.target.value); setSelected(null); setVariantGuide(null); }} placeholder="Search model, e.g. Swift, Creta, Thar"/><span>{searching ? "Searching…" : ""}</span></label>
+          <label className={styles.searchBox}><Icon name="search"/><input autoFocus value={query} onChange={(event) => { setQuery(event.target.value); setResults([]); setSelected(null); setVariantGuide(null); }} placeholder="Search model, e.g. Swift, Creta, Thar"/><span>{searching ? "Searching…" : ""}</span></label>
           <div className={styles.filters}><label>Make<select value={make} onChange={(event) => { setMake(event.target.value); setSelected(null); setVariantGuide(null); }}><option value="">Any make</option>{makes.map((item) => <option value={item.name} key={item.id}>{item.name}</option>)}</select></label></div>
-          <div className={styles.popular}><span>Popular makes</span>{preferredMakes.filter((item) => makes.some((makeItem) => makeItem.name === item)).map((item) => <button type="button" className={make === item ? styles.selectedChip : ""} key={item} onClick={() => { setMake(make === item ? "" : item); setSelected(null); setVariantGuide(null); }}>{item}</button>)}</div>
+
 
           {searchError ? <div className={styles.error}><Icon name="close"/><p>{searchError}</p><button type="button" onClick={() => setRetryKey((current) => current + 1)}>Try again</button></div> : null}
-          {!canSearch ? <div className={styles.searchHint}><Icon name="search"/><h3>Start with your car model</h3><p>Type at least 2 letters, or choose a make above.</p></div> : null}
+          {!canSearch ? <p className={styles.searchHint}>Type at least two letters to see matching vehicles.</p> : null}
           {canSearch && !searching && !searchError && !results.length ? <div className={styles.searchHint}><Icon name="garage"/><h3>No matching cars found</h3><p>Try a different model spelling, make, or year.</p></div> : null}
 
-          {canSearch && results.length ? <div className={styles.results}>{results.map((car) => <button type="button" className={selected?.vehicleModelId === car.vehicleModelId ? styles.resultSelected : ""} key={car.vehicleModelId} onClick={() => { setSelected(car); setVariantGuide(null); setVariantLoading(true); setFuel(""); setVariant(""); }}><div className={styles.carThumb}><Image src="/vehicle-suv.png" alt="" width={120} height={72}/></div><div><span>{car.make.toUpperCase()}</span><h3>{car.displayName}</h3><p>India model reference</p><small>{car.vehicleModelId}</small></div><i>{selected?.vehicleModelId === car.vehicleModelId ? <Icon name="check"/> : <Icon name="chevron"/>}</i></button>)}</div> : null}
+          {canSearch && results.length ? <div className={styles.results}>{results.map((car) => <button type="button" className={selected?.vehicleModelId === car.vehicleModelId ? styles.resultSelected : ""} key={car.vehicleModelId} onClick={() => { setSelected(car); setVariantGuide(null); setVariantLoading(true); setFuel(""); setVariant(""); }}><span className={styles.suggestionName}>{car.displayName}</span><i>{selected?.vehicleModelId === car.vehicleModelId ? <Icon name="check"/> : <Icon name="chevron"/>}</i></button>)}</div> : null}
 
           {selected ? <section className={styles.confirm}>
             <div className={styles.selectedVehicle}><span>SELECTED VEHICLE</span><h3>{selected.displayName}</h3><p>{variantGuide?.trimLadder ?? (variantLoading ? "Loading available fuel and trim guidance…" : "No variant guide is available for this model.")}</p></div>

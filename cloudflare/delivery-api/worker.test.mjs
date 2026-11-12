@@ -151,3 +151,62 @@ test("REST adapter preserves scalar, nested, array and timestamp fields", async 
   assert.equal(stored.items[0].quantity, 2); assert.equal(stored.deliveryLocation.latitude, 19.06);
   assert.equal((await adapter.doc("orders/missing").get()).exists, false);
 });
+
+
+test("a verified customer can request a return and an exchange, each with its own ride and matching earnings", async () => {
+  const originalDelivery = await pickedUp();
+  const originalCode = (await call("getPartXDeliveryCode", "customer", { deliveryId: originalDelivery })).body.data.code;
+  assert.equal((await call("updatePartXDelivery", "rider", { action: "complete", deliveryId: originalDelivery, code: originalCode, codCollected: true })).status, 200);
+  const orderRef = db.doc("orders/order");
+  const originalOrder = (await orderRef.get()).data();
+  await orderRef.update({ items: [{ ...originalOrder.items[0], returnable: true }, { ...originalOrder.items[1], replaceable: true }] });
+  const tracking = new Set([(await db.doc(`deliveries/${originalDelivery}`).get()).data().trackingId]);
+  const create = (kind, itemIndex, verified = true, user = "customer") =>
+    call("requestPartXAfterSale", user, { orderId: "order", itemIndex, kind, reason: "Wrong fitment" }, { email_verified: verified });
+  assert.equal((await create("return", 0, false)).status, 403);
+  assert.equal((await create("return", 0, true, "other-customer")).status, 403);
+  assert.equal((await create("replacement", 0)).status, 409);
+  await orderRef.update({ deliveredAt: Timestamp.fromMillis(Date.now() - 49 * 3600000) });
+  assert.equal((await create("return", 0)).status, 409);
+  await orderRef.update({ deliveredAt: originalOrder.deliveredAt });
+
+  for (const [index, kind] of ["return", "replacement"].entries()) {
+    const requested = await create(kind, index);
+    assert.equal(requested.status, 200, JSON.stringify(requested.body));
+    const requestId = requested.body.data.requestId;
+    assert.equal((await create(kind, index)).body.data.requestId, requestId);
+    const assignment = await call("dispatchPartXDelivery", "seller", { action: "assign", orderId: "order", riderId: "rider", requestId });
+    assert.equal(assignment.status, 200, JSON.stringify(assignment.body));
+    const deliveryId = assignment.body.data.deliveryId;
+    const rideRef = db.doc(`deliveries/${deliveryId}`);
+    const ride = (await rideRef.get()).data();
+    assert.equal(ride.kind, kind);
+    assert.equal(ride.codAmount, 0);
+    assert.equal(ride.earnings.amountPaise, 5000);
+    assert.ok(!tracking.has(ride.trackingId));
+    tracking.add(ride.trackingId);
+    const act = (action, more = {}) => call("updatePartXDelivery", "rider", { deliveryId, action, ...more });
+    const getCode = (user, storeReceipt = false) => call("getPartXDeliveryCode", user, { deliveryId, storeReceipt });
+    assert.equal((await act("accept")).status, 200);
+    if (kind === "return") {
+      const code = (await getCode("customer")).body.data.code;
+      assert.equal((await act("pickup", { code })).status, 200);
+    } else {
+      assert.notEqual(ride.pickupId, ride.trackingId);
+      assert.ok(ride.pickupId.startsWith("PX-PICKUP-"));
+      assert.equal((await act("pickup")).status, 200);
+      const code = (await getCode("customer")).body.data.code;
+      assert.equal((await act("complete", { code })).status, 409);
+      assert.equal((await act("exchange", { code, handoverConfirmed: true })).status, 200);
+    }
+    assert.equal((await getCode("customer")).status, 409);
+    const receipt = await getCode("seller", true);
+    assert.equal(receipt.status, 200, JSON.stringify(receipt.body));
+    assert.equal((await act("complete", { code: receipt.body.data.code })).status, 200);
+    assert.equal((await rideRef.get()).data().earnings.status, "EARNED");
+    assert.equal((await orderRef.collection("afterSales").doc(requestId).get()).data().state, "COMPLETED");
+    assert.equal((await orderRef.get()).data().riderDeliveryId, originalDelivery);
+    assert.equal((await orderRef.get()).data().deliveredAt.toMillis(), originalOrder.deliveredAt.toMillis());
+  }
+  assert.equal(tracking.size, 3);
+});

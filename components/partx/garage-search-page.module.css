@@ -77,11 +77,11 @@
 
 .searchBox {
   display: grid;
-  grid-template-columns: 24px 1fr auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 0 16px;
-  min-height: 56px;
+  min-height: 44px;
   border: 1px solid rgba(148, 163, 184, .3);
   border-radius: 16px;
   background: rgba(148, 163, 184, .07);
@@ -96,6 +96,8 @@
   font-size: 16px;
 }
 
+.searchBox svg { width: 16px; height: 16px; }
+.searchBox:focus-within { outline: 2px solid #f3192d; outline-offset: 2px; }
 .searchBox span { font-size: 12px; opacity: .55; }
 
 .filters {
@@ -147,10 +149,10 @@
 }
 .selectedChip { border-color: #ef4444 !important; background: rgba(239, 68, 68, .08) !important; }
 
-.results { display: grid; gap: 10px; }
+.results { display: grid; gap: 4px; margin-top: 12px; }
 .results > button {
   display: grid;
-  grid-template-columns: 118px 1fr 28px;
+  grid-template-columns: minmax(0, 1fr) 20px;
   align-items: center;
   gap: 14px;
   width: 100%;
@@ -164,7 +166,7 @@
 }
 .results > button:hover,
 .resultSelected { border-color: #ef4444 !important; background: rgba(239, 68, 68, .055) !important; }
-.results span { font-size: 10px; font-weight: 800; letter-spacing: .1em; opacity: .55; }
+.results .suggestionName { font-size: 14px; font-weight: 650; }
 .results h3 { margin: 2px 0 4px; font-size: 17px; }
 .results p { margin: 0 0 4px; font-size: 13px; opacity: .75; }
 .results small { opacity: .58; }
@@ -177,7 +179,7 @@
   display: grid;
   place-items: center;
   text-align: center;
-  padding: 34px 18px;
+  padding: 12px;
   border: 1px dashed rgba(148, 163, 184, .3);
   border-radius: 16px;
 }

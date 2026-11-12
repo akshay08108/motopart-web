@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { createUserWithEmailAndPassword, deleteUser, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut as firebaseSignOut, updateProfile } from "firebase/auth";
+import { createUserWithEmailAndPassword, deleteUser, onAuthStateChanged, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, signOut as firebaseSignOut, updateProfile } from "firebase/auth";
 import { arrayUnion, collection, doc, getDoc, getDocsFromServer, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import type { AppLocation, CartLine, CustomerUser, Garage, LiveAnnouncement, Order, OrderStage, PartnerStore, PaymentMethod, PaymentOrderStatus, Product, SellerPaymentStatus, SellerProduct, StorePaymentSettings, UserRole, Vehicle } from "@/lib/types";
 import { getDemoCatalog } from "@/lib/demo-data";
@@ -23,6 +23,7 @@ export type PartXOrder = Order & {
   deliveryOfferSlot?: string;
   codCollected?: boolean;
   deliveredAt?: string;
+  deliveredAtMs?: number;
   items?: CartLine[];
   fulfilment?: "delivery" | "pickup" | "garage";
   trackingId?: string;
@@ -78,6 +79,10 @@ type AppContextValue = {
   liveOrderUpdate: { orderId: string; stage: OrderStage } | null;
   user: CustomerUser | null;
   authHydrated: boolean;
+  customerDevice: boolean;
+  emailVerified: boolean;
+  requestEmailVerification: () => Promise<void>;
+  refreshEmailVerification: () => Promise<boolean>;
   signIn: (identifier: string, password: string, role: UserRole) => Promise<boolean>;
   register: (input: RegisterInput) => Promise<boolean>;
   resetPassword: (email: string) => Promise<boolean>;
@@ -108,7 +113,10 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   const [announcements, setAnnouncements] = useState<LiveAnnouncement[]>([]);
   const [orderState, setOrderState] = useState<{ uid: string; entries: PartXOrder[]; ready: boolean } | null>(null);
   const [liveOrderUpdate, setLiveOrderUpdate] = useState<{ orderId: string; stage: OrderStage } | null>(null);
+  const [customerDevice, setCustomerDevice] = useState(false);
+  const [verifiedUid, setVerifiedUid] = useState<string | null>(null);
   const [user, setUser] = useState<CustomerUser | null>(null);
+  const emailVerified = Boolean(verifiedUid && verifiedUid === user?.id);
   const [hydrated, setHydrated] = useState(false);
   const [firebaseHydrated, setFirebaseHydrated] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("default");
@@ -223,6 +231,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const hydrate = () => {
+      setCustomerDevice(readBrowserStorage("local", "partx-device-role") === "customer");
       const savedTheme = readBrowserStorage("local", "partx-theme") ?? readBrowserStorage("local", "motopart-theme");
       if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
       const savedCart = readBrowserStorage("local", "partx-cart-v1");
@@ -261,6 +270,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     const stopAuth = onAuthStateChanged(firebaseAuth, (authUser) => {
       stopProfile();
       clearProfileTimeout();
+      setVerifiedUid(authUser?.emailVerified ? authUser.uid : null);
       if (!authUser) {
         setUser(null);
         removeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY);
@@ -279,6 +289,10 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         clearProfileTimeout();
         const profile = snapshot.exists() ? parseFirebaseUser(authUser.uid, authUser.email ?? "", snapshot.data()) : null;
         setUser(profile);
+        if (profile?.activeRole === "customer") {
+          writeBrowserStorage("local", "partx-device-role", "customer");
+          setCustomerDevice(true);
+        }
         if (profile) writeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY, JSON.stringify(profile));
         else removeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY);
         setFirebaseHydrated(true);
@@ -552,7 +566,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
           throw new Error("Your delivery fee changed. Review the updated total and try again.");
         }
         const totalAmount = subtotal + quote.fee - discount;
-        const pricedOrder = {
+        const pricing = {
           ...orderData,
           total: totalAmount,
           totalAmount,
@@ -579,6 +593,14 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
             });
           }
         });
+        const pricedOrder = {
+          ...pricing,
+          items: orderData.items.map((item, index) => ({
+            ...item,
+            returnable: productSnapshots[index].data()?.returnable === true,
+            replaceable: productSnapshots[index].data()?.replaceable === true,
+          })),
+        };
         transaction.set(orderRef, pricedOrder);
         if (claim) transaction.set(claim.ref, { orderId: order.id });
         return pricedOrder;
@@ -638,17 +660,33 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     liveOrderUpdate,
     user,
     authHydrated: hydrated && firebaseHydrated,
+    customerDevice,
+    emailVerified,
+    requestEmailVerification: async () => {
+      const authUser = firebaseAuth.currentUser;
+      if (!authUser || authUser.uid !== user?.id) throw new Error("Sign in to request a verification email.");
+      await sendEmailVerification(authUser);
+    },
+    refreshEmailVerification: async () => {
+      const authUser = firebaseAuth.currentUser;
+      if (!authUser || authUser.uid !== user?.id) return false;
+      await authUser.reload();
+      if (!authUser.emailVerified || firebaseAuth.currentUser?.uid !== authUser.uid) return false;
+      await authUser.getIdToken(true);
+      setVerifiedUid(authUser.uid);
+      return true;
+    },
     signIn: async (identifier, password, role) => {
-      if (!identifier.trim() || password.length < 6) return false;
+      if (!identifier.trim() || password.length < 6 || (role === "seller" && customerDevice)) return false;
       try {
-        const credential = await signInWithEmailAndPassword(firebaseAuth, identifier.trim(), password);
+        const credential = await signInWithEmailAndPassword(firebaseAuth, identifier.trim().toLowerCase(), password);
         const profileSnapshot = await getDoc(doc(firestore, "users", credential.user.uid));
         const profile = profileSnapshot.exists() ? parseFirebaseUser(credential.user.uid, credential.user.email ?? identifier, profileSnapshot.data()) : null;
-        if (!profile?.roles.includes(role)) {
+        if (!profile?.roles.includes(role) || profile.activeRole !== role) {
           await firebaseSignOut(firebaseAuth);
           return false;
         }
-        await updateDoc(doc(firestore, "users", credential.user.uid), { activeRole: role, updatedAt: serverTimestamp() });
+        setVerifiedUid(credential.user.emailVerified ? credential.user.uid : null);
         const activeProfile = { ...profile, activeRole: role };
         setUser(activeProfile);
         writeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY, JSON.stringify(activeProfile));
@@ -658,17 +696,18 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       }
     },
     register: async (input) => {
+      if (input.role === "seller" && customerDevice) return false;
       if (input.role === "rider") throw new Error("PartX rider accounts are created by the operations team.");
       if (!input.name.trim() || !input.email.trim() || !input.mobile.trim() || input.password.length < 6) return false;
       let credential;
       try {
-        credential = await createUserWithEmailAndPassword(firebaseAuth, input.email.trim(), input.password);
+        credential = await createUserWithEmailAndPassword(firebaseAuth, input.email.trim().toLowerCase(), input.password);
         await updateProfile(credential.user, { displayName: input.name.trim() });
         const storeId = input.role === "seller" ? `store-${credential.user.uid}` : undefined;
         const profile: CustomerUser = {
           id: credential.user.uid,
           name: input.name.trim(),
-          email: input.email.trim(),
+          email: credential.user.email ?? input.email.trim().toLowerCase(),
           mobile: input.mobile.trim(),
           roles: [input.role],
           activeRole: input.role,
@@ -689,6 +728,11 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         if (input.role === "customer") batch.set(doc(firestore, "users", credential.user.uid, "preferences", "garage"), { ...emptyGarage, needsVehicle: true });
         if (storeId) batch.set(doc(firestore, "stores", storeId), { ownerId: credential.user.uid, name: input.storeName?.trim(), status: "approved", rating: 0, ratingCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
         await batch.commit();
+        if (input.role === "customer") {
+          writeBrowserStorage("local", "partx-device-role", "customer");
+          setCustomerDevice(true);
+          void sendEmailVerification(credential.user).catch(() => undefined);
+        }
         setUser(profile);
         writeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY, JSON.stringify(profile));
         return true;
@@ -723,7 +767,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       removeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY);
       await firebaseSignOut(firebaseAuth);
     },
-  }), [cartNotice, theme, saveGaragePreferences, resolvedCart, vehicles, activeVehicleId, location, garages, garageReady, needsVehicle, customerId, marketplaceStores, announcements, catalog, catalogById, storesById, orders, ordersReady, freeDeliveriesRemaining, liveOrderUpdate, user, hydrated, firebaseHydrated, notificationPermission, notificationError, notificationsEnabled]);
+  }), [cartNotice, theme, saveGaragePreferences, resolvedCart, vehicles, activeVehicleId, location, garages, garageReady, needsVehicle, customerId, customerDevice, emailVerified, marketplaceStores, announcements, catalog, catalogById, storesById, orders, ordersReady, freeDeliveriesRemaining, liveOrderUpdate, user, hydrated, firebaseHydrated, notificationPermission, notificationError, notificationsEnabled]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
@@ -792,6 +836,8 @@ function toCatalogProduct(product: SellerProduct, storeName: string, vehicles: V
     stock: product.stock,
     deliveryLabel: "Delivery estimate at checkout",
     warranty: product.warranty,
+    returnable: product.returnable === true,
+    replaceable: product.replaceable === true,
     seller: storeName,
   };
 }
@@ -815,6 +861,7 @@ function toCustomerOrder(id: string, data: Record<string, unknown>): PartXOrder 
         brand: "PARTX", oemNumber: String(line.partNumber ?? ""), kind: "OEM-equivalent" as const, price: unitPrice,
         listPrice: unitPrice, rating: 0, reviews: 0, category: "Other", imageIndex: Number.isInteger(imageIndex) ? imageIndex : 0,
         imageUrl: typeof line.imageUrl === "string" && line.imageUrl ? line.imageUrl : undefined, compatibleVehicleIds: [], stock: 0,
+        returnable: line.returnable === true, replaceable: line.replaceable === true,
         deliveryLabel: "Order item", warranty: "See product details", seller: String(line.storeName ?? data.storeName ?? "PartX seller"),
       },
       quantity: Number(line.quantity ?? 1), storeId: String(line.storeId ?? data.storeId ?? ""),
@@ -834,6 +881,7 @@ function toCustomerOrder(id: string, data: Record<string, unknown>): PartXOrder 
     placedAt: firestoreDate(data.createdAt)?.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) ?? String(data.placedAt ?? "Date unavailable"),
     eta: data.stage === "Delivered" ? formatDeliveryTime(data.deliveredAt) ? `Delivered ${formatDeliveryTime(data.deliveredAt)}` : "Delivery time unavailable" : String(data.eta ?? "Delivery estimate pending"),
     deliveredAt: formatDeliveryTime(data.deliveredAt),
+    deliveredAtMs: firestoreDate(data.deliveredAt)?.getTime(),
     stage: isOrderStage(data.stage) ? data.stage : "Confirmed",
     total: Number(data.totalAmount ?? data.total ?? 0),
     items,

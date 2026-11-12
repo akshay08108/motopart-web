@@ -16,15 +16,18 @@ service cloud.firestore {
 
     function isSeller() {
       return signedIn()
-        && 'seller' in currentUser().roles;
+        && 'seller' in currentUser().roles
+        && currentUser().activeRole == 'seller';
     }
 
     function isCustomer() {
-      return signedIn() && 'customer' in currentUser().roles;
+      return signedIn() && 'customer' in currentUser().roles
+        && currentUser().activeRole == 'customer';
     }
 
     function isRider() {
       return signedIn() && 'rider' in currentUser().roles
+        && currentUser().activeRole == 'rider'
         && get(/databases/$(database)/documents/riders/$(request.auth.uid)).data.active == true;
     }
 
@@ -67,7 +70,7 @@ service cloud.firestore {
       allow update: if ownsUser(uid)
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['activeRole', 'name', 'mobile', 'updatedAt'])
-        && request.resource.data.activeRole in resource.data.roles;
+        && request.resource.data.activeRole == resource.data.activeRole;
       allow delete: if false;
 
       match /deliveryOffer/{slot} {
@@ -175,7 +178,16 @@ service cloud.firestore {
     }
 
     match /orders/{orderId} {
+      match /afterSales/{requestId} {
+        function parentOrder() {
+          return get(/databases/$(database)/documents/orders/$(orderId)).data;
+        }
+        allow read: if signedIn() && (parentOrder().customerId == request.auth.uid || ownsStore(parentOrder().storeId));
+        allow write: if false;
+      }
+
       allow create: if isCustomer()
+        && request.auth.token.email_verified == true
         && !request.resource.data.keys().hasAny(['deliveredAt', 'riderDeliveryId', 'codCollected', 'codCollectedAt', 'codCollectedBy', 'paymentArchivedAt'])
         && request.resource.data.status == 'New'
         && request.resource.data.stage == 'Confirmed'

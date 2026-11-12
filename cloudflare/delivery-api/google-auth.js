@@ -21,7 +21,7 @@ export function createGoogleAuth(fetcher = fetch) {
   let accessCache = { credential: "", value: "", expiresAt: 0 };
   let signingKey;
   let signingKeySource;
-  async function verifyFirebaseToken(token, projectId) {
+  async function verifyFirebaseToken(token, projectId, verifiedEmailRequired = false) {
     try {
       if (typeof token !== "string" || token.length > 8192) throw new Error();
       const parts = token.split(".");
@@ -43,6 +43,7 @@ export function createGoogleAuth(fetcher = fetch) {
       const payload = JSON.parse(new TextDecoder().decode(decode64(parts[1])));
       const now = Math.floor(Date.now() / 1000);
       if (payload.aud !== projectId || payload.iss !== `https://securetoken.google.com/${projectId}` || typeof payload.sub !== "string" || !payload.sub || payload.sub.length > 128 || typeof payload.exp !== "number" || payload.exp <= now || typeof payload.iat !== "number" || payload.iat > now + 30 || typeof payload.auth_time !== "number" || payload.auth_time > now + 30) throw new Error();
+      if (verifiedEmailRequired && payload.email_verified !== true) throw new DeliveryError("permission-denied", "Verify your email before requesting a return or replacement.");
       return payload.sub;
     } catch (error) {
       if (error instanceof DeliveryError) throw error;

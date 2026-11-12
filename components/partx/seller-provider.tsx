@@ -41,7 +41,7 @@ type SellerContextValue = {
   sellerProducts: SellerProduct[];
   addProduct: (product: NewSellerProduct, image?: File) => Promise<void>;
   addProducts: (products: NewSellerProduct[]) => Promise<void>;
-  updateSellerProduct: (productId: string, sellingPrice: number, stock: number) => Promise<void>;
+  updateSellerProduct: (productId: string, sellingPrice: number, stock: number, policy: { returnable: boolean; replaceable: boolean }) => Promise<void>;
   uploadProductImage: (productId: string, image: File, onProgress?: (progress: number) => void) => Promise<void>;
 };
 
@@ -491,8 +491,9 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       }
       await batch.commit();
     },
-    updateSellerProduct: async (productId, sellingPrice, stock) => {
+    updateSellerProduct: async (productId, sellingPrice, stock, policy) => {
       await updateDoc(doc(firestore, "products", productId), {
+        ...policy,
         sellingPrice,
         stock,
         status: stock > 0 ? "published" : "out-of-stock",
@@ -566,6 +567,7 @@ function toSellerOrder(id: string, data: Record<string, unknown>): FirestoreSell
   const imageIndex = Number(primaryItem.imageIndex ?? data.imageIndex);
   return {
     id,
+    afterSalesCount: typeof data.afterSalesCount === "number" ? data.afterSalesCount : 0,
     riderDeliveryId: typeof data.riderDeliveryId === "string" ? data.riderDeliveryId : undefined,
     codCollected: data.codCollected === true,
     trackingId: String(data.trackingId ?? "PX-TRK-PENDING"),
