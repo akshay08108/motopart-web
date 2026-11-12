@@ -686,3 +686,6 @@ html[data-native="true"] .px-auth-loading { min-height: 100dvh; padding-top: env
 .rx-dispatch { overflow-wrap: anywhere; }
 
 .px-category-card[data-category="Fluids"] span { display: block; }
+
+.sx-store-location { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--px-line); }
+.sx-store-location h3, .sx-store-location p { margin: 0 0 8px; }
