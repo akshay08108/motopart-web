@@ -32,8 +32,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   let destination: string | undefined;
   if (riderApp && !riderRoute && pathname !== "/login/rider") destination = "/rider";
   else if (authHydrated) {
-    if (customerDevice && ["/login", "/login/seller"].includes(pathname)) destination = "/login/customer";
-    else if (user?.activeRole === "customer" && !emailVerified && !riderRoute && pathname !== "/login/customer") destination = "/login/customer";
+    if (customerDevice && pathname === "/login") destination = "/login/customer";
+    else if (user?.activeRole === "customer" && !emailVerified && !riderRoute && pathname !== "/login/customer" && pathname !== "/login/seller") destination = "/login/customer";
     else if (user?.activeRole === "customer" && pathname === "/sell") destination = "/";
     else if (riderRoute && !user?.roles.includes("rider")) destination = "/login/rider";
     else if (!authRoute && !user) destination = "/login";
@@ -50,7 +50,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [destination, router]);
 
   if (destination) return <AuthLoading label="Opening PartX…"/>;
-  if (authRoute) return authHydrated || pathname === "/login/rider" ? children : <AuthLoading label="Opening PartX…"/>;
+  if (authRoute) return pathname === "/login" && !authHydrated ? <AuthLoading label="Opening PartX…"/> : children;
   if (!authHydrated || !user) return <AuthLoading label="Opening PartX…"/>;
   if (riderRoute) return <RiderShell key={user.id}>{children}</RiderShell>;
   if (sellerRoute) return <SellerShell>{children}</SellerShell>;

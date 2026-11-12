@@ -677,7 +677,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       return true;
     },
     signIn: async (identifier, password, role) => {
-      if (!identifier.trim() || password.length < 6 || (role === "seller" && customerDevice)) return false;
+      if (!identifier.trim() || password.length < 6) return false;
       try {
         const credential = await signInWithEmailAndPassword(firebaseAuth, identifier.trim().toLowerCase(), password);
         const profileSnapshot = await getDoc(doc(firestore, "users", credential.user.uid));
@@ -696,7 +696,6 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       }
     },
     register: async (input) => {
-      if (input.role === "seller" && customerDevice) return false;
       if (input.role === "rider") throw new Error("PartX rider accounts are created by the operations team.");
       if (!input.name.trim() || !input.email.trim() || !input.mobile.trim() || input.password.length < 6) return false;
       let credential;
