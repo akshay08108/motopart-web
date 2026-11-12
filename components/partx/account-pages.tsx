@@ -45,7 +45,7 @@ export function CheckoutPage() {
   if (!cart.length) return <div className="px-page px-container"><div className="px-empty"><h1>No items to checkout</h1><p>Add a part before starting checkout.</p><Link href="/shop" className="px-btn px-btn-red">Shop parts</Link></div></div>;
   const attemptKey = `partx-payment-attempt:${user?.id ?? "guest"}:${selectedStore.id}:${fulfilment}:${cart.map((line) => `${line.product.id}-${line.quantity}`).join("|")}`;
   const savedAttemptId = selectedPayment === "upi" ? readBrowserStorage("session", attemptKey) ?? undefined : undefined;
-  const pendingAttempt = orders.find((order) => order.id === savedAttemptId && order.paymentStatus === "PENDING" && (!order.expiresAt || order.expiresAt.getTime() > Date.now()));
+  const pendingAttempt = orders.find((order) => order.id === savedAttemptId && order.paymentStatus === "PENDING");
   const currentAttempt = attempt ?? pendingAttempt;
   const delivery = currentAttempt?.deliveryCharge ?? (quoteReady ? quote.fee : null);
   const total = currentAttempt?.total ?? cartTotal + (delivery ?? 0);
@@ -63,6 +63,7 @@ export function CheckoutPage() {
         if (savedAttemptId && reason instanceof Error && (reason.message === "SAVED_PAYMENT_ATTEMPT_INACTIVE" || errorCode === "permission-denied")) {
           removeBrowserStorage("session", attemptKey);
           if (!quoteReady || quote.fee === null) throw new Error(quote.message ?? "Wait for the updated delivery fee, then try again.");
+          if (pendingAttempt && pendingAttempt.deliveryCharge !== quote.fee) throw new Error("Your saved payment attempt ended. Review the updated total and try again.");
           order = await placeOrder(fulfilment, selectedPayment, undefined, quote.fee);
         } else {
           throw reason;
@@ -203,10 +204,6 @@ export function SellPage() {
   const { addStore, stores } = usePartX(); const [saved, setSaved] = useState("");
   const save = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const data = new FormData(event.currentTarget); const name = String(data.get("name")); const store: PartnerStore = { id: `store-${Date.now()}`, name, owner: String(data.get("owner")), phone: String(data.get("phone")), gstin: String(data.get("gstin")), businessHours: String(data.get("hours")), deliveryRadiusKm: Number(data.get("radius")), rating: 0, distanceKm: 0, location: { ...storeLocation, id: `store-location-${Date.now()}`, label: "Store", address: String(data.get("address")) }, listings: [] }; addStore(store); setSaved(name); event.currentTarget.reset(); };
   return <div className="px-page px-container"><div className="px-page-title"><span>PARTX SELLER ONBOARDING</span><h1>Add your store</h1><p>Create a demo storefront now. Product and price management can later write directly to Firebase.</p></div><div className="px-support-layout"><form className="px-panel px-form" onSubmit={save}><div className="px-form-grid"><label>Store name<input name="name" required/></label><label>Owner name<input name="owner" required/></label><label>Phone<input name="phone" required/></label><label>GSTIN<input name="gstin"/></label><label>Business hours<input name="hours" defaultValue="9:00 AM – 8:00 PM" required/></label><label>Delivery radius (km)<input name="radius" type="number" defaultValue="8" required/></label></div><LocationPicker value={storeLocation} onSelect={setStoreLocation} label="Store address"/><button className="px-btn px-btn-red" type="submit">{saved ? `${saved} added` : "Add store"}</button></form><aside className="px-support-aside"><div><span>DEMO NETWORK</span><h2>{stores.length} stores onboarded</h2><p>Each store can later manage its own parts, stock, pricing and delivery radius from a protected seller dashboard.</p></div><Link href="/shop" className="px-btn px-btn-outline">View customer catalog</Link></aside></div></div>;
-}
-
-function Modal({ title, close, children }: { title: string; close: () => void; children: React.ReactNode }) {
-  return <div className="px-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && close()}><div className="px-modal" role="dialog" aria-modal="true" aria-label={title}><div className="px-modal-head"><h2>{title}</h2><button onClick={close} aria-label="Close"><Icon name="close"/></button></div>{children}</div></div>;
 }
 
 function customerOrderLabel(order: PartXOrder) {
