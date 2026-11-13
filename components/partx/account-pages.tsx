@@ -65,12 +65,14 @@ export function CheckoutPage() {
     try {
       if (selectedPayment === "razorpay") {
         if (cart.some((line) => line.storeId !== selectedStore.id)) throw new Error("Check out items from one store at a time.");
-        const key = `${attemptKey}:razorpay`;
+        const expectedAmount = Math.round(total * 100);
+        const destination = fulfilment === "garage" ? garages[0]?.location : fulfilment === "delivery" ? location : undefined;
+        const key = `${attemptKey}:razorpay:${JSON.stringify([expectedAmount, destination?.address, destination?.latitude, destination?.longitude])}`;
         const saved = readBrowserStorage("session", key);
         const orderId = saved ?? `PX-TEST-${crypto.randomUUID().replaceAll("-", "")}`;
         writeBrowserStorage("session", key, orderId);
         const result = await openRazorpayCheckout({
-          orderId, storeId: selectedStore.id, fulfilment, expectedAmount: Math.round(total * 100),
+          orderId, storeId: selectedStore.id, fulfilment, expectedAmount,
           items: cart.map((line) => ({ productId: line.product.id, quantity: line.quantity })),
         });
         if (result.paid) removeBrowserStorage("session", key);

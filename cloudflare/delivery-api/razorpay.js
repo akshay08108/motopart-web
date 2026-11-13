@@ -81,6 +81,11 @@ export function createRazorpay(database, env, fetcher) {
         if (existing.customerId !== uid || existing.paymentMethod !== "razorpay" || existing.razorpayCartKey !== cartKey) {
           fail("permission-denied", "This payment attempt belongs to a different checkout.");
         }
+        const savedAddress = existing.deliveryLocation;
+        if (paise(existing.totalAmount) !== expectedAmount || (fulfilment !== "pickup" &&
+          (savedAddress?.address !== address?.address || savedAddress?.latitude !== address?.latitude || savedAddress?.longitude !== address?.longitude))) {
+          fail("failed-precondition", "This saved test order has a different total or address. Start a new checkout or review the saved order in Orders.");
+        }
         return existing;
       }
       const [storeSnapshot, ...snapshots] = await Promise.all([tx.get(storeRef), ...products.map((ref) => tx.get(ref))]);

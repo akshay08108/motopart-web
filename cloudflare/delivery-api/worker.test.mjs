@@ -257,6 +257,9 @@ test("Razorpay Test Mode prices from Firestore, verifies capture once, alerts th
   assert.deepEqual(gatewayOrder.transfers, [{ account: "acc_fixture", amount: 49990, currency: "INR" }]);
   assert.equal((await invoke("razorpayCreateOrder", "customer", begin)).body.data.razorpayOrderId, "order_fixture");
   assert.equal(gatewayCreates, 1);
+  assert.equal((await invoke("razorpayCreateOrder", "customer", { ...begin, expectedAmount: 50000 })).status, 409);
+  await db.doc("users/customer/deliveryLocations/default").update({ address: "A different saved street address" });
+  assert.equal((await invoke("razorpayCreateOrder", "customer", begin)).status, 409);
   const ref = db.doc(`orders/${checkoutId}`);
   assert.equal((await ref.get()).data().orderStatus, "PAYMENT_PENDING");
   assert.equal((await db.doc("users/customer/deliveryOffer/first").get()).exists, false);
