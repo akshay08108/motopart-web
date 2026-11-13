@@ -167,7 +167,18 @@ export function CheckoutPage() {
 
 export function OrdersPage() {
   const { orders } = usePartX();
-  return <div className="px-page px-container"><div className="px-page-heading-row"><div className="px-page-title"><span>PURCHASE HISTORY</span><h1>My orders</h1><p>Track placed orders and get help with any issue.</p></div><Link href="/support" className="px-btn px-btn-outline"><Icon name="headset"/>Contact support</Link></div><div className="px-order-list">{orders.map((order) => <article key={order.id}><div><span>ORDER {order.id}</span><h2>{customerOrderLabel(order)}</h2><p>Placed {order.placedAt} · {order.eta}</p></div><div className="px-order-progress"><i className={`stage-${["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].indexOf(order.stage) + 1}`}/><div>{["Confirmed", "Preparing", "On the way", "Delivered"].map((stage) => <span key={stage}>{stage}</span>)}</div></div><strong>₹{order.total.toLocaleString("en-IN")}</strong><div className="px-order-actions"><Link href={orderHref(order.id)} className="px-btn px-btn-dark">View details <Icon name="arrow"/></Link><Link href={`/support?order=${order.id}`}>Get help</Link></div></article>)}</div><BuyAgain/></div>;
+  return <div className="px-page px-container">
+    <div className="px-page-heading-row"><div className="px-page-title"><span>PURCHASE HISTORY</span><h1>My orders</h1><p>Track placed orders and get help with any issue.</p></div><Link href="/support" className="px-btn px-btn-outline"><Icon name="headset"/>Contact support</Link></div>
+    <div className="px-order-list">{orders.map((order) => {
+      const expired = isPaymentExpired(order);
+      return <article key={order.id} className={expired ? "is-payment-expired" : undefined}>
+        <div><span>ORDER {order.id}</span><h2>{customerOrderLabel(order)}</h2><p>Placed {order.placedAt}{!expired && order.eta ? ` · ${order.eta}` : ""}</p></div>
+        {!expired && <div className="px-order-progress"><i className={`stage-${["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].indexOf(order.stage) + 1}`}/><div>{["Confirmed", "Preparing", "On the way", "Delivered"].map((stage) => <span key={stage}>{stage}</span>)}</div></div>}
+        <strong>₹{order.total.toLocaleString("en-IN")}</strong>
+        <div className="px-order-actions"><Link href={orderHref(order.id)} className="px-btn px-btn-dark">View details <Icon name="arrow"/></Link><Link href={`/support?order=${order.id}`}>Get help</Link></div>
+      </article>;
+    })}</div><BuyAgain/>
+  </div>;
 }
 
 export function OrderDetailPage({ id }: { id: string }) {
@@ -196,9 +207,10 @@ export function OrderDetailPage({ id }: { id: string }) {
   };
   const ratingOpen = order?.paymentMethod !== "razorpay" && order?.stage === "Delivered" && Boolean(order.storeId) && !alreadyRated && !ratingDismissed;
   if (!order) return <div className="px-page px-container px-order-detail-page"><div className="px-empty"><h1>{ordersReady ? "Order not found" : "Loading order…"}</h1><Link href="/orders" className="px-btn px-btn-dark">View all orders</Link></div></div>;
+  const expired = isPaymentExpired(order);
   return <div className="px-page px-container px-order-detail-page">
     <Link href="/orders" className="px-back-link"><Icon name="back"/>All orders</Link>
-    {order.paymentMethod === "razorpay" && <section className="px-panel">
+    {!expired && order.paymentMethod === "razorpay" && <section className="px-panel">
       <b>Razorpay Test Mode</b>
       <p>{order.paymentStatus === "PAID" ? "Test payment confirmed. No money was charged." : "This order is awaiting payment confirmation from Razorpay."}</p>
       {order.paymentStatus !== "PAID" && <div className="px-upi-actions">
@@ -208,12 +220,12 @@ export function OrderDetailPage({ id }: { id: string }) {
       {paymentMessage && <p role="status">{paymentMessage}</p>}
       {paymentError && <p role="alert">{paymentError}</p>}
     </section>}
-    {params.get("placed") === "1" && order.orderStatus === "PLACED" && liveOrderUpdate?.orderId !== order.id ? <div className="px-order-live-note" role="status"><Icon name="bell"/><div><b>Order placed successfully</b><span>{order.paymentMethod === "cod" ? `Pay ₹${order.total.toLocaleString("en-IN")} on delivery or pickup.` : `The seller was notified and this order is now in their packing queue.`}</span></div></div> : null}
-    {params.get("payment") === "submitted" || order.paymentStatus === "PAYMENT_SUBMITTED" ? <div className="px-order-live-note px-payment-review-note" role="status"><Icon name="orders"/><div><b>Payment verification in progress</b><span>₹{order.total.toLocaleString("en-IN")} payment submitted to {order.storeName}. Reference: {order.paymentReference}. Your order will be confirmed after the seller verifies it.</span></div></div> : null}
-    {order.paymentMethod !== "razorpay" && order.paymentStatus === "PAID" && order.stage !== "Delivered" ? <div className="px-order-live-note" role="status"><Icon name="check"/><div><b>Payment confirmed ✓</b><span>Order placed successfully. {order.storeName} can now prepare your order.</span></div></div> : null}
-    {liveOrderUpdate?.orderId === order.id ? <div className="px-order-live-note px-order-status-note" role="status" aria-live="polite"><Icon name="orders"/><div><b>Live order update: {liveOrderUpdate.stage}</b><span>{order.storeName ?? "Your seller"} updated your order status just now.</span></div></div> : null}
-    <DeliveryTracking key={order.id} deliveryId={order.riderDeliveryId}/><CustomerAfterSales key={`after-sale-${order.id}`} order={order}/>
-    <div className={order.stage === "Delivered" ? "px-tracking-hero is-delivered" : "px-tracking-hero"}><span>ORDER {order.id}</span><h1>{customerOrderLabel(order)}</h1><p>{order.eta}</p>{order.orderStatus === "PLACED" && order.stage !== "Delivered" ? <div className="px-tracking-steps">{["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].map((stage, index) => { const reached = index <= ["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].indexOf(order.stage); return <div className={reached ? "done" : ""} key={stage}><i>{reached ? <Icon name="check"/> : index + 1}</i><b>{stage}</b></div>; })}</div> : null}</div>
+    {!expired && params.get("placed") === "1" && order.orderStatus === "PLACED" && liveOrderUpdate?.orderId !== order.id ? <div className="px-order-live-note" role="status"><Icon name="bell"/><div><b>Order placed successfully</b><span>{order.paymentMethod === "cod" ? `Pay ₹${order.total.toLocaleString("en-IN")} on delivery or pickup.` : `The seller was notified and this order is now in their packing queue.`}</span></div></div> : null}
+    {!expired && order.paymentStatus === "PAYMENT_SUBMITTED" ? <div className="px-order-live-note px-payment-review-note" role="status"><Icon name="orders"/><div><b>Payment verification in progress</b><span>₹{order.total.toLocaleString("en-IN")} payment submitted to {order.storeName}. Reference: {order.paymentReference}. Your order will be confirmed after the seller verifies it.</span></div></div> : null}
+    {!expired && order.paymentMethod !== "razorpay" && order.paymentStatus === "PAID" && order.stage !== "Delivered" ? <div className="px-order-live-note" role="status"><Icon name="check"/><div><b>Payment confirmed ✓</b><span>Order placed successfully. {order.storeName} can now prepare your order.</span></div></div> : null}
+    {!expired && liveOrderUpdate?.orderId === order.id ? <div className="px-order-live-note px-order-status-note" role="status" aria-live="polite"><Icon name="orders"/><div><b>Live order update: {liveOrderUpdate.stage}</b><span>{order.storeName ?? "Your seller"} updated your order status just now.</span></div></div> : null}
+    {!expired && <DeliveryTracking key={order.id} deliveryId={order.riderDeliveryId}/>}<CustomerAfterSales key={`after-sale-${order.id}`} order={order}/>
+    <div className={order.stage === "Delivered" ? "px-tracking-hero is-delivered" : "px-tracking-hero"}><span>ORDER {order.id}</span><h1>{customerOrderLabel(order)}</h1>{!expired && order.eta && <p>{order.eta}</p>}{!expired && order.orderStatus === "PLACED" && order.stage !== "Delivered" ? <div className="px-tracking-steps">{["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].map((stage, index) => { const reached = index <= ["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].indexOf(order.stage); return <div className={reached ? "done" : ""} key={stage}><i>{reached ? <Icon name="check"/> : index + 1}</i><b>{stage}</b></div>; })}</div> : null}</div>
     <div className="px-dashboard-grid"><section className="px-panel px-panel-wide"><span>ORDER DETAILS</span><h2>{order.items?.length ?? 1} item{(order.items?.length ?? 1) > 1 ? "s" : ""} · ₹{order.total.toLocaleString("en-IN")}</h2><p>Tracking ID: {order.trackingId ?? "PX-TRK-78451236"} · Fulfilment: {order.fulfilment ?? "delivery"} · Seller: {order.storeName ?? "Your selected seller"}</p><p>Payment: <b>{customerPaymentLabel(order)}</b>{order.paymentReference ? ` · Reference ${order.paymentReference}` : ""}</p>{order.stage === "Delivered" ? <button className="px-btn px-btn-red" onClick={() => setRatingDismissed(false)}>{rated || alreadyRated ? "Rating submitted" : "Rate this store"}</button> : null}{order.paymentStatus === "VERIFICATION_FAILED" ? <form className="px-payment-retry" onSubmit={(event) => { event.preventDefault(); setPaymentError(""); void submitUpiReference(order.id, replacementReference).then(() => { setPaymentMessage("Updated reference submitted for seller verification."); setReplacementReference(""); }).catch((reason) => setPaymentError(reason instanceof Error ? reason.message : "Reference could not be submitted.")); }}><h3>Payment not found</h3><p>Check your UPI app and enter the correct UTR. Do not pay again unless you are certain the first payment failed.</p><label>Correct UPI transaction reference<input value={replacementReference} onChange={(event) => setReplacementReference(event.target.value.toUpperCase())} required/></label><button className="px-btn px-btn-red" type="submit">Submit corrected reference</button>{paymentMessage ? <span role="status">{paymentMessage}</span> : null}{paymentError ? <span role="alert">{paymentError}</span> : null}</form> : null}</section><section className="px-panel"><span>NEED HELP?</span><h2>We’re here for this order</h2><p>Report delivery, fitment, payment, return, or wrong-part issues.</p><Link href={`/support?order=${order.id}`} className="px-btn px-btn-outline">Contact us</Link></section></div>
     <BuyAgain currentOrderId={order.id}/>
     {ratingOpen && order.storeId ? <RatingDialog orderId={order.id} storeId={order.storeId} storeName={order.storeName ?? "your selected store"} close={() => setRatingDismissed(true)} submit={async (stars, comment) => { await addRating({ orderId: order.id, storeId: order.storeId!, stars, comment }); setRated(true); setRatingDismissed(true); }}/> : null}
@@ -262,23 +274,27 @@ export function SellPage() {
   return <div className="px-page px-container"><div className="px-page-title"><span>PARTX SELLER ONBOARDING</span><h1>Add your store</h1><p>Create a demo storefront now. Product and price management can later write directly to Firebase.</p></div><div className="px-support-layout"><form className="px-panel px-form" onSubmit={save}><div className="px-form-grid"><label>Store name<input name="name" required/></label><label>Owner name<input name="owner" required/></label><label>Phone<input name="phone" required/></label><label>GSTIN<input name="gstin"/></label><label>Business hours<input name="hours" defaultValue="9:00 AM – 8:00 PM" required/></label><label>Delivery radius (km)<input name="radius" type="number" defaultValue="8" required/></label></div><LocationPicker value={storeLocation} onSelect={setStoreLocation} label="Store address"/><button className="px-btn px-btn-red" type="submit">{saved ? `${saved} added` : "Add store"}</button></form><aside className="px-support-aside"><div><span>DEMO NETWORK</span><h2>{stores.length} stores onboarded</h2><p>Each store can later manage its own parts, stock, pricing and delivery radius from a protected seller dashboard.</p></div><Link href="/shop" className="px-btn px-btn-outline">View customer catalog</Link></aside></div></div>;
 }
 
+function isPaymentExpired(order: PartXOrder) {
+  return order.paymentStatus === "PAYMENT_EXPIRED" || order.orderStatus === "PAYMENT_EXPIRED";
+}
+
 function customerOrderLabel(order: PartXOrder) {
+  if (isPaymentExpired(order)) return "Payment expired";
   if (order.paymentStatus === "PENDING") return "Payment pending";
   if (order.paymentStatus === "PAYMENT_SUBMITTED") return "Payment verification pending";
   if (order.paymentStatus === "VERIFICATION_FAILED") return "Payment not found";
-  if (order.paymentStatus === "PAYMENT_EXPIRED") return "Payment expired";
   if (order.paymentStatus === "PAYMENT_CANCELLED") return "Payment cancelled";
   return order.stage;
 }
 
 function customerPaymentLabel(order: PartXOrder) {
+  if (isPaymentExpired(order)) return "Payment attempt expired";
   if (order.codCollected) return "Cash collected by PartX rider";
   if (order.paymentMethod === "razorpay") return order.paymentStatus === "PAID" ? "Razorpay test payment confirmed" : "Razorpay test payment pending";
   if (order.paymentStatus === "PAID" || order.paymentStatus === "Paid") return "Payment confirmed";
   if (order.paymentStatus === "PAYMENT_DUE" || order.paymentStatus === "COD") return "Pay on delivery or pickup";
   if (order.paymentStatus === "PAYMENT_SUBMITTED") return "Awaiting seller verification";
   if (order.paymentStatus === "VERIFICATION_FAILED") return "Seller could not find payment";
-  if (order.paymentStatus === "PAYMENT_EXPIRED") return "Payment attempt expired";
   if (order.paymentStatus === "PAYMENT_CANCELLED") return "Payment attempt cancelled";
   return "Payment not submitted";
 }
