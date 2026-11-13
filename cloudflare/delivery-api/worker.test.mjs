@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { before, beforeEach, after, test } from "node:test";
 import { createRequire } from "node:module";
 import { createWorker } from "./worker.js";
@@ -13,6 +14,7 @@ const app = initializeApp({ projectId }, "worker-tests"); const db = getFirestor
 const point = { address: "Hill Road, Bandra West, Mumbai 400050", latitude: 19.06, longitude: 72.83 };
 const origin = "https://motopart-web.vercel.app";
 let privateKey, publicJwk, env, worker;
+let gatewayOrder, gatewayPayment, gatewayTransfer, gatewayCreates;
 let databaseRequests = 0; let notifications = []; let abortNextCommit = false;
 const pending = [];
 
@@ -38,6 +40,20 @@ async function testFetch(url, options = {}) {
     return fetch(url.replace("https://firestore.googleapis.com", `http://${process.env.FIRESTORE_EMULATOR_HOST}`), options);
   }
   if (url.startsWith("https://fcm.googleapis.com/")) { notifications.push(JSON.parse(options.body)); return Response.json({ name: "test-message" }); }
+  if (url.startsWith("https://api.razorpay.com/v1/")) {
+    const path = new URL(url).pathname;
+    assert.equal(options.headers.Authorization, "Basic " + Buffer.from("rzp_test_fixture:checkout-secret").toString("base64"));
+    if (path === "/v1/orders" && options.method === "POST") {
+      gatewayCreates++;
+      if (gatewayOrder) return Response.json({ error: { description: "Duplicate request" } }, { status: 400 });
+      const input = JSON.parse(options.body);
+      gatewayOrder = { ...input, id: "order_fixture" };
+      return Response.json(gatewayOrder);
+    }
+    if (path === "/v1/orders") return Response.json({ items: gatewayOrder ? [{ ...gatewayOrder, transfers: { items: gatewayTransfer ? [gatewayTransfer] : [] } }] : [] });
+    if (path === "/v1/payments/pay_fixture") return Response.json(gatewayPayment);
+    if (path === "/v1/orders/order_fixture/payments") return Response.json({ items: gatewayPayment ? [gatewayPayment] : [] });
+  }
   throw new Error("Unexpected external request in Worker test");
 }
 before(async () => {
@@ -49,7 +65,8 @@ before(async () => {
 });
 beforeEach(async () => {
   await Promise.all(pending.splice(0));
-  for (const name of ["users", "riders", "stores", "orders", "deliveries", "deliverySecrets", "notificationDevices"]) await db.recursiveDelete(db.collection(name));
+  for (const name of ["users", "riders", "stores", "orders", "products", "razorpayOrders", "deliveries", "deliverySecrets", "notificationDevices"]) await db.recursiveDelete(db.collection(name));
+  gatewayOrder = gatewayPayment = gatewayTransfer = null; gatewayCreates = 0;
   databaseRequests = 0; notifications = []; abortNextCommit = false; worker = createWorker({ fetcher: testFetch });
   const order = { customerId: "customer", sellerId: "seller", storeId: "store", customer: { name: "Customer", phone: "+919999999999" }, status: "Packed", stage: "Preparing", orderStatus: "PLACED", paymentStatus: "PAYMENT_DUE", paymentMethod: "cod", fulfilment: "delivery", totalAmount: 199, total: 199, deliveryLocation: point, items: [{ productName: "Filter", partNumber: "F1", quantity: 2 }, { productName: "Oil", partNumber: "O1", quantity: 1 }] };
   await Promise.all([
@@ -61,8 +78,8 @@ beforeEach(async () => {
   ]);
 });
 after(async () => { await Promise.all(pending); await db.terminate(); await deleteApp(app); });
-async function call(name, uid, data, extra = {}) {
-  const response = await worker.fetch(new Request(`https://delivery.test/${name}`, { method: "POST", headers: { "Content-Type": "application/json", Origin: origin, ...(uid ? { Authorization: `Bearer ${await token(uid, extra)}` } : {}) }, body: JSON.stringify({ data }) }), env, { waitUntil: (promise) => pending.push(promise) });
+async function call(name, uid, data, extra = {}, config = env) {
+  const response = await worker.fetch(new Request(`https://delivery.test/${name}`, { method: "POST", headers: { "Content-Type": "application/json", Origin: origin, ...(uid ? { Authorization: `Bearer ${await token(uid, extra)}` } : {}) }, body: JSON.stringify({ data }) }), config, { waitUntil: (promise) => pending.push(promise) });
   return { status: response.status, body: await response.json() };
 }
 async function assigned() {
@@ -209,4 +226,78 @@ test("a verified customer can request a return and an exchange, each with its ow
     assert.equal((await orderRef.get()).data().deliveredAt.toMillis(), originalOrder.deliveredAt.toMillis());
   }
   assert.equal(tracking.size, 3);
+});
+
+const checkoutId = "PX-TEST-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const signed = (secret, value) => createHmac("sha256", secret).update(value).digest("hex");
+
+test("Razorpay Test Mode prices from Firestore, verifies capture once, alerts the seller and dispatches without COD or earnings", async () => {
+  const config = { ...env, RAZORPAY_TEST_KEY_ID: "rzp_test_fixture", RAZORPAY_TEST_KEY_SECRET: "checkout-secret",
+    RAZORPAY_TEST_WEBHOOK_SECRET: "webhook-secret", RAZORPAY_TEST_CUSTOMERS: "customer", RAZORPAY_TEST_STORES: "store",
+    RAZORPAY_TEST_LINKED_ACCOUNTS: '{"store":"acc_fixture"}' };
+  await Promise.all([
+    db.doc("users/customer").update({ activeRole: "customer" }),
+    db.doc("orders/order").update({ deliveryPricingV1: true }),
+    db.doc("orders/other-order").update({ deliveryPricingV1: true }),
+    db.doc("users/customer/deliveryLocations/default").set(point),
+    db.doc("stores/store").update({ status: "approved" }),
+    db.doc("products/filter").set({ name: "Filter", partNumber: "F1", storeId: "store", sellerId: "seller", status: "published", stock: 5, sellingPrice: 249.95 }),
+  ]);
+  const invoke = (name, uid, data, verified = true) => call(name, uid, data, { email_verified: verified }, config);
+  const begin = { orderId: checkoutId, storeId: "store", fulfilment: "delivery", items: [{ productId: "filter", quantity: 2 }], expectedAmount: 49990 };
+  assert.deepEqual((await invoke("razorpayAvailability", "seller", { storeId: "store" })).body.data, { enabled: true, route: true });
+  assert.equal((await invoke("razorpayAvailability", "other-customer", { storeId: "store" })).body.data.enabled, false);
+  assert.equal((await invoke("razorpayCreateOrder", "customer", begin, false)).status, 403);
+  assert.equal((await invoke("razorpayCreateOrder", "other-customer", begin)).status, 403);
+  assert.equal((await invoke("razorpayCreateOrder", "customer", { ...begin, expectedAmount: 100 })).status, 409);
+  assert.equal((await invoke("razorpayCreateOrder", "customer", { ...begin, items: [{ productId: "filter", quantity: 6 }] })).status, 409);
+  const start = await invoke("razorpayCreateOrder", "customer", begin);
+  assert.equal(start.status, 200, JSON.stringify(start.body));
+  assert.equal(start.body.data.amount, 49990);
+  assert.deepEqual(gatewayOrder.transfers, [{ account: "acc_fixture", amount: 49990, currency: "INR" }]);
+  assert.equal((await invoke("razorpayCreateOrder", "customer", begin)).body.data.razorpayOrderId, "order_fixture");
+  assert.equal(gatewayCreates, 1);
+  const ref = db.doc(`orders/${checkoutId}`);
+  assert.equal((await ref.get()).data().orderStatus, "PAYMENT_PENDING");
+  assert.equal((await db.doc("users/customer/deliveryOffer/first").get()).exists, false);
+  const verify = { orderId: checkoutId, paymentId: "pay_fixture", signature: signed("checkout-secret", "order_fixture|pay_fixture") };
+  assert.equal((await invoke("razorpayVerify", "customer", { ...verify, signature: "0".repeat(64) })).status, 403);
+  assert.equal((await invoke("razorpayVerify", "other-customer", verify)).status, 404);
+  gatewayPayment = { id: "pay_fixture", order_id: "order_fixture", currency: "INR", amount: 49990, amount_refunded: 0, captured: false, status: "authorized" };
+  assert.deepEqual((await invoke("razorpayVerify", "customer", verify)).body.data, { paid: false });
+  gatewayPayment = { ...gatewayPayment, captured: true, status: "captured", amount: 100 };
+  assert.equal((await invoke("razorpayVerify", "customer", verify)).status, 409);
+  gatewayPayment.amount = 49990;
+  const event = JSON.stringify({ event: "payment.captured", payload: { payment: { entity: gatewayPayment } } });
+  const webhook = (signature) => worker.fetch(new Request("https://delivery.test/razorpayWebhook", {
+    method: "POST", headers: { "X-Razorpay-Signature": signature }, body: event,
+  }), config, { waitUntil: (promise) => pending.push(promise) });
+  assert.equal((await webhook("0".repeat(64))).status, 403);
+  const signature = signed("webhook-secret", event);
+  assert.equal((await webhook(signature)).status, 200);
+  assert.equal((await webhook(signature)).status, 200);
+  assert.deepEqual((await invoke("razorpayVerify", "customer", verify)).body.data, { paid: true });
+  assert.equal((await ref.get()).data().orderStatus, "PLACED");
+  assert.equal((await db.doc("products/filter").get()).data().stock, 5);
+  await Promise.all(pending.splice(0));
+  assert.equal(notifications.filter((item) => item.message.data.title === "Razorpay test order ready to pack").length, 1);
+
+  gatewayTransfer = { id: "trf_fixture", recipient: "acc_fixture", amount: 49990, currency: "INR", status: "processed" };
+  assert.deepEqual((await invoke("razorpayTransferStatus", "seller", { orderId: checkoutId })).body.data, { status: "processed" });
+  assert.equal((await invoke("razorpayTransferStatus", "other-customer", { orderId: checkoutId })).status, 404);
+  await ref.update({ status: "Packed", stage: "Preparing" });
+  const assignment = await call("dispatchPartXDelivery", "seller", { action: "assign", orderId: checkoutId, riderId: "rider" });
+  assert.equal(assignment.status, 200, JSON.stringify(assignment.body));
+  const deliveryId = assignment.body.data.deliveryId;
+  const deliveryRef = db.doc(`deliveries/${deliveryId}`);
+  const job = (await deliveryRef.get()).data();
+  assert.equal(job.razorpayTest, true);
+  assert.equal(job.codAmount, 0);
+  assert.equal(job.earnings, null);
+  assert.equal((await call("updatePartXDelivery", "rider", { action: "accept", deliveryId })).status, 200);
+  assert.equal((await call("updatePartXDelivery", "rider", { action: "pickup", deliveryId })).status, 200);
+  const { code } = (await call("getPartXDeliveryCode", "customer", { deliveryId })).body.data;
+  assert.equal((await call("updatePartXDelivery", "rider", { action: "complete", deliveryId, code })).status, 200);
+  assert.equal((await deliveryRef.get()).data().earnings, null);
+  assert.equal((await ref.get()).data().stage, "Delivered");
 });

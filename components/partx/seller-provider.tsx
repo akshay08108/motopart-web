@@ -156,10 +156,13 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     const unsubscribers = storeIds.map((storeId) => onSnapshot(
       query(collection(firestore, "orders"), where("storeId", "==", storeId)),
       (snapshot) => {
+        const previous = ordersByStore.get(storeId) ?? [];
         ordersByStore.set(storeId, snapshot.docs.map((orderDoc) => toSellerOrder(orderDoc.id, orderDoc.data())));
         refreshOrders();
         if (initializedStores.has(storeId)) {
-          const incomingChange = snapshot.docChanges().find((change) => change.type === "added" || (change.type === "modified" && change.doc.data().paymentStatus === "PAYMENT_SUBMITTED"));
+          const incomingChange = snapshot.docChanges().find((change) => change.type === "added" || (change.type === "modified" && (change.doc.data().paymentStatus === "PAYMENT_SUBMITTED"
+            || (change.doc.data().paymentMethod === "razorpay" && change.doc.data().paymentStatus === "PAID"
+              && previous.some((order) => order.id === change.doc.id && order.paymentStatus !== "PAID")))));
           if (incomingChange) {
             const incoming = toSellerOrder(incomingChange.doc.id, incomingChange.doc.data());
             if (isFulfilmentOrder(incoming)) setActiveAlert({ kind: "order", order: incoming });
@@ -585,7 +588,7 @@ function toSellerOrder(id: string, data: Record<string, unknown>): FirestoreSell
     items,
     fulfilment: data.fulfilment === "pickup" || data.fulfilment === "garage" ? data.fulfilment : "delivery",
     paymentStatus: isSellerPaymentStatus(data.paymentStatus) ? data.paymentStatus : "Paid",
-    paymentMethod: data.paymentMethod === "upi" || data.paymentMethod === "cod" ? data.paymentMethod : undefined,
+    paymentMethod: data.paymentMethod === "upi" || data.paymentMethod === "cod" || data.paymentMethod === "razorpay" ? data.paymentMethod : undefined,
     paymentReference: typeof data.upiTransactionReference === "string" ? data.upiTransactionReference : typeof data.paymentReference === "string" ? data.paymentReference : undefined,
     paymentVerifiedAt: data.paymentVerifiedAt ? "Verified" : undefined,
     paymentVerifiedBy: typeof data.paymentVerifiedBy === "string" ? data.paymentVerifiedBy : undefined,

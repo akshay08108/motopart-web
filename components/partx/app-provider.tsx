@@ -446,6 +446,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     ordersReady,
     freeDeliveriesRemaining,
     placeOrder: async (fulfilment, payment, attemptId, expectedFee) => {
+      if (payment !== "upi" && payment !== "cod") throw new Error("Choose a supported direct payment method.");
       if (!user || !customerId || firebaseAuth.currentUser?.uid !== customerId) throw new Error("Sign in as a customer before placing an order.");
       if (!resolvedCart.length) throw new Error("Your cart is empty.");
       if (fulfilment === "garage" && (!garages[0] || garages[0].location.address.trim().length < 10)) throw new Error("Add a garage with a full address before ordering a garage delivery.");
@@ -885,7 +886,7 @@ function toCustomerOrder(id: string, data: Record<string, unknown>): PartXOrder 
     total: Number(data.totalAmount ?? data.total ?? 0),
     items,
     fulfilment: data.fulfilment === "pickup" || data.fulfilment === "garage" ? data.fulfilment : "delivery",
-    paymentMethod: data.paymentMethod === "upi" || data.paymentMethod === "cod" ? data.paymentMethod : undefined,
+    paymentMethod: data.paymentMethod === "upi" || data.paymentMethod === "cod" || data.paymentMethod === "razorpay" ? data.paymentMethod : undefined,
     paymentStatus: isSellerPaymentStatus(data.paymentStatus) ? data.paymentStatus : undefined,
     orderStatus: isPaymentOrderStatus(data.orderStatus) ? data.orderStatus : undefined,
     paymentReference: typeof data.upiTransactionReference === "string" ? data.upiTransactionReference : typeof data.paymentReference === "string" ? data.paymentReference : undefined,

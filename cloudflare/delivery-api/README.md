@@ -64,3 +64,22 @@ npx wrangler@4 deploy --dry-run --config cloudflare/delivery-api/wrangler.jsonc
 The tests use local demo projects, generated test signing keys and mocked OAuth/FCM responses. No production credentials or customer orders are needed.
 
 Workers Free currently limits CPU time per request and daily requests. Firestore Spark also has daily read/write quotas. Monitor both during the pilot; being on Spark does not make database operations unlimited. SMS is not used for delivery codes: the customer sees the code in their order page.
+
+## Razorpay Test Mode
+
+Enable the pilot only for the store and verified Firebase customer account used for testing. From the existing Worker's **Settings → Variables and Secrets**, configure:
+
+| Name | Value |
+| --- | --- |
+| `RAZORPAY_TEST_KEY_ID` | Razorpay Test Mode Key ID starting with `rzp_test_` |
+| `RAZORPAY_TEST_KEY_SECRET` | Test Key Secret as an encrypted Worker secret |
+| `RAZORPAY_TEST_WEBHOOK_SECRET` | A separate strong random value as an encrypted Worker secret |
+| `RAZORPAY_TEST_STORES` | Comma-separated Firestore store document IDs |
+| `RAZORPAY_TEST_CUSTOMERS` | Comma-separated Firebase Authentication UIDs of verified test customers |
+| `RAZORPAY_TEST_LINKED_ACCOUNTS` | Optional JSON object mapping Firestore store IDs to Razorpay Route test linked account IDs, for example `{"store-example":"acc_Example"}` |
+
+In Razorpay **Test Mode**, enable automatic capture and add the URL `https://partx-delivery-api.akshaysinghkam.workers.dev/razorpayWebhook` in **Account & Settings → Webhooks**. Select `payment.captured` and enter the exact value used for the Worker webhook secret. Test via the customer checkout and confirm the captured payment appears on the seller's Payments page and in their fulfilment queue. For delivery, assign a test rider and use the customer's delivery OTP. The rider sees no cash due and the test run adds no payable earnings.
+
+Route is optional for testing capture. With an active test linked account, the order requests a transfer of the parts subtotal to that seller. The test transfer status is available on the seller's Payments page. Test orders do not consume delivery offers, change inventory, or allow store ratings. Native customer checkout requires a rebuilt Android app containing the Razorpay bridge.
+
+This pilot accepts only test keys. Live activation, inventory reservation and capture, fee allocation, refund/reversal handling, settlement reconciliation and rider payouts require separate live flows. COD uses the existing cash collection workflow.

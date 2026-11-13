@@ -4,6 +4,7 @@
   "compatibility_date": "2026-11-05",
   "workers_dev": true,
   "preview_urls": false,
+  "keep_vars": true,
   "vars": {
     "FIREBASE_PROJECT_ID": "partx-production",
     "ALLOWED_ORIGINS": "https://motopart-web.vercel.app,https://localhost"

@@ -10,7 +10,7 @@ export function BuyAgain({ currentOrderId }: { currentOrderId?: string }) {
   if (!user) return null;
   const seen = new Set<string>();
   const previous = [...orders.filter((order) => order.id === currentOrderId), ...orders.filter((order) => order.id !== currentOrderId)];
-  const items = previous.filter((order) => order.stage === "Delivered" && order.orderStatus !== "PAYMENT_CANCELLED")
+  const items = previous.filter((order) => order.stage === "Delivered" && order.paymentMethod !== "razorpay" && order.orderStatus !== "PAYMENT_CANCELLED")
     .flatMap((order) => (order.items ?? []).flatMap((line) => {
       // Reorders use the current seller listing, price and stock, never old order prices.
       const store = stores.find((candidate) => candidate.id === (line.storeId ?? order.storeId));

@@ -20,6 +20,7 @@ import type { AppLocation } from "@/lib/types";
 import { deliveryRates, quoteDelivery } from "@/lib/delivery-pricing";
 import { BuyAgain } from "./buy-again";
 import { DeliveryLocationButton } from "./delivery-location-button";
+import { checkRazorpayPayment, openRazorpayCheckout, useRazorpayAvailability } from "@/lib/razorpay";
 
 export { CartPage } from "./cart-page";
 
@@ -37,10 +38,11 @@ export function CheckoutPage() {
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
   const selectedStore = stores.find((store) => store.id === cart[0]?.storeId) ?? stores[0];
+  const razorpay = useRazorpayAvailability(selectedStore?.sellerId ? selectedStore.id : undefined, user?.id);
   const quote = quoteDelivery(fulfilment, selectedStore, fulfilment === "garage" ? garages[0]?.location : location, freeDeliveriesRemaining > 0);
   const quoteReady = fulfilment === "pickup" || ordersReady;
   const paymentSettings = selectedStore?.paymentSettings;
-  const enabledMethods = ([paymentSettings?.upiEnabled ? "upi" : null, paymentSettings?.codEnabled ? "cod" : null].filter(Boolean)) as PaymentMethod[];
+  const enabledMethods = ([razorpay?.enabled ? "razorpay" : null, paymentSettings?.upiEnabled ? "upi" : null, paymentSettings?.codEnabled ? "cod" : null].filter(Boolean)) as PaymentMethod[];
   const selectedPayment = enabledMethods.includes(payment) ? payment : enabledMethods[0];
   const upiUri = attempt?.sellerUpiIdSnapshot && attempt.sellerUpiNameSnapshot && isValidUpiId(attempt.sellerUpiIdSnapshot) ? createUpiUri({ upiId: attempt.sellerUpiIdSnapshot, displayName: attempt.sellerUpiNameSnapshot, amount: attempt.total, orderId: attempt.id }) : "";
   if (!cart.length) return <div className="px-page px-container"><div className="px-empty"><h1>No items to checkout</h1><p>Add a part before starting checkout.</p><Link href="/shop" className="px-btn px-btn-red">Shop parts</Link></div></div>;
@@ -61,6 +63,20 @@ export function CheckoutPage() {
     if (!canStart) return;
     setProcessing(true); setCheckoutError("");
     try {
+      if (selectedPayment === "razorpay") {
+        if (cart.some((line) => line.storeId !== selectedStore.id)) throw new Error("Check out items from one store at a time.");
+        const key = `${attemptKey}:razorpay`;
+        const saved = readBrowserStorage("session", key);
+        const orderId = saved ?? `PX-TEST-${crypto.randomUUID().replaceAll("-", "")}`;
+        writeBrowserStorage("session", key, orderId);
+        const result = await openRazorpayCheckout({
+          orderId, storeId: selectedStore.id, fulfilment, expectedAmount: Math.round(total * 100),
+          items: cart.map((line) => ({ productId: line.product.id, quantity: line.quantity })),
+        });
+        if (result.paid) removeBrowserStorage("session", key);
+        router.push(orderHref(result.orderId));
+        return;
+      }
       let order;
       try {
         order = await placeOrder(fulfilment, selectedPayment, savedAttemptId, quote.fee);
@@ -131,7 +147,7 @@ export function CheckoutPage() {
     {fulfilment === "delivery" ? <div className="px-delivery-checkout"><span><Icon name="pin"/>{location.address || "Choose your delivery address"}</span><button type="button" className="px-btn px-btn-outline" disabled={Boolean(attempt)} onClick={() => setLocationOpen(true)}>Change delivery location</button></div> : null}
     {locationOpen && <DeliveryLocationPicker close={() => setLocationOpen(false)}/>}
     <div className="px-checkout-layout"><div className="px-checkout-main"><section className="px-panel"><div className="px-step-title"><b>1</b><div><span>FULFILMENT</span><h2>Delivery, pickup or garage</h2></div></div><div className="px-choice-grid">{(["delivery", "pickup", "garage"] as FulfilmentMode[]).map((mode) => <button className={fulfilment === mode ? "active" : ""} disabled={Boolean(attempt) || processing} onClick={() => setFulfilment(mode)} key={mode}><Icon name={mode === "delivery" ? "pin" : mode === "pickup" ? "orders" : "garage"}/><b>{mode === "delivery" ? "Deliver to me" : mode === "pickup" ? "Self pickup" : "Send to garage"}</b><span>{mode === "delivery" ? location.address : mode === "pickup" ? selectedStore.name : garages[0]?.name ?? "Add a garage first"}</span></button>)}</div></section>
-      <section className="px-panel"><div className="px-step-title"><b>2</b><div><span>PAYMENT</span><h2>Pay the seller directly</h2></div></div>{enabledMethods.length ? <div className="px-payment-row">{enabledMethods.map((method) => <button className={selectedPayment === method ? "active" : ""} disabled={Boolean(attempt)} onClick={() => setPayment(method)} key={method}>{method === "upi" ? "UPI" : "Cash on delivery"}</button>)}</div> : <div className="px-payment-unavailable" role="alert">{selectedStore.name} has not enabled UPI or cash on delivery. Contact the seller before ordering.</div>}{selectedPayment === "upi" && !attempt ? <div className="px-upi"><b>Direct seller payment</b><span>Your payment goes to {selectedStore.name}. PartX does not collect or hold the money.</span></div> : null}{attempt && upiUri ? <div className="px-upi-payment"><div className="px-upi-heading"><span>PAYMENT ATTEMPT {attempt.id}</span><h3>Paying ₹{attempt.total.toLocaleString("en-IN")} to {attempt.sellerUpiNameSnapshot}</h3><p>UPI ID <b>{attempt.sellerUpiIdSnapshot}</b><button type="button" onClick={() => navigator.clipboard?.writeText(attempt.sellerUpiIdSnapshot ?? "")}><Icon name="copy"/>Copy</button></p></div>{showQr ? <div className="px-upi-qr"><QRCodeSVG value={upiUri} size={210} level="M" marginSize={2}/><small>Exact amount · INR · Reference {attempt.id}</small></div> : null}<div className="px-upi-apps"><b>Choose a UPI app</b><div><button type="button" onClick={() => launchUpi("com.google.android.apps.nbu.paisa.user")}>Google Pay</button><button type="button" onClick={() => launchUpi("com.phonepe.app")}>PhonePe</button><button type="button" onClick={() => launchUpi("net.one97.paytm")}>Paytm</button><button type="button" onClick={() => launchUpi("in.org.npci.upiapp")}>BHIM</button></div><small>Use a verified merchant UPI ID. A personal VPA may be flagged or declined by the selected payment app.</small></div><div className="px-upi-actions"><button type="button" className="px-btn px-btn-red" onClick={() => launchUpi()}>Open installed UPI apps <Icon name="arrow"/></button><button type="button" className="px-btn px-btn-outline" onClick={() => setShowQr((shown) => !shown)}>{showQr ? "Hide QR code" : "Show QR code"}</button></div><form className="px-utr-form" onSubmit={submitReference}><h3>Payment completed?</h3><p>Only continue after the UPI app shows success. Copy the bank UTR—not the PartX order ID—from the payment details.</p><label>Bank UTR (12–35 digits)<input value={transactionReference} onChange={(event) => setTransactionReference(event.target.value.replace(/\D/g, "").slice(0, 35))} autoComplete="off" inputMode="numeric" pattern="[0-9]{12,35}" minLength={12} maxLength={35} required placeholder="e.g. 423456789012"/></label><label className="px-payment-confirm"><input type="checkbox" checked={paymentConfirmed} onChange={(event) => setPaymentConfirmed(event.target.checked)}/>I confirm my UPI app showed this payment as successful.</label><div><button className="px-btn px-btn-red" type="submit" disabled={processing || !upiAppOpened || !paymentConfirmed || !isValidUtr(transactionReference)}>{processing ? "Submitting…" : "Send for seller verification"}</button><button className="px-btn px-btn-outline" type="button" onClick={() => launchUpi()}>Try another UPI app</button><button className="px-link-button" type="button" onClick={() => void cancel()}>Cancel</button></div><small>This is still manual verification. The seller must confirm the money in their bank or UPI statement before accepting the order.</small></form></div> : null}</section></div>
+      <section className="px-panel"><div className="px-step-title"><b>2</b><div><span>PAYMENT</span><h2>Payment method</h2></div></div>{enabledMethods.length ? <div className="px-payment-row">{enabledMethods.map((method) => <button className={selectedPayment === method ? "active" : ""} disabled={Boolean(attempt)} onClick={() => setPayment(method)} key={method}>{method === "razorpay" ? "Razorpay (test)" : method === "upi" ? "UPI" : "Cash on delivery"}</button>)}</div> : <div className="px-payment-unavailable" role="alert">{selectedStore.name} has not enabled an available payment method. Contact the seller before ordering.</div>}{selectedPayment === "razorpay" && <div className="px-upi"><b>Razorpay Test Mode</b><span>No real money moves. This order is for testing.</span></div>}{selectedPayment === "upi" && !attempt ? <div className="px-upi"><b>Direct seller payment</b><span>Your payment goes to {selectedStore.name}. PartX does not collect or hold the money.</span></div> : null}{attempt && upiUri ? <div className="px-upi-payment"><div className="px-upi-heading"><span>PAYMENT ATTEMPT {attempt.id}</span><h3>Paying ₹{attempt.total.toLocaleString("en-IN")} to {attempt.sellerUpiNameSnapshot}</h3><p>UPI ID <b>{attempt.sellerUpiIdSnapshot}</b><button type="button" onClick={() => navigator.clipboard?.writeText(attempt.sellerUpiIdSnapshot ?? "")}><Icon name="copy"/>Copy</button></p></div>{showQr ? <div className="px-upi-qr"><QRCodeSVG value={upiUri} size={210} level="M" marginSize={2}/><small>Exact amount · INR · Reference {attempt.id}</small></div> : null}<div className="px-upi-apps"><b>Choose a UPI app</b><div><button type="button" onClick={() => launchUpi("com.google.android.apps.nbu.paisa.user")}>Google Pay</button><button type="button" onClick={() => launchUpi("com.phonepe.app")}>PhonePe</button><button type="button" onClick={() => launchUpi("net.one97.paytm")}>Paytm</button><button type="button" onClick={() => launchUpi("in.org.npci.upiapp")}>BHIM</button></div><small>Use a verified merchant UPI ID. A personal VPA may be flagged or declined by the selected payment app.</small></div><div className="px-upi-actions"><button type="button" className="px-btn px-btn-red" onClick={() => launchUpi()}>Open installed UPI apps <Icon name="arrow"/></button><button type="button" className="px-btn px-btn-outline" onClick={() => setShowQr((shown) => !shown)}>{showQr ? "Hide QR code" : "Show QR code"}</button></div><form className="px-utr-form" onSubmit={submitReference}><h3>Payment completed?</h3><p>Only continue after the UPI app shows success. Copy the bank UTR—not the PartX order ID—from the payment details.</p><label>Bank UTR (12–35 digits)<input value={transactionReference} onChange={(event) => setTransactionReference(event.target.value.replace(/\D/g, "").slice(0, 35))} autoComplete="off" inputMode="numeric" pattern="[0-9]{12,35}" minLength={12} maxLength={35} required placeholder="e.g. 423456789012"/></label><label className="px-payment-confirm"><input type="checkbox" checked={paymentConfirmed} onChange={(event) => setPaymentConfirmed(event.target.checked)}/>I confirm my UPI app showed this payment as successful.</label><div><button className="px-btn px-btn-red" type="submit" disabled={processing || !upiAppOpened || !paymentConfirmed || !isValidUtr(transactionReference)}>{processing ? "Submitting…" : "Send for seller verification"}</button><button className="px-btn px-btn-outline" type="button" onClick={() => launchUpi()}>Try another UPI app</button><button className="px-link-button" type="button" onClick={() => void cancel()}>Cancel</button></div><small>This is still manual verification. The seller must confirm the money in their bank or UPI statement before accepting the order.</small></form></div> : null}</section></div>
       <aside className="px-summary"><span>ORDER SUMMARY</span><h2>{cart.length} item{cart.length > 1 ? "s" : ""}</h2><div className="px-checkout-products">{cart.map(({ product, quantity, unitPrice }) => <div key={product.id}><Image src={product.imageUrl ?? `/parts/${product.imageIndex}-v2.png`} alt={product.name} width={72} height={58}/><span><b>{product.name}</b><small>{product.partNumber} · Qty {quantity}</small></span><strong>₹{((unitPrice ?? product.price) * quantity).toLocaleString("en-IN")}</strong></div>)}</div><p className="px-summary-seller"><Icon name="store"/>Seller: <b>{cart[0]?.storeName ?? cart[0]?.product.seller}</b></p><dl><div><dt>Subtotal</dt><dd>₹{cartTotal.toLocaleString("en-IN")}</dd></div><div><dt>Delivery</dt><dd>{delivery === null ? (quoteBlocked ? "Unavailable" : "Checking…") : delivery ? `₹${delivery}` : "FREE"}</dd></div><div><dt>Discount</dt><dd>₹0</dd></div><div className="total"><dt>Total amount</dt><dd>{delivery === null ? "—" : `₹${total.toLocaleString("en-IN")}`}</dd></div></dl>{!currentAttempt && !quoteReady && <p className="px-form-note" role="status">Checking your delivery offer…</p>}
       {quoteBlocked && <div className="px-checkout-error" role="status">
         <strong>Delivery unavailable</strong>
@@ -143,7 +159,7 @@ export function CheckoutPage() {
         {["address", "address-pin", "range"].includes(quote.reason ?? "") && (fulfilment === "garage"
           ? <Link className="px-btn px-btn-outline" href="/garage">Update garage</Link>
           : <button type="button" className="px-btn px-btn-outline" onClick={() => setLocationOpen(true)}>Update delivery address</button>)}
-      </div> : !attempt ? <button className="px-btn px-btn-red px-btn-large" onClick={() => void startPayment()} disabled={processing || !selectedPayment || !canStart}>{processing ? "Creating order…" : delivery === null ? "Checking delivery fee…" : selectedPayment === "cod" ? `Place COD order · ₹${total.toLocaleString("en-IN")}` : `Continue with UPI · ₹${total.toLocaleString("en-IN")}`}<Icon name="arrow"/></button> : <div className="px-payment-pending-note"><b>Order not confirmed yet</b><span>Submit your UTR, then wait for the seller to verify the payment.</span></div>}<small>PartX charges 0% commission and does not hold this payment.</small></aside></div>
+      </div> : !attempt ? <button className="px-btn px-btn-red px-btn-large" onClick={() => void startPayment()} disabled={processing || !selectedPayment || !canStart}>{processing ? "Creating order…" : delivery === null ? "Checking delivery fee…" : selectedPayment === "cod" ? `Place COD order · ₹${total.toLocaleString("en-IN")}` : selectedPayment === "razorpay" ? `Pay with Razorpay (test) · ₹${total.toLocaleString("en-IN")}` : `Continue with UPI · ₹${total.toLocaleString("en-IN")}`}<Icon name="arrow"/></button> : <div className="px-payment-pending-note"><b>Order not confirmed yet</b><span>Submit your UTR, then wait for the seller to verify the payment.</span></div>}<small>PartX charges 0% commission and does not hold this payment.</small></aside></div>
   </div>;
 }
 
@@ -154,7 +170,7 @@ export function OrdersPage() {
 
 export function OrderDetailPage({ id }: { id: string }) {
   const params = useSearchParams();
-  const { orders, liveOrderUpdate, submitUpiReference } = usePartX();
+  const { orders, ordersReady, liveOrderUpdate, submitUpiReference } = usePartX();
   const { addRating, ratings } = useSeller();
   const order = orders.find((item) => item.id === id);
   const alreadyRated = ratings.some((rating) => rating.orderId === id);
@@ -163,13 +179,36 @@ export function OrderDetailPage({ id }: { id: string }) {
   const [replacementReference, setReplacementReference] = useState("");
   const [paymentMessage, setPaymentMessage] = useState("");
   const [paymentError, setPaymentError] = useState("");
-  const ratingOpen = order?.stage === "Delivered" && Boolean(order.storeId) && !alreadyRated && !ratingDismissed;
-  if (!order) return <div className="px-page px-container px-order-detail-page"><div className="px-empty"><h1>Order not found</h1><Link href="/orders" className="px-btn px-btn-dark">View all orders</Link></div></div>;
+  const [checkingPayment, setCheckingPayment] = useState(false);
+  const refreshRazorpay = async (resume = false) => {
+    setCheckingPayment(true); setPaymentError(""); setPaymentMessage("");
+    try {
+      const status = await checkRazorpayPayment(id);
+      const result = resume && !status.paid ? await openRazorpayCheckout({ orderId: id, resume: true }) : status;
+      setPaymentMessage(result.paid ? "Razorpay confirmed the test payment." : "No captured payment yet. If you just paid, wait a moment and check again.");
+    } catch (reason) {
+      setPaymentError(reason instanceof Error ? reason.message : "Could not check the payment. Try again.");
+    } finally {
+      setCheckingPayment(false);
+    }
+  };
+  const ratingOpen = order?.paymentMethod !== "razorpay" && order?.stage === "Delivered" && Boolean(order.storeId) && !alreadyRated && !ratingDismissed;
+  if (!order) return <div className="px-page px-container px-order-detail-page"><div className="px-empty"><h1>{ordersReady ? "Order not found" : "Loading order…"}</h1><Link href="/orders" className="px-btn px-btn-dark">View all orders</Link></div></div>;
   return <div className="px-page px-container px-order-detail-page">
     <Link href="/orders" className="px-back-link"><Icon name="back"/>All orders</Link>
+    {order.paymentMethod === "razorpay" && <section className="px-panel">
+      <b>Razorpay Test Mode</b>
+      <p>{order.paymentStatus === "PAID" ? "Test payment confirmed. No money was charged." : "This order is awaiting payment confirmation from Razorpay."}</p>
+      {order.paymentStatus !== "PAID" && <div className="px-upi-actions">
+        <button className="px-btn px-btn-red" disabled={checkingPayment} onClick={() => void refreshRazorpay(true)}>Open test checkout</button>
+        <button className="px-btn px-btn-outline" disabled={checkingPayment} onClick={() => void refreshRazorpay()}>{checkingPayment ? "Checking…" : "Check payment status"}</button>
+      </div>}
+      {paymentMessage && <p role="status">{paymentMessage}</p>}
+      {paymentError && <p role="alert">{paymentError}</p>}
+    </section>}
     {params.get("placed") === "1" && order.orderStatus === "PLACED" && liveOrderUpdate?.orderId !== order.id ? <div className="px-order-live-note" role="status"><Icon name="bell"/><div><b>Order placed successfully</b><span>{order.paymentMethod === "cod" ? `Pay ₹${order.total.toLocaleString("en-IN")} on delivery or pickup.` : `The seller was notified and this order is now in their packing queue.`}</span></div></div> : null}
     {params.get("payment") === "submitted" || order.paymentStatus === "PAYMENT_SUBMITTED" ? <div className="px-order-live-note px-payment-review-note" role="status"><Icon name="orders"/><div><b>Payment verification in progress</b><span>₹{order.total.toLocaleString("en-IN")} payment submitted to {order.storeName}. Reference: {order.paymentReference}. Your order will be confirmed after the seller verifies it.</span></div></div> : null}
-    {order.paymentStatus === "PAID" && order.stage !== "Delivered" ? <div className="px-order-live-note" role="status"><Icon name="check"/><div><b>Payment confirmed ✓</b><span>Order placed successfully. {order.storeName} can now prepare your order.</span></div></div> : null}
+    {order.paymentMethod !== "razorpay" && order.paymentStatus === "PAID" && order.stage !== "Delivered" ? <div className="px-order-live-note" role="status"><Icon name="check"/><div><b>Payment confirmed ✓</b><span>Order placed successfully. {order.storeName} can now prepare your order.</span></div></div> : null}
     {liveOrderUpdate?.orderId === order.id ? <div className="px-order-live-note px-order-status-note" role="status" aria-live="polite"><Icon name="orders"/><div><b>Live order update: {liveOrderUpdate.stage}</b><span>{order.storeName ?? "Your seller"} updated your order status just now.</span></div></div> : null}
     <DeliveryTracking key={order.id} deliveryId={order.riderDeliveryId}/><CustomerAfterSales key={`after-sale-${order.id}`} order={order}/>
     <div className={order.stage === "Delivered" ? "px-tracking-hero is-delivered" : "px-tracking-hero"}><span>ORDER {order.id}</span><h1>{customerOrderLabel(order)}</h1><p>{order.eta}</p>{order.orderStatus === "PLACED" && order.stage !== "Delivered" ? <div className="px-tracking-steps">{["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].map((stage, index) => { const reached = index <= ["Confirmed", "Preparing", "Picked up", "On the way", "Delivered"].indexOf(order.stage); return <div className={reached ? "done" : ""} key={stage}><i>{reached ? <Icon name="check"/> : index + 1}</i><b>{stage}</b></div>; })}</div> : null}</div>
@@ -232,6 +271,7 @@ function customerOrderLabel(order: PartXOrder) {
 
 function customerPaymentLabel(order: PartXOrder) {
   if (order.codCollected) return "Cash collected by PartX rider";
+  if (order.paymentMethod === "razorpay") return order.paymentStatus === "PAID" ? "Razorpay test payment confirmed" : "Razorpay test payment pending";
   if (order.paymentStatus === "PAID" || order.paymentStatus === "Paid") return "Payment confirmed";
   if (order.paymentStatus === "PAYMENT_DUE" || order.paymentStatus === "COD") return "Pay on delivery or pickup";
   if (order.paymentStatus === "PAYMENT_SUBMITTED") return "Awaiting seller verification";

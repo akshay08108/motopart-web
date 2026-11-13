@@ -120,5 +120,13 @@ export function createFirestoreRest({ projectId, accessToken, fetcher = fetch, b
     } });
     return rows.filter((row) => row.document).map((row) => ({ name: row.document.name, ...decodeFields(row.document.fields ?? {}) }));
   }
-  return { doc: document, runTransaction, notificationDevices, removeDevice: (name) => request(name, undefined, "DELETE") };
+  async function ordersForCustomer(userId) {
+    const rows = await request(`${root}:runQuery`, { structuredQuery: {
+      from: [{ collectionId: "orders" }],
+      select: { fields: [{ fieldPath: "fulfilment" }, { fieldPath: "paymentStatus" }, { fieldPath: "deliveryPricingV1" }, { fieldPath: "paymentMethod" }] },
+      where: { fieldFilter: { field: { fieldPath: "customerId" }, op: "EQUAL", value: { stringValue: userId } } },
+    } });
+    return rows.filter((row) => row.document).map((row) => decodeFields(row.document.fields ?? {}));
+  }
+  return { doc: document, runTransaction, notificationDevices, ordersForCustomer, removeDevice: (name) => request(name, undefined, "DELETE") };
 }

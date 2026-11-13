@@ -16,7 +16,7 @@ export type RiderDelivery = {
   riderId: string; riderName: string; riderPhone: string;
   storeId: string; storeName: string; storePhone: string; customerId: string;
   customer: { name: string; phone: string }; pickup: DeliveryPoint; destination: DeliveryPoint;
-  fulfilment: "delivery" | "garage"; state: DeliveryState; totalAmount: number; codAmount: number; codCollected: boolean;
+  fulfilment: "delivery" | "garage"; state: DeliveryState; totalAmount: number; codAmount: number; codCollected: boolean; razorpayTest?: boolean;
   items: Array<{ name: string; partNumber: string; quantity: number; imageUrl?: string }>;
   assignedAt?: number; acceptedAt?: number; pickedUpAt?: number; deliveredAt?: number; closedAt?: number;
   issue?: { reason: string; reportedAt?: number }; closedReason?: string;

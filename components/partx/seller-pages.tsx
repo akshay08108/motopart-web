@@ -13,6 +13,7 @@ import { StoreLocationEditor } from "./store-location-editor";
 import { SellerAfterSales, SellerRideLookup } from "./after-sales";
 import { SellerDispatch } from "./seller-dispatch";
 import { isRemovedPayment } from "@/lib/seller-payment-state";
+import { checkRazorpayTransfer, useRazorpayAvailability, type RazorpayTransferStatus } from "@/lib/razorpay";
 
 const packStatuses: SellerOrderStatus[] = ["New", "Accepted", "Packing"];
 const nextStatus: Partial<Record<SellerOrderStatus, SellerOrderStatus>> = { New: "Accepted", Accepted: "Packing", Packing: "Packed", Packed: "Dispatched", Dispatched: "Delivered" };
@@ -51,7 +52,8 @@ export function SellerOrdersPage() {
 }
 
 export function SellerPaymentsPage() {
-  const { paymentVerifications, confirmPayment, markPaymentNotFound, setPaymentArchived } = useSeller();
+  const { sellerOrders, paymentVerifications, confirmPayment, markPaymentNotFound, setPaymentArchived } = useSeller();
+  const razorpayOrders = sellerOrders.filter((order) => order.paymentMethod === "razorpay" && order.paymentStatus === "PAID");
   const [removed, setRemoved] = useState(false);
   const removedPayments = paymentVerifications.filter(isRemovedPayment);
   const visiblePayments = paymentVerifications.filter((order) => !isRemovedPayment(order));
@@ -77,7 +79,39 @@ export function SellerPaymentsPage() {
     {message ? <div className="sx-product-success" role="status"><Icon name="check"/>{message}</div> : null}{error ? <p className="sx-form-error" role="alert">{error}</p> : null}
     <section className="sx-payment-verification-list">{shown.map((order) => <article className="sx-panel" key={order.id}><header><div><span>PARTX ORDER</span><h2>{order.id}</h2><p>{order.paymentSubmittedAt ?? order.placedAt}</p></div><Status status={order.paymentStatus === "VERIFICATION_FAILED" ? "Payment not found" : "Awaiting verification"}/></header><div className="sx-payment-amount"><span>Amount customer says they paid</span><strong>₹{order.total.toLocaleString("en-IN")}</strong><small>Direct to {order.sellerUpiNameSnapshot ?? order.storeName}</small></div><dl><div><dt>UPI reference / UTR</dt><dd>{order.paymentReference ?? "Not submitted"}</dd></div><div><dt>Customer</dt><dd>{order.customer.name}<small>{order.customer.phone}</small></dd></div><div><dt>Order items</dt><dd className="sx-payment-order-items">{sellerOrderItems(order).map((item) => <span key={`${item.productId ?? item.partNumber}-${item.productName}`}>{item.productName}<small>{item.partNumber} · Qty {item.quantity}</small></span>)}<small>{labelFulfilment(order.fulfilment)}</small></dd></div></dl>
       {removed ? <footer><span>Removed from the active list. Order and payment history are retained.</span><button className="sx-secondary" disabled={workingId === order.id} onClick={() => void act(order.id,"restore")}>Restore to list</button></footer> : order.paymentStatus === "PAYMENT_SUBMITTED" ? <footer><button className="sx-secondary" disabled={workingId === order.id} onClick={() => void act(order.id,"missing")}>Payment not found</button><button className="sx-primary" disabled={workingId === order.id} onClick={() => void act(order.id,"confirm")}>{workingId === order.id ? "Updating…" : "Confirm payment received"}</button></footer> : <footer><span>Waiting for a corrected reference. Removing this entry keeps its history; a new submission reappears automatically.</span><button className="sx-secondary" disabled={workingId === order.id} onClick={() => void act(order.id,"remove")}><Icon name="trash"/>{workingId === order.id ? "Removing…" : "Remove from list"}</button></footer>}
-    </article>)}{!shown.length ? <div className="sx-panel sx-payment-empty"><Icon name="check"/><h2>{removed ? "No removed payments" : "No payments waiting"}</h2><p>{removed ? "Entries you remove can be restored from here." : "New and corrected UPI submissions will appear here in real time."}</p></div> : null}</section></>;
+    </article>)}{!shown.length ? <div className="sx-panel sx-payment-empty"><Icon name="check"/><h2>{removed ? "No removed payments" : "No payments waiting"}</h2><p>{removed ? "Entries you remove can be restored from here." : "New and corrected UPI submissions will appear here in real time."}</p></div> : null}</section>
+    {razorpayOrders.length > 0 && <section className="sx-panel sx-settings">
+      <PanelHead title="Razorpay test payments"/>
+      <p>Razorpay confirmed these test payments. No funds were settled to your bank.</p>
+      <div className="sx-announcement-list">{razorpayOrders.map((order) => <RazorpayTestReceipt key={order.id} order={order}/>)}</div>
+    </section>}</>;
+}
+
+
+const testTransferLabels: Record<RazorpayTransferStatus, string> = {
+  unlinked: "Route linked account was not configured for this order.",
+  pending: "Test transfer pending.",
+  processed: "Test transfer processed.",
+  failed: "Test transfer failed. Check the Razorpay Route dashboard.",
+  reversed: "Test transfer reversed.",
+  partially_reversed: "Test transfer partially reversed.",
+};
+
+function RazorpayTestReceipt({ order }: { order: SellerOrder }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const refresh = async () => {
+    setBusy(true);
+    try { setMessage(testTransferLabels[(await checkRazorpayTransfer(order.id)).status]); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Could not check the test transfer."); }
+    finally { setBusy(false); }
+  };
+  return <article>
+    <div><Link href={sellerOrderHref(order.id)}>{order.id}</Link><p>₹{order.total.toLocaleString("en-IN")} · {order.storeName}</p>
+      {message && <p role="status">{message}</p>}
+    </div>
+    <button type="button" className="sx-secondary" onClick={() => void refresh()} disabled={busy}>{busy ? "Checking…" : "Check test transfer"}</button>
+  </article>;
 }
 
 export function SellerPackingPage() {
@@ -164,6 +198,7 @@ export function SellerSettingsPage() {
   const [savingAnnouncement, setSavingAnnouncement] = useState(false);
   const { user, stores } = usePartX();
   const currentStore = stores.find((store) => user?.storeIds?.includes(store.id));
+  const razorpay = useRazorpayAvailability(currentStore?.id, user?.id);
   const { paymentSettings, announcements, savePaymentSettings, addAnnouncement, setAnnouncementActive, removeAnnouncement } = useSeller();
   const defaults: StorePaymentSettings = paymentSettings ?? { upiId: "", upiDisplayName: user?.storeName ?? "", upiEnabled: false, codEnabled: true };
   const savePayments = async (event: FormEvent<HTMLFormElement>) => {
@@ -202,7 +237,7 @@ export function SellerSettingsPage() {
         {currentStore ? <StoreLocationEditor key={currentStore.id} storeId={currentStore.id} initialLocation={currentStore.location}/> : null}
       </section>
       <form className="sx-panel sx-settings sx-payment-settings" key={`${defaults.upiId}-${defaults.upiEnabled}-${defaults.codEnabled}`} onSubmit={(event) => void savePayments(event)}>
-        <PanelHead title="Payment settings"/><p>Customers pay your store directly. PartX currently charges 0% commission and does not hold the payment.</p><label>UPI ID<input name="upiId" defaultValue={defaults.upiId} placeholder="store@bank" autoComplete="off"/></label><label>UPI account / display name<input name="upiDisplayName" defaultValue={defaults.upiDisplayName} placeholder="Name customers see in their UPI app"/></label><label className="sx-check"><input name="upiEnabled" type="checkbox" defaultChecked={defaults.upiEnabled}/>Enable direct UPI payments</label><label className="sx-check"><input name="codEnabled" type="checkbox" defaultChecked={defaults.codEnabled}/>Enable cash on delivery</label>{paymentError ? <p className="sx-form-error" role="alert">{paymentError}</p> : null}<button className="sx-primary" type="submit" disabled={savingPayment}>{savingPayment ? "Saving…" : paymentSaved ? "Payment settings saved" : "Save payment settings"}</button><small>Use a verified business/merchant UPI ID. Personal VPAs may be flagged or declined by payment apps. PartX never asks for or stores your UPI PIN.</small>
+        <PanelHead title="Payment settings"/>{razorpay?.enabled && <p><b>Razorpay Test Mode enabled.</b> {razorpay.route ? "Linked seller account configured for test transfers." : "Test checkout is available. Route is required to test seller transfers."}</p>}<p>Customers pay your store directly. PartX currently charges 0% commission and does not hold the payment.</p><label>UPI ID<input name="upiId" defaultValue={defaults.upiId} placeholder="store@bank" autoComplete="off"/></label><label>UPI account / display name<input name="upiDisplayName" defaultValue={defaults.upiDisplayName} placeholder="Name customers see in their UPI app"/></label><label className="sx-check"><input name="upiEnabled" type="checkbox" defaultChecked={defaults.upiEnabled}/>Enable direct UPI payments</label><label className="sx-check"><input name="codEnabled" type="checkbox" defaultChecked={defaults.codEnabled}/>Enable cash on delivery</label>{paymentError ? <p className="sx-form-error" role="alert">{paymentError}</p> : null}<button className="sx-primary" type="submit" disabled={savingPayment}>{savingPayment ? "Saving…" : paymentSaved ? "Payment settings saved" : "Save payment settings"}</button><small>Use a verified business/merchant UPI ID. Personal VPAs may be flagged or declined by payment apps. PartX never asks for or stores your UPI PIN.</small>
       </form>
       <section className="sx-panel sx-settings sx-announcement-settings">
         <PanelHead title="Live banner updates"/><p>Publish a new arrival or announce an upcoming seller. Active updates appear instantly on the customer banner.</p>
@@ -219,6 +254,7 @@ function SellerOrderTable({ orders, all=false }: { orders: SellerOrder[]; all?: 
 }
 
 function paymentLabel(order: SellerOrder) {
+  if (order.paymentMethod === "razorpay") return order.paymentStatus === "PAID" ? "Razorpay test payment verified" : "Razorpay test payment pending";
   if (order.codCollected) return "Cash collected by rider · Settlement to reconcile";
   if (order.paymentStatus === "COD" || order.paymentStatus === "PAYMENT_DUE") return "Collect on delivery";
   if (order.paymentStatus === "Pending" || order.paymentStatus === "PENDING") return "Payment pending";

@@ -115,6 +115,7 @@ export function createRiderCore(database, runtime) {
         const storeLocation = location(store.location, store.address);
         const customerLocation = request ? location(request.customerLocation) : location(order.deliveryLocation);
         const kind = request?.kind ?? "delivery";
+        const razorpayTest = order.paymentMethod === "razorpay" && order.paymentMode === "test";
         const pickup = kind === "return" ? customerLocation : storeLocation;
         const destination = kind === "return" ? storeLocation : customerLocation;
         const pickupId = kind === "replacement" ? `PX-PICKUP-${randomUUID()}` : null;
@@ -132,7 +133,8 @@ export function createRiderCore(database, runtime) {
           customer: { name: text(order.customer?.name) || "Customer", phone: text(order.customer?.phone, 30) },
           pickup, destination, fulfilment: order.fulfilment, items, totalAmount: amount,
           codAmount: !request && order.paymentMethod === "cod" && order.paymentStatus === "PAYMENT_DUE" ? amount : 0,
-          codCollected: false, state: "ASSIGNED", issue: null, earnings: assignmentEarnings(rider.earningsPolicy, input.oneWayDistanceKm),
+          ...(razorpayTest ? { razorpayTest: true } : {}),
+          codCollected: false, state: "ASSIGNED", issue: null, earnings: razorpayTest ? null : assignmentEarnings(rider.earningsPolicy, input.oneWayDistanceKm),
           assignedAt: stamp(), updatedAt: stamp(),
         });
         tx.update(riderRef, { activeDeliveryId: deliveryId, updatedAt: stamp() });

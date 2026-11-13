@@ -250,7 +250,7 @@ export type StoreRating = {
 };
 
 export type FulfilmentMode = "delivery" | "pickup" | "garage";
-export type PaymentMethod = "upi" | "card" | "cod";
+export type PaymentMethod = "upi" | "card" | "cod" | "razorpay";
 export type SellerPaymentStatus = "Paid" | "Pending" | "COD" | "PENDING" | "PAYMENT_SUBMITTED" | "PAID" | "VERIFICATION_FAILED" | "PAYMENT_DUE" | "PAYMENT_EXPIRED" | "PAYMENT_CANCELLED";
 export type PaymentOrderStatus = "PAYMENT_PENDING" | "PAYMENT_VERIFICATION_PENDING" | "PLACED" | "PAYMENT_EXPIRED" | "PAYMENT_CANCELLED";
 

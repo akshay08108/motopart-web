@@ -1,6 +1,7 @@
 import { createRiderCore, DeliveryError } from "../../functions/rider-core.js";
 import { createFirestoreRest, RestTimestamp, SERVER_TIMESTAMP } from "./firestore-rest.js";
 import { createGoogleAuth, readServiceAccount } from "./google-auth.js";
+import { createRazorpay, paymentEndpoints } from "./razorpay.js";
 
 const operations = { dispatchPartXDelivery: "dispatch", updatePartXDelivery: "riderAction", getPartXDeliveryCode: "customerCode", requestPartXAfterSale: "requestAfterSale" };
 const statuses = { "invalid-argument": 400, unauthenticated: 401, "permission-denied": 403, "not-found": 404, "failed-precondition": 409, "already-exists": 409, "resource-exhausted": 429, unavailable: 503 };
@@ -15,8 +16,7 @@ const runtime = {
   },
   equalCodes: (a, b) => { if (a.length !== b.length) return false; let difference = 0; for (let index = 0; index < a.length; index++) difference |= a.charCodeAt(index) ^ b.charCodeAt(index); return difference === 0; },
 };
-async function readInput(request) {
-  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) throw new DeliveryError("invalid-argument", "Use a JSON request.");
+async function readBody(request, limit) {
   const reader = request.body?.getReader();
   if (!reader) throw new DeliveryError("invalid-argument", "Delivery details are required.");
   const chunks = []; let size = 0;
@@ -24,18 +24,24 @@ async function readInput(request) {
     while (true) {
       const { done, value } = await reader.read(); if (done) break;
       size += value.length;
-      if (size > 8192) { await reader.cancel(); throw new DeliveryError("invalid-argument", "The request is too large."); }
+      if (size > limit) { await reader.cancel(); throw new DeliveryError("invalid-argument", "The request is too large."); }
       chunks.push(value);
     }
     const bytes = new Uint8Array(size); let offset = 0;
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-    const parsed = JSON.parse(new TextDecoder().decode(bytes));
+    return bytes;
+  } finally { reader.releaseLock(); }
+}
+async function readInput(request) {
+  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) throw new DeliveryError("invalid-argument", "Use a JSON request.");
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(await readBody(request, 8192)));
     if (!parsed || typeof parsed.data !== "object" || !parsed.data || Array.isArray(parsed.data)) throw new Error();
     return parsed.data;
   } catch (error) {
     if (error instanceof DeliveryError) throw error;
     throw new DeliveryError("invalid-argument", "Valid delivery details are required.");
-  } finally { reader.releaseLock(); }
+  }
 }
 
 function notificationFor(name, input, delivery) {
@@ -51,12 +57,21 @@ export function createWorker({ fetcher = fetch } = {}) {
   const auth = createGoogleAuth(fetcher);
   async function notify(database, env, name, input, result) {
     if (name === "getPartXDeliveryCode" || name === "requestPartXAfterSale") return;
+    if (paymentEndpoints.has(name)) {
+      if (!result.newlyPaid) return;
+      return sendNotification(database, env, result.orderId, {
+        userId: result.sellerId, title: "Razorpay test order ready to pack",
+        body: `Test payment confirmed for order ${result.orderId}.`, link: `/seller/orders/${result.orderId}`,
+      });
+    }
     const id = result.deliveryId || input.deliveryId;
     if (!id) return;
     const delivery = (await database.doc(`deliveries/${id}`).get()).data();
     if (!delivery) return;
     const message = notificationFor(name, input, delivery);
-    if (!message) return;
+    if (message) await sendNotification(database, env, id, message);
+  }
+  async function sendNotification(database, env, id, message) {
     const devices = await database.notificationDevices(message.userId);
     for (let index = 0; index < devices.length; index += 5) {
       await Promise.allSettled(devices.slice(index, index + 5).map(async (device) => {
@@ -85,23 +100,34 @@ export function createWorker({ fetcher = fetch } = {}) {
         try { readServiceAccount(env); return json({ service: "PartX delivery API", version: "cloudflare-v1", configuration: "present" }, 200, cors); }
         catch { return json({ service: "PartX delivery API", version: "cloudflare-v1", configuration: "required" }, 503, cors); }
       }
-      if (!operations[name]) return json({ error: { code: "not-found", message: "Delivery endpoint not found." } }, 404, cors);
+      const payment = paymentEndpoints.has(name);
+      if (!Object.hasOwn(operations, name) && !payment) return json({ error: { code: "not-found", message: "Delivery endpoint not found." } }, 404, cors);
       if (request.method !== "POST") return json({ error: { code: "invalid-argument", message: "Use POST for delivery actions." } }, 405, { ...cors, Allow: "POST, OPTIONS" });
       try {
+        const isWebhook = name === "razorpayWebhook";
         const authorization = request.headers.get("Authorization");
-        if (!authorization?.startsWith("Bearer ")) throw new DeliveryError("unauthenticated", "Sign in to continue.");
-        const uid = await auth.verifyFirebaseToken(authorization.slice(7), env.FIREBASE_PROJECT_ID, name === "requestPartXAfterSale");
-        const input = await readInput(request);
+        if (!isWebhook && !authorization?.startsWith("Bearer ")) throw new DeliveryError("unauthenticated", "Sign in to continue.");
+        const uid = isWebhook ? null : await auth.verifyFirebaseToken(authorization.slice(7), env.FIREBASE_PROJECT_ID, name === "requestPartXAfterSale" || name === "razorpayCreateOrder");
+        const input = isWebhook ? {} : await readInput(request);
         readServiceAccount(env);
         const database = createFirestoreRest({ projectId: env.FIREBASE_PROJECT_ID, accessToken: () => auth.accessToken(env), fetcher });
-        const service = createRiderCore(database, runtime);
-        const result = await service[operations[name]](uid, input);
+        const razorpay = payment ? createRazorpay(database, env, fetcher) : null;
+        let result;
+        switch (name) {
+          case "razorpayAvailability": result = await razorpay.availability(uid, input); break;
+          case "razorpayCreateOrder": result = await razorpay.start(uid, input); break;
+          case "razorpayVerify": result = await razorpay.verify(uid, input); break;
+          case "razorpayStatus": result = await razorpay.status(uid, input); break;
+          case "razorpayTransferStatus": result = await razorpay.transferStatus(uid, input); break;
+          case "razorpayWebhook": result = await razorpay.webhook(await readBody(request, 65536), request.headers.get("X-Razorpay-Signature")); break;
+          default: result = await createRiderCore(database, runtime)[operations[name]](uid, input);
+        }
         context.waitUntil(notify(database, env, name, input, result).catch(() => console.warn("PartX delivery notification could not be sent")));
-        return json({ data: result }, 200, cors);
+        return json({ data: result.newlyPaid ? { paid: true, ...(isWebhook ? { received: true } : {}) } : result }, 200, cors);
       } catch (error) {
         if (error instanceof DeliveryError) return json({ error: { code: error.code, message: error.message } }, statuses[error.code] ?? 500, cors);
         console.error("PartX delivery request failed", typeof error.code === "string" ? error.code : "INTERNAL");
-        return json({ error: { code: "unavailable", message: "The delivery service is temporarily unavailable. Please try again." } }, 503, cors);
+        return json({ error: { code: "unavailable", message: payment ? "The payment service is temporarily unavailable. Please try again." : "The delivery service is temporarily unavailable. Please try again." } }, 503, cors);
       }
     },
   };
