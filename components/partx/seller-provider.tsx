@@ -590,7 +590,8 @@ function toSellerOrder(id: string, data: Record<string, unknown>): FirestoreSell
     paymentStatus: isSellerPaymentStatus(data.paymentStatus) ? data.paymentStatus : "Paid",
     paymentMethod: data.paymentMethod === "upi" || data.paymentMethod === "cod" || data.paymentMethod === "razorpay" ? data.paymentMethod : undefined,
     paymentReference: typeof data.upiTransactionReference === "string" ? data.upiTransactionReference : typeof data.paymentReference === "string" ? data.paymentReference : undefined,
-    paymentVerifiedAt: data.paymentVerifiedAt ? "Verified" : undefined,
+    paymentVerifiedAt: formatDeliveryTime(data.paymentVerifiedAt),
+    paymentVerifiedAtMillis: firestoreTime(data.paymentVerifiedAt),
     paymentVerifiedBy: typeof data.paymentVerifiedBy === "string" ? data.paymentVerifiedBy : undefined,
     paymentMode: data.paymentMode === "live" ? "live" : "test",
     orderStatus: data.orderStatus === "PAYMENT_PENDING" || data.orderStatus === "PAYMENT_VERIFICATION_PENDING" || data.orderStatus === "PLACED" || data.orderStatus === "PAYMENT_EXPIRED" || data.orderStatus === "PAYMENT_CANCELLED" ? data.orderStatus : undefined,
@@ -603,7 +604,7 @@ function toSellerOrder(id: string, data: Record<string, unknown>): FirestoreSell
     deliveredAt: formatDeliveryTime(data.deliveredAt),
     deadline: String(data.deadline ?? "Review order"),
     status: isSellerOrderStatus(data.status) ? data.status : "New",
-    total: Number(data.total ?? 0),
+    total: Number(data.totalAmount ?? data.total ?? 0),
     createdAt: data.createdAt,
   };
 }

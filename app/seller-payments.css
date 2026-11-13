@@ -6,3 +6,64 @@
 .sx-notification-error button{border:1px solid currentColor;color:inherit;background:transparent;border-radius:5px;min-height:40px;padding:7px 12px;font:700 12px "Plus Jakarta Sans Variable",sans-serif;cursor:pointer}
 .sx-payment-verification-list footer{flex-wrap:wrap;gap:12px}.sx-payment-verification-list footer>span{flex:1;min-width:180px;line-height:1.8}.sx-payment-verification-list footer button{flex-shrink:0;min-height:44px}.sx-payment-verification-list footer button svg{width:16px;height:16px}
 @media(max-width:700px){.sx-payment-tabs{gap:8px}.sx-payment-tabs button{flex:1;justify-content:center;font-size:11px;padding:10px 12px}.sx-payment-verification-list footer>span{min-width:0;flex-basis:100%}.sx-payment-verification-list footer button{width:100%}.sx-notification-error{font-size:12px}}
+
+.sx-razorpay-payments {
+  margin-block: 18px;
+  scroll-margin-top: 90px;
+}
+.sx-razorpay-payments .sx-panel-head {
+  gap: 12px;
+}
+.sx-razorpay-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 14px;
+}
+.sx-razorpay-summary > div {
+  display: grid;
+  gap: 4px;
+}
+.sx-razorpay-summary strong {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.sx-razorpay-summary span,
+.sx-razorpay-summary p,
+.sx-razorpay-order small {
+  color: var(--px-muted);
+  font-size: 12px;
+  margin: 0;
+}
+.sx-razorpay-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.sx-razorpay-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--px-line);
+}
+.sx-razorpay-order {
+  flex: 1 1 180px;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.sx-razorpay-order a {
+  justify-self: start;
+  color: var(--px-ink);
+  font-weight: 750;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.sx-razorpay-list li > strong {
+  font-variant-numeric: tabular-nums;
+}

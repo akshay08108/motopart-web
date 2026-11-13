@@ -202,6 +202,7 @@ export type SellerOrder = {
   paymentMethod?: PaymentMethod;
   paymentReference?: string;
   paymentVerifiedAt?: string;
+  paymentVerifiedAtMillis?: number;
   paymentVerifiedBy?: string;
   paymentMode?: "test" | "live";
   orderStatus?: PaymentOrderStatus;

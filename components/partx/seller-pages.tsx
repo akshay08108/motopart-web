@@ -34,6 +34,7 @@ export function SellerDashboardPage() {
       <Stat href="/seller/tickets" icon="ticket" label="Open tickets" value={openTickets.length} action="View tickets"/>
       <Stat href="/seller/reviews" icon="star" label="Store rating" value={rating.count ? `${rating.average.toFixed(1)} / 5` : "New"} action="View reviews"/>
     </div>
+    <RazorpayPayments orders={sellerOrders} preview/>
     <div className="sx-dashboard-main">
       <section className="sx-panel sx-orders-panel"><PanelHead title="Orders to pack" href="/seller/orders" link="View all orders"/><SellerOrderTable orders={toPack}/></section>
       <section className="sx-panel sx-attention"><PanelHead title="Needs attention" href="/seller/tickets" link="View all tickets"/>{openTickets.slice(0, 1).map((ticket) => <article key={ticket.id}><div><b>{ticket.id}</b><span>{ticket.priority}</span></div><small>Order ID</small><strong>{ticket.orderId}</strong><small>Issue</small><h3>{ticket.issue}</h3><small>Customer</small><b>{ticket.customer.name}</b><p>{ticket.createdAt}</p><Link className="sx-primary" href={`/seller/tickets?ticket=${ticket.id}`}>Review ticket</Link></article>)}</section>
@@ -53,7 +54,6 @@ export function SellerOrdersPage() {
 
 export function SellerPaymentsPage() {
   const { sellerOrders, paymentVerifications, confirmPayment, markPaymentNotFound, setPaymentArchived } = useSeller();
-  const razorpayOrders = sellerOrders.filter((order) => order.paymentMethod === "razorpay" && order.paymentStatus === "PAID");
   const [removed, setRemoved] = useState(false);
   const removedPayments = paymentVerifications.filter(isRemovedPayment);
   const visiblePayments = paymentVerifications.filter((order) => !isRemovedPayment(order));
@@ -80,13 +80,30 @@ export function SellerPaymentsPage() {
     <section className="sx-payment-verification-list">{shown.map((order) => <article className="sx-panel" key={order.id}><header><div><span>PARTX ORDER</span><h2>{order.id}</h2><p>{order.paymentSubmittedAt ?? order.placedAt}</p></div><Status status={order.paymentStatus === "VERIFICATION_FAILED" ? "Payment not found" : "Awaiting verification"}/></header><div className="sx-payment-amount"><span>Amount customer says they paid</span><strong>₹{order.total.toLocaleString("en-IN")}</strong><small>Direct to {order.sellerUpiNameSnapshot ?? order.storeName}</small></div><dl><div><dt>UPI reference / UTR</dt><dd>{order.paymentReference ?? "Not submitted"}</dd></div><div><dt>Customer</dt><dd>{order.customer.name}<small>{order.customer.phone}</small></dd></div><div><dt>Order items</dt><dd className="sx-payment-order-items">{sellerOrderItems(order).map((item) => <span key={`${item.productId ?? item.partNumber}-${item.productName}`}>{item.productName}<small>{item.partNumber} · Qty {item.quantity}</small></span>)}<small>{labelFulfilment(order.fulfilment)}</small></dd></div></dl>
       {removed ? <footer><span>Removed from the active list. Order and payment history are retained.</span><button className="sx-secondary" disabled={workingId === order.id} onClick={() => void act(order.id,"restore")}>Restore to list</button></footer> : order.paymentStatus === "PAYMENT_SUBMITTED" ? <footer><button className="sx-secondary" disabled={workingId === order.id} onClick={() => void act(order.id,"missing")}>Payment not found</button><button className="sx-primary" disabled={workingId === order.id} onClick={() => void act(order.id,"confirm")}>{workingId === order.id ? "Updating…" : "Confirm payment received"}</button></footer> : <footer><span>Waiting for a corrected reference. Removing this entry keeps its history; a new submission reappears automatically.</span><button className="sx-secondary" disabled={workingId === order.id} onClick={() => void act(order.id,"remove")}><Icon name="trash"/>{workingId === order.id ? "Removing…" : "Remove from list"}</button></footer>}
     </article>)}{!shown.length ? <div className="sx-panel sx-payment-empty"><Icon name="check"/><h2>{removed ? "No removed payments" : "No payments waiting"}</h2><p>{removed ? "Entries you remove can be restored from here." : "New and corrected UPI submissions will appear here in real time."}</p></div> : null}</section>
-    {razorpayOrders.length > 0 && <section className="sx-panel sx-settings">
-      <PanelHead title="Razorpay test payments"/>
-      <p>Razorpay confirmed these test payments. No funds were settled to your bank.</p>
-      <div className="sx-announcement-list">{razorpayOrders.map((order) => <RazorpayTestReceipt key={order.id} order={order}/>)}</div>
-    </section>}</>;
+    <RazorpayPayments orders={sellerOrders}/>
+  </>;
 }
 
+const razorpayCurrency = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" });
+
+function RazorpayPayments({ orders, preview = false }: { orders: SellerOrder[]; preview?: boolean }) {
+  const captures = orders.filter((order) => order.paymentMethod === "razorpay" && order.paymentMode === "test"
+    && order.paymentStatus === "PAID" && Number.isFinite(order.total) && order.total > 0)
+    .toSorted((a, b) => (b.paymentVerifiedAtMillis ?? 0) - (a.paymentVerifiedAtMillis ?? 0));
+  const total = captures.reduce((paise, order) => paise + Math.round(order.total * 100), 0) / 100;
+  const rows = preview ? captures.slice(0, 5) : captures;
+
+  return <section id="razorpay-payments" className="sx-panel sx-razorpay-payments" aria-label="Razorpay payments">
+    <PanelHead title="Razorpay payments" href={preview ? "/seller/payments#razorpay-payments" : undefined} link={preview ? "View all Razorpay payments" : undefined}/>
+    <div className="sx-razorpay-summary">
+      <div><span>Captured in Test Mode</span><strong>{razorpayCurrency.format(total)}</strong></div>
+      <p>{captures.length} captured {captures.length === 1 ? "payment" : "payments"} · Test Mode uses simulated funds.</p>
+    </div>
+    {rows.length > 0
+      ? <ul className="sx-razorpay-list">{rows.map((order) => <RazorpayTestReceipt key={order.id} order={order} showTransfer={!preview}/>)}</ul>
+      : <p className="sx-empty-row">Captured Razorpay test payments for your stores will appear here.</p>}
+  </section>;
+}
 
 const testTransferLabels: Record<RazorpayTransferStatus, string> = {
   unlinked: "Route linked account was not configured for this order.",
@@ -97,7 +114,7 @@ const testTransferLabels: Record<RazorpayTransferStatus, string> = {
   partially_reversed: "Test transfer partially reversed.",
 };
 
-function RazorpayTestReceipt({ order }: { order: SellerOrder }) {
+function RazorpayTestReceipt({ order, showTransfer }: { order: SellerOrder; showTransfer: boolean }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const refresh = async () => {
@@ -106,12 +123,16 @@ function RazorpayTestReceipt({ order }: { order: SellerOrder }) {
     catch (error) { setMessage(error instanceof Error ? error.message : "Could not check the test transfer."); }
     finally { setBusy(false); }
   };
-  return <article>
-    <div><Link href={sellerOrderHref(order.id)}>{order.id}</Link><p>₹{order.total.toLocaleString("en-IN")} · {order.storeName}</p>
-      {message && <p role="status">{message}</p>}
+  return <li>
+    <div className="sx-razorpay-order">
+      <Link href={sellerOrderHref(order.id)}>{order.id}</Link>
+      <small>{order.storeName}{order.paymentVerifiedAt ? ` · ${order.paymentVerifiedAt}` : ""}</small>
+      {order.paymentReference && <small>Payment ID {order.paymentReference}</small>}
+      {message && <small role="status">{message}</small>}
     </div>
-    <button type="button" className="sx-secondary" onClick={() => void refresh()} disabled={busy}>{busy ? "Checking…" : "Check test transfer"}</button>
-  </article>;
+    <strong>{razorpayCurrency.format(order.total)}</strong>
+    {showTransfer && <button type="button" className="sx-secondary" onClick={() => void refresh()} disabled={busy}>{busy ? "Checking…" : "Check test transfer"}</button>}
+  </li>;
 }
 
 export function SellerPackingPage() {
