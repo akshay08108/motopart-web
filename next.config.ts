@@ -5,7 +5,19 @@ const isCapacitorBuild = process.env.CAPACITOR_BUILD === "1";
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
-  ...(isCapacitorBuild ? { output: "export" as const, trailingSlash: true } : {}),
+  ...(isCapacitorBuild
+    ? { output: "export" as const, trailingSlash: true }
+    : {
+        async headers() {
+          return [{
+            source: "/android-releases.json",
+            headers: [
+              { key: "Access-Control-Allow-Origin", value: "https://localhost" },
+              { key: "Cache-Control", value: "no-store" },
+            ],
+          }];
+        },
+      }),
   images: {
     ...(isCapacitorBuild ? { unoptimized: true } : {}),
     remotePatterns: [

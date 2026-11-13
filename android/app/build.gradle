@@ -6,7 +6,7 @@ def partxAppRole = providers.environmentVariable('PARTX_ANDROID_APP')
 def partxApps = [
     customer: [id: 'com.partx.app', label: 'PartX', versionCode: 2, versionName: '1.1', signingFile: 'key.properties'],
     seller: [id: 'com.partx.seller', label: 'PartX Seller', versionCode: 1, versionName: '1.0', signingFile: 'seller-key.properties'],
-    rider: [id: 'com.partx.rider', label: 'PartX Rider', versionCode: 3, versionName: '0.3.0', signingFile: 'rider-key.properties'],
+    rider: [id: 'com.partx.rider', label: 'PartX Rider', versionCode: 4, versionName: '0.4.0', signingFile: 'rider-key.properties'],
 ]
 def partxApp = partxApps[partxAppRole]
 if (!partxApp) {

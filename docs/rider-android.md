@@ -25,6 +25,16 @@ The signed APK is `android/app/build/outputs/apk/release/app-release.apk`. The r
 
 The delivery Worker explicitly permits the local Android origin `https://localhost`. Firebase ID tokens, role checks, assignment checks and delivery code verification remain required.
 
+## Publish an app update
+
+Riders who install the first update-enabled APK will see an **Update available** prompt when a newer rider release is published. The prompt opens the signed APK download in the browser. Android handles the installation and may ask the rider to allow installs from that browser.
+
+1. Increase the rider `versionCode` and set the new `versionName` in `android/app/build.gradle`. Build the APK with `pnpm android:rider` and verify its signature matches the previous rider release. Keep the app ID `com.partx.rider`.
+2. Upload that APK to a public GitHub release in `akshay08108/motopart-web`. Use the tag `android-rider-<versionCode>` and the asset name `PartX-Rider.apk`. Target the commit used to build the APK. Verify the download opens without signing in.
+3. Update the `rider` entry in `public/android-releases.json` with that exact version code and name. Deploy the website after the APK download is ready. Confirm that the production manifest reports the new version and that an older update-enabled APK offers the download.
+
+Version 0.3.0 and earlier must install the first update-enabled APK manually. The manifest currently announces rider releases.
+
 ## Pilot limits
 
 - Live assignments, session sound and location sharing work while the app is open and connected. Android asks for location permission when the rider starts sharing. No background location permission is requested.

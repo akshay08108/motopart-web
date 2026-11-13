@@ -9,6 +9,7 @@ import { StatusBar, Style } from "@capacitor/status-bar";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { appRole, roleHome, roleLogin } from "@/lib/app-role";
+import { AndroidUpdateBanner } from "./android-update-banner";
 
 function dismissTopLayer() {
   const alertClose = document.querySelector<HTMLButtonElement>('[aria-label="Dismiss alert"]');
@@ -112,6 +113,8 @@ export function CapacitorBridge() {
     };
   }, [router]);
 
-  if (online) return null;
-  return <div className="px-offline-banner" role="status" aria-live="polite">You’re offline. Saved screens remain available; live orders, products, and payments will refresh when the connection returns.</div>;
+  return <>
+    <AndroidUpdateBanner/>
+    {!online && <div className="px-offline-banner" role="status" aria-live="polite">You’re offline. Saved screens remain available; live orders, products, and payments will refresh when the connection returns.</div>}
+  </>;
 }

@@ -692,3 +692,21 @@ html[data-native="true"] .px-auth-loading { min-height: 100dvh; padding-top: env
 
 .sx-store-location { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--px-line); }
 .sx-store-location h3, .sx-store-location p { margin: 0 0 8px; }
+
+.px-android-update {
+  position: fixed;
+  z-index: 120;
+  inset: max(12px, env(safe-area-inset-top)) 12px auto;
+  width: min(420px, calc(100% - 24px));
+  margin-inline: auto;
+  padding: 12px 16px;
+  border: 1px solid var(--px-line);
+  border-radius: 10px;
+  color: var(--ink);
+  background: var(--white);
+  box-shadow: var(--shadow);
+}
+.px-android-update p { margin: 0 0 8px; font-size: 14px; }
+.px-android-update > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.px-android-update .px-btn { min-height: 42px; }
+.px-android-update p[role="alert"] { margin: 8px 0 0; }
