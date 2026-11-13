@@ -697,20 +697,23 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       }
     },
     register: async (input) => {
-      if (input.role === "rider") throw new Error("PartX rider accounts are created by the operations team.");
       if (!input.name.trim() || !input.email.trim() || !input.mobile.trim() || input.password.length < 6) return false;
+      const name = input.name.trim();
+      const mobile = input.role === "rider" ? input.mobile.replace(/[\s()-]/g, "") : input.mobile.trim();
+      if (input.role === "rider" && (name.length > 120 || !/^\+?[1-9]\d{9,14}$/.test(mobile))) return false;
       let credential;
       try {
         credential = await createUserWithEmailAndPassword(firebaseAuth, input.email.trim().toLowerCase(), input.password);
-        await updateProfile(credential.user, { displayName: input.name.trim() });
+        await updateProfile(credential.user, { displayName: name });
         const storeId = input.role === "seller" ? `store-${credential.user.uid}` : undefined;
         const profile: CustomerUser = {
           id: credential.user.uid,
-          name: input.name.trim(),
+          name,
           email: credential.user.email ?? input.email.trim().toLowerCase(),
-          mobile: input.mobile.trim(),
+          mobile,
           roles: [input.role],
           activeRole: input.role,
+          ...(input.role === "rider" ? { riderSelfRegistered: true } : {}),
           ...(input.role === "seller" ? { sellerStatus: "approved" as const, storeIds: [storeId!], storeName: input.storeName?.trim() } : {}),
         };
         const profileData = {
@@ -719,6 +722,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
           mobile: profile.mobile,
           roles: profile.roles,
           activeRole: profile.activeRole,
+          ...(profile.riderSelfRegistered ? { riderSelfRegistered: true } : {}),
           ...(profile.sellerStatus ? { sellerStatus: profile.sellerStatus } : {}),
           ...(profile.storeIds ? { storeIds: profile.storeIds } : {}),
           ...(profile.storeName ? { storeName: profile.storeName } : {}),
@@ -727,11 +731,25 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         batch.set(doc(firestore, "users", credential.user.uid), { ...profileData, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
         if (input.role === "customer") batch.set(doc(firestore, "users", credential.user.uid, "preferences", "garage"), { ...emptyGarage, needsVehicle: true });
         if (storeId) batch.set(doc(firestore, "stores", storeId), { ownerId: credential.user.uid, name: input.storeName?.trim(), status: "approved", rating: 0, ratingCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        if (input.role === "rider") {
+          batch.set(doc(firestore, "riders", credential.user.uid), {
+            name,
+            phone: mobile,
+            active: false,
+            online: false,
+            activationPending: true,
+            activeDeliveryId: null,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
         await batch.commit();
+        if (input.role === "customer" || input.role === "rider") {
+          void sendEmailVerification(credential.user).catch(() => undefined);
+        }
         if (input.role === "customer") {
           writeBrowserStorage("local", "partx-device-role", "customer");
           setCustomerDevice(true);
-          void sendEmailVerification(credential.user).catch(() => undefined);
         }
         setUser(profile);
         writeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY, JSON.stringify(profile));
@@ -931,6 +949,7 @@ function parseFirebaseUser(uid: string, authEmail: string, data: Record<string, 
     mobile: typeof data.mobile === "string" ? data.mobile : "",
     roles,
     activeRole,
+    riderSelfRegistered: activeRole === "rider" && data.riderSelfRegistered === true,
     sellerStatus: data.sellerStatus === "approved" ? "approved" : data.sellerStatus === "pending" ? "pending" : undefined,
     storeIds: Array.isArray(data.storeIds) ? data.storeIds.filter((id): id is string => typeof id === "string") : undefined,
     storeName: typeof data.storeName === "string" ? data.storeName : undefined,

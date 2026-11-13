@@ -8,12 +8,11 @@ This is the browser pilot; no rider APK or background GPS service is included.
 
 1. Deploy Firestore rules: `firebase deploy --only firestore:rules --project partx-production`.
 2. Deploy the secure API on Cloudflare Workers using `cloudflare/delivery-api/wrangler.jsonc`. Firebase stays on Spark; Cloud Functions is not required for the rider workflow. See the setup guide in `cloudflare/delivery-api/README.md`.
-3. Operations creates rider accounts; public signup cannot grant the rider role.
-   With Application Default Credentials on a trusted operations machine:
+3. Riders choose **Create rider account** at `/login/rider`, then verify their email. The rider workspace shows **Pending activation** until operations reviews the application.
+4. After review, activate the rider from a trusted machine with Application Default Credentials and the `functions/` dependencies installed:
    `node functions/provision-rider.mjs --project=partx-production --email=rider@example.com --name="Rider name" --phone=+919876543210`
-   The script requires dependencies installed in `functions/`. Never commit credentials.
-4. Alternatively, create an Email/Password user in Firebase Authentication. Using its UID, create `users/{uid}` with `name`, `email`, `mobile`, `roles: ["rider"]`, and `activeRole: "rider"`. Create `riders/{uid}` with `name`, `phone`, `active: true`, `online: false`, and `activeDeliveryId: null`. These records must be created through trusted administration, not the public client.
-5. The rider can use Forgot password on the rider login to set their password.
+   Use the rider’s verified email. The script activates the existing account without changing its password. Never commit credentials.
+5. Operations can also use the script to create an account in advance. In that case the rider uses **Forgot password** to set a password.
 6. Save the store pickup address in Seller Settings. Customers must save the delivery or garage address before checkout. Map coordinates improve tracking; address-only locations still support external navigation.
 
 ## Workflow
@@ -33,7 +32,7 @@ This is the browser pilot; no rider APK or background GPS service is included.
 ## Data and security
 
 - `deliveries/{deliveryId}`: server-managed immutable parties and item/address snapshots, lifecycle and COD collection timestamps.
-- `riders/{uid}`: operations-managed dispatch profile. Riders can update only their own presence fields.
+- `riders/{uid}`: starts pending for public signup. Operations controls activation and earnings settings. Active riders can update only their own presence fields.
 - `deliveries/{deliveryId}/location/current`: latest coordinate only. Assigned active riders may write after pickup. The associated customer, seller and rider can read.
 - `deliverySecrets/{deliveryId}`: server-only OTP, expiry and attempt counter. No client reads or writes.
 - `orders/{orderId}.riderDeliveryId`: set by the server. Clients cannot forge assignments or bypass the delivery code by editing the order's status.

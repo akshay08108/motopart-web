@@ -16,9 +16,14 @@ const database = getFirestore(); const auth = getAuth();
 let account;
 try { account = await auth.getUserByEmail(args.email); }
 catch (error) { if (error.code !== "auth/user-not-found") throw error; }
+let existingProfile;
 if (account) {
   const profile = (await database.doc(`users/${account.uid}`).get()).data();
+  existingProfile = profile;
   if (profile?.roles?.some((role) => role !== "rider")) throw new Error("Use a separate email for the rider. Existing customer and seller accounts will not be converted.");
+}
+if (existingProfile?.riderSelfRegistered && !account.emailVerified) {
+  throw new Error("Ask the rider to verify their email before activating delivery access.");
 }
 let created = false;
 try {
@@ -27,9 +32,11 @@ try {
     const riderRef = database.doc(`riders/${account.uid}`);
     const current = (await tx.get(riderRef)).data();
     tx.set(database.doc(`users/${account.uid}`), { name: args.name, email: args.email, mobile: args.phone, roles: ["rider"], activeRole: "rider", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-    tx.set(riderRef, { name: args.name, phone: args.phone, active: true, online: current?.online ?? false, activeDeliveryId: current?.activeDeliveryId ?? null, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    tx.set(riderRef, { name: args.name, phone: args.phone, active: true, activationPending: false, online: current?.online ?? false, activeDeliveryId: current?.activeDeliveryId ?? null, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   });
-  console.log(`Rider ${account.uid} is ready. Ask the rider to use Forgot password at /login/rider to set their password. No password or email was sent by this script.`);
+  console.log(existingProfile?.riderSelfRegistered
+    ? `Rider ${account.uid} is active. They can sign in with their existing password.`
+    : `Rider ${account.uid} is ready. They can use Forgot password at /login/rider to set or reset their password.`);
 } catch (error) {
   if (created && account) await auth.deleteUser(account.uid);
   throw error;

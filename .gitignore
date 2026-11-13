@@ -22,6 +22,7 @@
 *.keystore
 /android/key.properties
 /android/rider-key.properties
+/android/seller-key.properties
 /outputs/
 .env*
 !.env.example

@@ -8,6 +8,7 @@ import { SplashScreen } from "@capacitor/splash-screen";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { appRole, roleHome, roleLogin } from "@/lib/app-role";
 
 function dismissTopLayer() {
   const alertClose = document.querySelector<HTMLButtonElement>('[aria-label="Dismiss alert"]');
@@ -74,14 +75,14 @@ export function CapacitorBridge() {
     });
     void CapacitorApp.addListener("backButton", ({ canGoBack }) => {
       if (dismissTopLayer()) return;
-      const riderApp = process.env.NEXT_PUBLIC_PARTX_PORTAL === "rider";
-      const currentPath = pathnameRef.current.replace(/\/$/, "");
-      if (pathnameRef.current === "/" || (riderApp && ["/rider", "/login/rider"].includes(currentPath))) {
+      const currentPath = pathnameRef.current.replace(/\/$/, "") || "/";
+      const home = appRole ? roleHome[appRole] : "/";
+      if (currentPath === home || (appRole && currentPath === roleLogin(appRole))) {
         void CapacitorApp.minimizeApp();
       } else if (canGoBack) {
         router.back();
       } else {
-        router.replace(riderApp ? "/rider" : "/");
+        router.replace(home);
       }
     }).then((listener) => {
       if (disposed) void listener.remove();

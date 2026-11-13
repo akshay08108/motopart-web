@@ -78,6 +78,7 @@ export type CustomerUser = {
   mobile: string;
   roles: UserRole[];
   activeRole: UserRole;
+  riderSelfRegistered?: boolean;
   sellerStatus?: "pending" | "approved";
   storeIds?: string[];
   storeName?: string;

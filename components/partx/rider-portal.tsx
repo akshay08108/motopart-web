@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { appRole } from "@/lib/app-role";
 import { usePathname } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState, type FormEvent } from "react";
 import { doc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
@@ -72,16 +73,16 @@ export function RiderShell({ children }: { children: React.ReactNode }) {
       {!connected ? <p className="rx-error" role="alert">You are offline. Reconnect before updating a delivery. Location sharing is paused.</p> : null}
       {error || actionError ? <p className="rx-error" role="alert">{error || actionError}</p> : null}
       {notice ? <div className="rx-notice" role="status"><Icon name="bell"/>{notice}<button type="button" className="rx-link" onClick={() => setNotice("")}>Dismiss</button></div> : null}
-      {!loaded ? <div className="rx-empty">Loading your rider workspace…</div> : !profile?.active ? <div className="rx-empty"><Icon name="user"/><h1>Your rider access is not active</h1><p>Contact PartX operations to activate your account.</p></div> : <>
+      {!loaded ? <div className="rx-empty">Loading your rider workspace…</div> : !profile?.active ? <div className="rx-empty"><Icon name="user"/><h1>{profile?.activationPending ? "Your rider account is pending activation" : "Your rider access is not active"}</h1><p>{profile?.activationPending ? "PartX operations will review your account. You can go online and receive deliveries once they activate it." : "Contact PartX operations to activate your account."}</p></div> : <>
         {active ? <div className="rx-reservation-note"><p>You have an unfinished delivery: <b>{active.orderId}</b>. Complete it or arrange its return with the store before accepting a new pickup.</p>{pathname !== "/rider" ? <Link href="/rider">Open delivery</Link> : null}</div> : null}
         {active?.state === "PICKED_UP" ? <RiderLocationSharing key={active.id} delivery={active}/> : null}
         {children}
       </>}
-      <section className="rx-alert-settings"><div><Icon name="bell"/><span><b>Stay ready for your next pickup</b><small>{process.env.NEXT_PUBLIC_PARTX_PORTAL === "rider" ? "Keep this app open for live assignments. Enable sound for this session." : notificationsEnabled ? "Push notifications enabled. Enable sound for this session." : "Enable assignment notifications and sound."}</small></span></div><button className="rx-secondary" type="button" onClick={() => {
+      {profile?.active && <section className="rx-alert-settings"><div><Icon name="bell"/><span><b>Stay ready for your next pickup</b><small>{appRole === "rider" ? "Keep this app open for live assignments. Enable sound for this session." : notificationsEnabled ? "Push notifications enabled. Enable sound for this session." : "Enable assignment notifications and sound."}</small></span></div><button className="rx-secondary" type="button" onClick={() => {
         try { if (!audio.current && "AudioContext" in window) audio.current = new AudioContext(); void audio.current?.resume().catch(() => undefined); } catch { /* Push alerts can still work without browser audio. */ }
-        if (process.env.NEXT_PUBLIC_PARTX_PORTAL === "rider") { setNotice("Assignment sound enabled for this session. Keep the app open to receive live updates."); return; }
+        if (appRole === "rider") { setNotice("Assignment sound enabled for this session. Keep the app open to receive live updates."); return; }
         void enableNotifications().then((enabled) => setNotice(enabled ? "Assignment notifications enabled. Sound is available while this portal is open." : "Check notification permissions to receive assignment alerts.")).catch(() => setNotice("Notifications could not be enabled. Check your browser settings and try again."));
-      }}>Enable alerts</button>{notificationError ? <p role="status">{notificationError}</p> : null}</section>
+      }}>Enable alerts</button>{notificationError ? <p role="status">{notificationError}</p> : null}</section>}
     </main><footer className="rx-footer">PartX Rider · Every part, delivered.</footer>
   </div></RiderContext.Provider>;
 }

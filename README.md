@@ -129,12 +129,17 @@ keytool -genkeypair -v -keystore /absolute/secure/path/partx-release.jks -alias 
 
 Copy `android/key.properties.example` to `android/key.properties`, then fill in the absolute keystore path, alias, and passwords. The real properties file and all `.jks`/`.keystore` files are ignored by Git.
 
-Build a signed release APK or AAB:
+Build the customer, seller, or rider release APK:
 
 ```bash
-pnpm android:release
-pnpm android:bundle
+pnpm android:customer
+pnpm android:seller
+pnpm android:rider
 ```
+
+Each Android app opens its own registration and sign-in screen and can be installed alongside the others. Use `android/seller-key.properties` to sign seller releases and [the rider signing setup](docs/rider-android.md) for rider releases. Copy each APK after building it because the output location is shared. For a debug APK, set `PARTX_ANDROID_APP` to `customer`, `seller`, or `rider` when running `pnpm android:debug`.
+
+For a customer AAB, run `pnpm android:bundle`.
 
 Outputs are written to:
 

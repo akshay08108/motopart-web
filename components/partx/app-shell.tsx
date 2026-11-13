@@ -11,11 +11,11 @@ import { CartFeedback } from "./cart-feedback";
 import { PartSearch } from "./part-search";
 import { sameDeliveryArea } from "@/lib/delivery-pricing";
 import { RiderShell } from "./rider-portal";
+import { appRole, roleHome, roleLogin } from "@/lib/app-role";
 
 const nav = [
   ["/", "Home"], ["/shop", "Shop Parts"], ["/garage", "My Garage"], ["/orders", "Orders"], ["/offers", "Offers"],
 ];
-const riderApp = process.env.NEXT_PUBLIC_PARTX_PORTAL === "rider";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname().replace(/\/$/, "") || "/";
@@ -28,19 +28,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const riderRoute = pathname === "/rider" || pathname.startsWith("/rider/");
   const isCustomer = Boolean(user?.roles.includes("customer"));
   const isSeller = user?.activeRole === "seller";
+  const needsEmailVerification = !emailVerified && (
+    user?.activeRole === "customer" || (user?.activeRole === "rider" && user.riderSelfRegistered)
+  );
 
   let destination: string | undefined;
-  if (riderApp && !riderRoute && pathname !== "/login/rider") destination = "/rider";
-  else if (authHydrated) {
-    if (customerDevice && pathname === "/login") destination = "/login/customer";
-    else if (user?.activeRole === "customer" && !emailVerified && !riderRoute && pathname !== "/login/customer" && pathname !== "/login/seller") destination = "/login/customer";
+  if (authHydrated) {
+    if (appRole) {
+      const login = roleLogin(appRole);
+      const signedIn = user?.activeRole === appRole;
+      const inWorkspace = appRole === "seller" ? sellerRoute : appRole === "rider" ? riderRoute : !sellerRoute && !riderRoute && !authRoute && pathname !== "/sell";
+
+      if (!signedIn || needsEmailVerification) {
+        if (pathname !== login) destination = login;
+      } else if (!inWorkspace) {
+        if (pathname !== login) destination = roleHome[appRole];
+      } else if (appRole === "customer" && needsVehicle && pathname !== "/garage") {
+        destination = "/garage";
+      } else if (pathname === "/seller/pending") {
+        destination = "/seller";
+      }
+    } else if (customerDevice && pathname === "/login") destination = "/login/customer";
+    else if (!user && !authRoute) destination = riderRoute ? "/login/rider" : sellerRoute ? "/login/seller" : customerDevice ? "/login/customer" : "/login";
+    else if (user && needsEmailVerification && !authRoute) destination = roleLogin(user.activeRole);
     else if (user?.activeRole === "customer" && pathname === "/sell") destination = "/";
-    else if (riderRoute && !user?.roles.includes("rider")) destination = "/login/rider";
-    else if (!authRoute && !user) destination = "/login";
+    else if (riderRoute && user?.activeRole !== "rider") destination = "/login/rider";
     else if (sellerRoute && !isSeller) destination = "/";
     else if (sellerRoute && pathname === "/seller/pending") destination = "/seller";
     else if (user && !authRoute && !sellerRoute && !riderRoute) {
-      if (!isCustomer) destination = isSeller ? "/seller" : "/rider";
+      if (!isCustomer) destination = roleHome[user.activeRole];
       else if (needsVehicle && pathname !== "/garage") destination = "/garage";
       else if (pathname === "/" && user.activeRole === "seller") destination = "/seller";
     }
@@ -50,8 +66,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [destination, router]);
 
   if (destination) return <AuthLoading label="Opening PartX…"/>;
-  if (authRoute) return pathname === "/login" && !authHydrated ? <AuthLoading label="Opening PartX…"/> : children;
-  if (!authHydrated || !user) return <AuthLoading label="Opening PartX…"/>;
+  if (!authHydrated) return <AuthLoading label="Opening PartX…"/>;
+  if (authRoute) return children;
+  if (!user) return <AuthLoading label="Opening PartX…"/>;
   if (riderRoute) return <RiderShell key={user.id}>{children}</RiderShell>;
   if (sellerRoute) return <SellerShell>{children}</SellerShell>;
   if (!garageReady) return <AuthLoading label="Loading your garage…"/>;

@@ -9,7 +9,7 @@ export type DeliveryState = "ASSIGNED" | "ACCEPTED" | "PICKED_UP" | "DELIVERED" 
 export type DeliveryPoint = { address: string; latitude?: number; longitude?: number };
 export type RiderEarningsPolicy = { mode: "per_km"; ratePaisePerKm: number; returnIncluded: boolean; payer: "store" | "partx" } | { mode?: "per_delivery"; amountPaise: number; payer: "store" | "partx" };
 export type RiderEarning = { amountPaise: number; currency: "INR"; payer: "store" | "partx"; status: "PENDING_DELIVERY" | "EARNED" | "PAID"; earnedAt?: number; paidAt?: number; pricing?: { mode: "per_km"; ratePaisePerKm: number; oneWayMeters: number; billableMeters: number; returnIncluded: boolean; source: "seller_entered" } };
-export type RiderProfile = { id: string; name: string; phone: string; active: boolean; online: boolean; activeDeliveryId?: string; lastSeenAt?: number; earningsPolicy?: RiderEarningsPolicy };
+export type RiderProfile = { id: string; name: string; phone: string; active: boolean; activationPending?: boolean; online: boolean; activeDeliveryId?: string; lastSeenAt?: number; earningsPolicy?: RiderEarningsPolicy };
 export type RiderDelivery = {
   id: string; orderId: string; trackingId?: string; pickupId?: string;
   kind?: "delivery" | "return" | "replacement"; requestId?: string; exchangeAt?: number;
@@ -63,16 +63,19 @@ export function useRiderJobs(userId?: string) {
   useEffect(() => {
     queueMicrotask(() => { setJobs([]); setProfile(null); setError(""); setLoaded(false); });
     if (!userId) return;
-    const stopProfile = onSnapshot(doc(firestore, "riders", userId), (snapshot) => {
+    return onSnapshot(doc(firestore, "riders", userId), (snapshot) => {
       const data = snapshot.data();
       setProfile(data ? { ...data, id: snapshot.id, lastSeenAt: timestampMillis(data.lastSeenAt) } as RiderProfile : null);
       setLoaded(true);
     }, () => { setError("Your rider account is unavailable. Contact PartX operations."); setLoaded(true); });
-    const stopJobs = onSnapshot(query(collection(firestore, "deliveries"), where("riderId", "==", userId)), (snapshot) => {
+  }, [userId]);
+  const activeRiderId = profile?.id === userId && profile?.active ? userId : undefined;
+  useEffect(() => {
+    if (!activeRiderId) return;
+    return onSnapshot(query(collection(firestore, "deliveries"), where("riderId", "==", activeRiderId)), (snapshot) => {
       setJobs(snapshot.docs.map((item) => parseDelivery(item.id, item.data())).sort((a, b) => (b.assignedAt ?? 0) - (a.assignedAt ?? 0)));
     }, () => setError("Assignments could not load. Check your connection and try again."));
-    return () => { stopProfile(); stopJobs(); };
-  }, [userId]);
+  }, [activeRiderId]);
   return { jobs, profile, error, loaded };
 }
 export const rideTrackingId = (delivery: RiderDelivery) => delivery.trackingId ?? `PX-RIDE-${delivery.id}`;

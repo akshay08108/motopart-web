@@ -401,6 +401,8 @@ body:has(.px-auth), body:has(.px-seller-pending) { padding-bottom: 0; }
 .px-auth-form label div > button svg { margin: 0; }
 .px-auth-options { display: flex; align-items: center; justify-content: space-between; font-size: 11px; }
 .px-auth-options label { display: flex; align-items: center; gap: 7px; }
+.px-auth-mode-switch { justify-content: center; flex-wrap: wrap; gap: 6px; margin: 18px 0 0; font-size: 13px; }
+.px-auth-mode-switch button { padding: 8px 4px; font-size: inherit; }
 .px-auth-options input { width: 15px; height: 15px; accent-color: var(--px-red); }
 .px-auth-options button, .px-auth-otp { padding: 0; border: 0; background: transparent; color: var(--px-red); font-size: 11px; font-weight: 850; }
 .px-auth-submit { width: 100%; min-height: 55px; margin-top: 2px; }

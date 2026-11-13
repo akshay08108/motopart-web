@@ -28,6 +28,7 @@ service cloud.firestore {
     function isRider() {
       return signedIn() && 'rider' in currentUser().roles
         && currentUser().activeRole == 'rider'
+        && (!currentUser().get('riderSelfRegistered', false) || request.auth.token.email_verified == true)
         && get(/databases/$(database)/documents/riders/$(request.auth.uid)).data.active == true;
     }
 
@@ -57,6 +58,28 @@ service cloud.firestore {
         ));
     }
 
+    function createsPendingRider(uid) {
+      let userPath = /databases/$(database)/documents/users/$(uid);
+      let riderPath = /databases/$(database)/documents/riders/$(uid);
+      let profile = getAfter(userPath).data;
+      let rider = getAfter(riderPath).data;
+      return ownsUser(uid)
+        && !exists(userPath) && !exists(riderPath)
+        && profile.keys().hasOnly(['roles', 'activeRole', 'riderSelfRegistered', 'name', 'email', 'mobile', 'createdAt', 'updatedAt'])
+        && profile.roles == ['rider']
+        && profile.activeRole == 'rider'
+        && profile.riderSelfRegistered == true
+        && profile.email == request.auth.token.email
+        && profile.name is string && profile.name.size() > 0 && profile.name.size() <= 120
+        && profile.mobile is string && profile.mobile.matches('^[+]?[1-9][0-9]{9,14}$')
+        && profile.createdAt == request.time && profile.updatedAt == request.time
+        && rider.keys().hasOnly(['name', 'phone', 'active', 'online', 'activationPending', 'activeDeliveryId', 'createdAt', 'updatedAt'])
+        && rider.name == profile.name && rider.phone == profile.mobile
+        && rider.active == false && rider.online == false && rider.activationPending == true
+        && rider.activeDeliveryId == null
+        && rider.createdAt == request.time && rider.updatedAt == request.time;
+    }
+
     match /users/{uid} {
       allow create: if ownsUser(uid)
         && request.resource.data.roles.size() == 1
@@ -66,6 +89,7 @@ service cloud.firestore {
           request.resource.data.roles[0] == 'customer'
           || request.resource.data.sellerStatus in ['approved', 'pending']
         );
+      allow create: if request.resource.data.activeRole == 'rider' && createsPendingRider(uid);
       allow read: if ownsUser(uid);
       allow update: if ownsUser(uid)
         && request.resource.data.diff(resource.data).affectedKeys()
@@ -333,8 +357,8 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Rider profiles are provisioned by PartX operations, never by public signup.
-    // Sellers see only the minimal dispatch profile, not users or GPS history.
+    // Public signups can create a pending profile. Only operations can activate it.
+    // Sellers see only active dispatch profiles.
     match /riders/{riderId} {
       allow read: if (ownsUser(riderId) && 'rider' in currentUser().roles) || (isSeller() && resource.data.active == true);
       allow update: if isRider() && request.auth.uid == riderId
@@ -342,7 +366,8 @@ service cloud.firestore {
         && request.resource.data.online is bool
         && request.resource.data.lastSeenAt == request.time
         && request.resource.data.updatedAt == request.time;
-      allow create, delete: if false;
+      allow create: if createsPendingRider(riderId);
+      allow delete: if false;
     }
 
     match /deliveries/{deliveryId} {

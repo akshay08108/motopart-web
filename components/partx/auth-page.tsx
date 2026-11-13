@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { roleHome } from "@/lib/app-role";
 import type { UserRole } from "@/lib/types";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
@@ -13,7 +14,7 @@ type AuthMode = "signin" | "register";
 const roleCopy = {
   customer: { label: "CUSTOMER ACCESS", story: <>Your garage.<br/>Your parts.<br/><em>One account.</em></>, storyDescription: "Save vehicles, compare verified stores and track every order.", heading: "Customer account", signInDescription: "Sign in to see your garage, orders and saved details.", registerDescription: "Start comparing sellers and tracking your parts in one place." },
   seller: { label: "SELLER ACCESS", story: <>Your store.<br/>Your orders.<br/><em>One command center.</em></>, storyDescription: "Manage products, prices, packing and customer support.", heading: "Seller account", signInDescription: "Sign in to open your store dashboard and packing queue.", registerDescription: "Create your store, add products and receive orders immediately." },
-  rider: { label: "PARTX RIDER", story: <>Pick up.<br/>Deliver.<br/><em>Keep moving.</em></>, storyDescription: "Your assigned deliveries, pickup details and customer destinations in one place.", heading: "Rider portal", signInDescription: "Sign in with the rider account provided by PartX operations.", registerDescription: "Rider accounts are managed by PartX operations." },
+  rider: { label: "PARTX RIDER", story: <>Pick up.<br/>Deliver.<br/><em>Keep moving.</em></>, storyDescription: "Your assigned deliveries, pickup details and customer destinations in one place.", heading: "Rider portal", signInDescription: "Sign in to view your pickups and deliveries.", registerDescription: "Create a rider account and verify your email to access the app." },
 } as const;
 
 export function RoleChoicePage() {
@@ -36,21 +37,23 @@ function RoleChoice({ role, title, description }: { role: UserRole; title: strin
   return <Link className={`px-role-choice px-role-${role}`} href={`/login/${role}`}><span className="px-role-icon"><Icon name={role === "customer" ? "user" : "store"}/></span><h2>{title}</h2><p>{description}</p><span className="px-role-cta">Continue as {role}<Icon name="arrow"/></span></Link>;
 }
 
-export function RoleAuthPage({ role }: { role: UserRole }) {
+export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; signupFirst?: boolean }) {
   const router = useRouter();
   const { signIn, register, resetPassword, user, authHydrated, customerDevice, emailVerified, requestEmailVerification, refreshEmailVerification, signOut } = usePartX();
-  const [mode, setMode] = useState<AuthMode>("signin");
+  const [mode, setMode] = useState<AuthMode>(signupFirst ? "register" : "signin");
   const [showPassword, setShowPassword] = useState(false);
   const [identifier, setIdentifier] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const copy = roleCopy[role];
+  const mustVerifyEmail = role === "customer" || (role === "rider" && user?.riderSelfRegistered);
+  const awaitingVerification = user?.activeRole === role && mustVerifyEmail && !emailVerified;
 
   useEffect(() => {
-    if (!authHydrated || !user || user.activeRole !== role || (role === "customer" && !emailVerified)) return;
-    router.replace(role === "rider" ? "/rider" : role === "seller" ? "/seller" : "/");
-  }, [authHydrated, emailVerified, role, router, user]);
+    if (!authHydrated || !user || user.activeRole !== role || awaitingVerification) return;
+    router.replace(roleHome[role]);
+  }, [authHydrated, awaitingVerification, role, router, user]);
 
   const complete = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setError(""); setNotice(""); setBusy(true);
@@ -65,7 +68,7 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
       : `We could not sign you in as a ${role}. Check your email, password and selected account type.`);
   };
 
-  const changeMode = (next: AuthMode) => { setMode(next); setError(""); setNotice(""); };
+  const changeMode = (next: AuthMode) => { setMode(next); setShowPassword(false); setError(""); setNotice(""); };
 
   const requestReset = async () => {
     setError(""); setNotice("");
@@ -77,7 +80,7 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
     else setError("We could not send a reset email. Check the address and try again.");
   };
 
-  if (role === "customer" && user?.activeRole === "customer" && !emailVerified) {
+  if (awaitingVerification && user) {
     const confirmEmail = async (resend: boolean) => {
       setBusy(true);
       setError("");
@@ -95,9 +98,10 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
         setBusy(false);
       }
     };
-    return <main className="px-auth px-auth-customer">
-      <AuthStory role="customer"/>
+    return <main className={`px-auth px-auth-${role}`}>
+      <AuthStory role={role} dedicated={signupFirst}/>
       <section className="px-auth-panel">
+        <AuthBrand dedicated={signupFirst} mobile/>
         <div className="px-auth-form-wrap">
           <div className="px-auth-heading"><h1>Verify your email</h1><p>Open the verification link for {user.email}. Request a new link if you need one.</p></div>
           <div className="px-auth-form">
@@ -113,19 +117,16 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
   }
 
   return <main className={`px-auth px-auth-${role}`}>
-    <AuthStory role={role}/>
+    <AuthStory role={role} dedicated={signupFirst}/>
     <section className="px-auth-panel">
-      <Link href="/" className="px-auth-mobile-brand" aria-label="PartX home"><Image src="/brand/partx-light.png" alt="" width={48} height={48} priority/><span>Part<b>X</b></span></Link>
+      <AuthBrand dedicated={signupFirst} mobile/>
       <div className="px-auth-form-wrap">
-        {role === "customer" ? (
-          <Link className="px-btn px-btn-outline px-auth-seller-link" href="/login/seller"><Icon name="store"/>Seller sign-in</Link>
-        ) : !customerDevice && process.env.NEXT_PUBLIC_PARTX_PORTAL !== "rider" ? (
+        {!signupFirst && !customerDevice && role !== "rider" ? (
           <Link className="px-auth-role-back" href="/login"><Icon name="back"/>Choose another account type</Link>
         ) : null}
-        <div className="px-auth-heading"><span>PARTX {copy.heading.toUpperCase()}</span><h2>{mode === "signin" ? "Welcome back" : role === "seller" ? "Register your store" : "Create your account"}</h2><p>{mode === "signin" ? copy.signInDescription : copy.registerDescription}</p></div>
-        {role !== "rider" ? <div className="px-auth-tabs" role="tablist"><button type="button" className={mode === "signin" ? "active" : ""} onClick={() => changeMode("signin")}>Sign in</button><button type="button" className={mode === "register" ? "active" : ""} onClick={() => changeMode("register")}>{role === "seller" ? "Register store" : "Create account"}</button></div> : null}
-        <form className="px-auth-form" onSubmit={complete}>
-          {mode === "register" ? <label>Full name<div><Icon name="user"/><input name="name" autoComplete="name" placeholder="Your full name" required/></div></label> : null}
+        <div className="px-auth-heading"><span>PARTX {copy.heading.toUpperCase()}</span><h2>{mode === "signin" ? "Welcome back" : role === "seller" ? "Create your seller account" : role === "rider" ? "Create your rider account" : "Create your customer account"}</h2><p>{mode === "signin" ? copy.signInDescription : copy.registerDescription}</p></div>
+        <form className="px-auth-form" key={mode} onSubmit={complete}>
+          {mode === "register" ? <label>Full name<div><Icon name="user"/><input name="name" autoComplete="name" placeholder="Your full name" maxLength={role === "rider" ? 120 : undefined} required/></div></label> : null}
           {mode === "register" && role === "seller" ? <label>Store name<div><Icon name="store"/><input name="storeName" placeholder="Your business name" required/></div></label> : null}
           {mode === "signin" ? <label>{role === "seller" ? "Seller email" : "Email address"}<div><Icon name="mail"/><input name="identifier" autoComplete="username" type="email" value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder={role === "seller" ? "seller@store.com" : "you@example.com"} required/></div></label> : null}
           {mode === "register" ? <label>Email address<div><Icon name="mail"/><input name="email" type="email" autoComplete="email" placeholder="you@example.com" required/></div></label> : null}
@@ -134,15 +135,27 @@ export function RoleAuthPage({ role }: { role: UserRole }) {
           {mode === "signin" ? <div className="px-auth-options"><label><input type="checkbox" defaultChecked/>Remember me</label><button type="button" onClick={requestReset} disabled={busy}>Forgot password?</button></div> : null}
           {error ? <p className="px-auth-error" role="alert">{error}</p> : null}
           {notice ? <p className="px-auth-notice" role="status">{notice}</p> : null}
-          <button className="px-btn px-btn-red px-auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "signin" ? `Sign in as ${role}` : role === "seller" ? "Create seller account" : "Create customer account"}<Icon name="arrow"/></button>
+          <button className="px-btn px-btn-red px-auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "signin" ? `Sign in as ${role}` : `Create ${role} account`}<Icon name="arrow"/></button>
         </form>
-        <p className="px-auth-demo"><b>{role === "rider" ? "PARTX RIDER ACCESS" : "FIREBASE SECURED"}</b> {role === "rider" ? "Use your assigned account. Contact PartX operations if you need rider access." : role === "seller" ? "Your store opens immediately so you can add products and receive customer orders." : "Your customer account and role are now stored securely in Firebase."}</p>
+        <p className="px-auth-options px-auth-mode-switch">
+          {mode === "register" ? "Already have an account?" : "New to PartX?"}
+          <button type="button" disabled={busy} onClick={() => changeMode(mode === "register" ? "signin" : "register")}>
+            {mode === "register" ? "Sign in" : "Create account"}
+          </button>
+        </p>
       </div>
     </section>
   </main>;
 }
 
-function AuthStory({ role }: { role: UserRole }) {
+function AuthStory({ role, dedicated = false }: { role: UserRole; dedicated?: boolean }) {
   const copy = roleCopy[role];
-  return <section className="px-auth-story"><Link href="/" className="px-auth-brand" aria-label="PartX home"><Image src="/brand/partx-dark.png" alt="" width={58} height={58} priority/><span>Part<b>X</b></span></Link><div className="px-auth-message"><span>{copy.label}</span><h1>{copy.story}</h1><p>{copy.storyDescription}</p></div><Image className="px-auth-part" src="/parts/0-v2.png" alt="Bosch brake parts" width={720} height={520} priority/><div className="px-auth-proof"><div><Icon name="check"/><span><b>Verified fitment</b>Shop confidently</span></div><div><Icon name="store"/><span><b>Compare sellers</b>You choose the price</span></div><div><Icon name="orders"/><span><b>Live tracking</b>Every order update</span></div></div></section>;
+  return <section className="px-auth-story"><AuthBrand dedicated={dedicated}/><div className="px-auth-message"><span>{copy.label}</span><h1>{copy.story}</h1><p>{copy.storyDescription}</p></div><Image className="px-auth-part" src="/parts/0-v2.png" alt="Bosch brake parts" width={720} height={520} priority/><div className="px-auth-proof"><div><Icon name="check"/><span><b>Verified fitment</b>Shop confidently</span></div><div><Icon name="store"/><span><b>Compare sellers</b>You choose the price</span></div><div><Icon name="orders"/><span><b>Live tracking</b>Every order update</span></div></div></section>;
+}
+
+function AuthBrand({ dedicated, mobile = false }: { dedicated: boolean; mobile?: boolean }) {
+  const className = mobile ? "px-auth-mobile-brand" : "px-auth-brand";
+  const size = mobile ? 48 : 58;
+  const brand = <><Image src={mobile ? "/brand/partx-light.png" : "/brand/partx-dark.png"} alt="" width={size} height={size} priority/><span>Part<b>X</b></span></>;
+  return dedicated ? <div className={className}>{brand}</div> : <Link href="/" className={className} aria-label="PartX home">{brand}</Link>;
 }

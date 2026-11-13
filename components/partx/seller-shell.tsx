@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import { appRole } from "@/lib/app-role";
 import { useEffect, useState } from "react";
 import { Icon } from "./icons";
 import { usePartX } from "./app-provider";
@@ -14,7 +15,6 @@ const sellerNav = [
 
 export function SellerShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const { user, signOut, notificationsEnabled, notificationError } = usePartX();
   const { tickets, sellerOrders, paymentVerifications, alertsEnabled, activeAlert, enableAlerts, dismissAlert } = useSeller();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -35,7 +35,7 @@ export function SellerShell({ children }: { children: React.ReactNode }) {
     <aside className={menuOpen ? "sx-sidebar is-open" : "sx-sidebar"}>
       <Link href="/seller" className="sx-logo"><Image src="/brand/partx-dark.png" width={46} height={46} alt=""/><b>PART<span>X</span></b></Link>
       <nav aria-label="Seller navigation">{sellerNav.map(([href, icon, label]) => <Link className={active(href) ? "active" : ""} href={href} key={href} onClick={() => setMenuOpen(false)}><Icon name={icon}/><span>{label}</span>{countFor(href) > 0 ? <em>{countFor(href)}</em> : null}</Link>)}</nav>
-      {user?.roles.includes("customer") ? <Link className="sx-customer-switch" href="/account"><Icon name="user"/>Switch to Customer<Icon name="logout"/></Link> : <button className="sx-customer-switch" onClick={() => { signOut(); router.replace("/login/seller"); }}><Icon name="logout"/>Sign out<Icon name="chevron"/></button>}
+      {!appRole && user?.roles.includes("customer") ? <Link className="sx-customer-switch" href="/account"><Icon name="user"/>Switch to Customer<Icon name="logout"/></Link> : <button className="sx-customer-switch" onClick={() => void signOut()}><Icon name="logout"/>Sign out<Icon name="chevron"/></button>}
     </aside>
     <div className="sx-workspace">
       <header className="sx-topbar">

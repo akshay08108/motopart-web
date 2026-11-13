@@ -8,7 +8,16 @@ const stagingRoot = join(projectRoot, ".capacitor-build");
 const stagingOutput = join(stagingRoot, "out");
 const outputRoot = join(projectRoot, "out");
 const previousOutput = join(projectRoot, ".capacitor-output-previous");
-const riderBuild = process.env.PARTX_ANDROID_APP === "rider";
+const appRole = process.env.PARTX_ANDROID_APP ?? "customer";
+const appRoutes = {
+  customer: ["account", "cart", "checkout", "garage", "offers", "order", "orders", "product", "shop", "support"],
+  seller: ["seller", "seller-order"],
+  rider: ["rider"],
+};
+
+if (!Object.hasOwn(appRoutes, appRole)) {
+  throw new Error("PARTX_ANDROID_APP must be customer, seller, or rider.");
+}
 
 const excludedAppPaths = [
   "app/api",
@@ -20,10 +29,13 @@ const excludedAppPaths = [
 
 function includeSource(sourcePath) {
   const pathFromRoot = relative(projectRoot, sourcePath).split("\\").join("/");
-  if (riderBuild && pathFromRoot.startsWith("app/")) {
-    const segments = pathFromRoot.split("/");
-    if (segments.length > 2 && !["rider", "login"].includes(segments[1])) return false;
-    if (segments[1] === "login" && segments.length > 2 && segments[2] !== "rider") return false;
+  const [root, route, subroute] = pathFromRoot.split("/");
+  if (root === "app" && route) {
+    if (route === "login") {
+      if (subroute && subroute !== "page.tsx" && subroute !== appRole) return false;
+    } else if (!route.includes(".") && !appRoutes[appRole].includes(route)) {
+      return false;
+    }
   }
   return !excludedAppPaths.some((excluded) => pathFromRoot === excluded || pathFromRoot.startsWith(`${excluded}/`));
 }
@@ -37,7 +49,7 @@ async function runNextBuild() {
         ...process.env,
         CAPACITOR_BUILD: "1",
         NEXT_PUBLIC_CAPACITOR_BUILD: "1",
-        NEXT_PUBLIC_PARTX_PORTAL: riderBuild ? "rider" : "",
+        NEXT_PUBLIC_PARTX_APP_ROLE: appRole,
       },
       stdio: "inherit",
     });
@@ -59,9 +71,6 @@ async function prepareStagingProject() {
     await cp(join(projectRoot, file), join(stagingRoot, file));
   }
   await symlink(join(projectRoot, "node_modules"), join(stagingRoot, "node_modules"), "dir");
-  if (riderBuild) {
-    await writeFile(join(stagingRoot, "app", "page.tsx"), 'export default function Page() { return null; }\n');
-  }
 
   const packageJsonPath = join(stagingRoot, "package.json");
   const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
@@ -94,7 +103,7 @@ try {
   await prepareStagingProject();
   await runNextBuild();
   await publishOutput();
-  console.log(`PartX Android web assets are ready in ${outputRoot}`);
+  console.log(`PartX ${appRole} Android web assets are ready in ${outputRoot}`);
 } finally {
   await rm(stagingRoot, { recursive: true, force: true });
   await rm(previousOutput, { recursive: true, force: true });

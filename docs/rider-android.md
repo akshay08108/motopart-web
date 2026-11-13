@@ -1,6 +1,6 @@
 # PartX Rider Android pilot
 
-The rider app is a separate Android installation (`com.partx.rider`), with only rider sign-in, deliveries, earnings, history and profile routes. The customer app remains `com.partx.app`. Rider access is still verified by Firebase and the delivery backend; hiding other routes does not grant permissions.
+The rider app is a separate Android installation (`com.partx.rider`), with rider registration, sign-in, deliveries, earnings, history and profile routes. The customer and seller apps use `com.partx.app` and `com.partx.seller`. Rider access is still verified by Firebase and the delivery backend; hiding other routes does not grant permissions.
 
 ## Build
 
@@ -21,7 +21,7 @@ Set `NEXT_PUBLIC_MAPTILER_API_KEY` to a MapTiler key permitted for `https://loca
 pnpm android:rider
 ```
 
-The signed APK is `android/app/build/outputs/apk/release/app-release.apk`. The rider flag must be present for both the static web build and Capacitor sync; the script handles this. Run the regular customer build and sync before building the customer app again, because Android's generated asset directory is shared between builds.
+The signed APK is `android/app/build/outputs/apk/release/app-release.apk`. The rider flag must be present for both the static web build and Capacitor sync; the script handles this. Copy each APK to a separate location after building it. The role-specific build commands share the generated asset and APK output directories.
 
 The delivery Worker explicitly permits the local Android origin `https://localhost`. Firebase ID tokens, role checks, assignment checks and delivery code verification remain required.
 
@@ -29,7 +29,7 @@ The delivery Worker explicitly permits the local Android origin `https://localho
 
 - Live assignments, session sound and location sharing work while the app is open and connected. Android asks for location permission when the rider starts sharing. No background location permission is requested.
 - Native background push notifications and background tracking are not included. Keep the app open during an active delivery; a dedicated background service/FCM integration is needed before promising closed-app notifications or continuous tracking.
-- Existing rider accounts sign in with their assigned email and password. Password reset uses Firebase email; no shared password is bundled.
+- New riders register and verify their email. Existing riders use the sign-in link on that screen. Password reset uses Firebase email.
 - Calls and navigation open installed phone/maps apps. Map rendering needs internet and a valid MapTiler key.
 - Earnings are recorded by the existing backend; this APK does not transfer money automatically.
 

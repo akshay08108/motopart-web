@@ -62,12 +62,52 @@ after(async () => {
   await environment?.cleanup();
 });
 
-test("rider roles and dispatch profiles cannot be self-provisioned or escalated", async () => {
+test("rider registration creates only a pending self-owned account", async () => {
+  const uid = "new-rider";
+  const email = "new-rider@example.com";
+  const rider = environment.authenticatedContext(uid, { email, email_verified: false }).firestore();
+  const verified = environment.authenticatedContext(uid, { email, email_verified: true }).firestore();
   const customer = environment.authenticatedContext("customer-1", { email_verified: true }).firestore();
-  const newAccount = environment.authenticatedContext("uninvited-rider").firestore();
-  await assertFails(setDoc(doc(newAccount, "users/uninvited-rider"), { roles: ["rider"], activeRole: "rider" }));
+  const seller = environment.authenticatedContext("seller-1").firestore();
+  const userDoc = doc(rider, "users", uid);
+  const riderDoc = doc(rider, "riders", uid);
+  const name = "New Rider";
+  const phone = "+919876543210";
+  const profile = {
+    roles: ["rider"], activeRole: "rider", riderSelfRegistered: true, name, email, mobile: phone,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  };
+  const dispatchProfile = {
+    name, phone, active: false, online: false, activationPending: true, activeDeliveryId: null,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  };
+  const signUp = (profileChanges = {}, dispatchChanges = {}) => {
+    const batch = writeBatch(rider);
+    batch.set(userDoc, { ...profile, ...profileChanges });
+    batch.set(riderDoc, { ...dispatchProfile, ...dispatchChanges });
+    return batch.commit();
+  };
+
+  await assertFails(setDoc(userDoc, profile));
+  await assertFails(setDoc(riderDoc, dispatchProfile));
+  await assertFails(signUp({ email: "another@example.com" }));
+  await assertFails(signUp({}, { active: true, online: true }));
+  await assertFails(signUp({}, { earningsPolicy: { amountPaise: 999999, payer: "store" } }));
+  await assertSucceeds(signUp());
+  await assertSucceeds(getDoc(riderDoc));
+  await assertFails(getDoc(doc(seller, "riders", uid)));
+  await assertFails(updateDoc(userDoc, { riderSelfRegistered: false }));
+  await assertFails(updateDoc(riderDoc, { active: true, activationPending: false }));
   await assertFails(updateDoc(doc(customer, "users/customer-1"), { roles: ["customer", "rider"] }));
-  await assertFails(setDoc(doc(customer, "riders/customer-1"), { active: true, online: true, name: "Imposter" }));
+  await assertFails(setDoc(doc(customer, "riders/customer-1"), dispatchProfile));
+
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await updateDoc(doc(context.firestore(), "riders", uid), { active: true, activationPending: false });
+  });
+  const presence = { online: true, lastSeenAt: serverTimestamp(), updatedAt: serverTimestamp() };
+  await assertFails(updateDoc(riderDoc, presence));
+  await assertSucceeds(updateDoc(doc(verified, "riders", uid), presence));
+  await assertSucceeds(getDoc(doc(seller, "riders", uid)));
 });
 
 test("rider assignments, OTP secrets, GPS and order completion are isolated by account", async () => {

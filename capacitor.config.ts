@@ -1,9 +1,17 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
-const riderBuild = process.env.PARTX_ANDROID_APP === "rider";
+const androidApps = {
+  customer: { appId: "com.partx.app", appName: "PartX" },
+  seller: { appId: "com.partx.seller", appName: "PartX Seller" },
+  rider: { appId: "com.partx.rider", appName: "PartX Rider" },
+};
+const role = process.env.PARTX_ANDROID_APP ?? "customer";
+if (role !== "customer" && role !== "seller" && role !== "rider") {
+  throw new Error("PARTX_ANDROID_APP must be customer, seller, or rider.");
+}
+
 const config: CapacitorConfig = {
-  appId: riderBuild ? "com.partx.rider" : "com.partx.app",
-  appName: riderBuild ? "PartX Rider" : "PartX",
+  ...androidApps[role],
   webDir: "out",
   backgroundColor: "#0b0d11",
   server: {
