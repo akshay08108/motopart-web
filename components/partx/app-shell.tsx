@@ -66,7 +66,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [destination, router]);
 
   if (destination) return <AuthLoading label="Opening PartX…"/>;
-  if (!authHydrated) return <AuthLoading label="Opening PartX…"/>;
+  if (!authHydrated) {
+    const keepAuthFormMounted = authRoute && pathname !== "/login" && (!appRole || pathname === roleLogin(appRole));
+    return keepAuthFormMounted ? children : <AuthLoading label="Opening PartX…"/>;
+  }
   if (authRoute) return children;
   if (!user) return <AuthLoading label="Opening PartX…"/>;
   if (riderRoute) return <RiderShell key={user.id}>{children}</RiderShell>;
