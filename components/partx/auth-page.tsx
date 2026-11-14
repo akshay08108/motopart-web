@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { roleHome } from "@/lib/app-role";
+import { appRole, roleHome, roleLogin } from "@/lib/app-role";
 import type { UserRole } from "@/lib/types";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
@@ -39,7 +39,7 @@ function RoleChoice({ role, title, description }: { role: UserRole; title: strin
 
 export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; signupFirst?: boolean }) {
   const router = useRouter();
-  const { signIn, register, resetPassword, user, authHydrated, customerDevice, emailVerified, requestEmailVerification, refreshEmailVerification, signOut } = usePartX();
+  const { signIn, register, resetPassword, user, authHydrated, emailVerified, requestEmailVerification, refreshEmailVerification, signOut } = usePartX();
   const [mode, setMode] = useState<AuthMode>(signupFirst ? "register" : "signin");
   const [showPassword, setShowPassword] = useState(false);
   const [identifier, setIdentifier] = useState("");
@@ -47,6 +47,8 @@ export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; si
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const copy = roleCopy[role];
+  const dedicated = appRole !== undefined || role === "rider";
+  const sellerSignup = role === "seller" && mode === "register";
   const mustVerifyEmail = role === "customer" || (role === "rider" && user?.riderSelfRegistered);
   const awaitingVerification = user?.activeRole === role && mustVerifyEmail && !emailVerified;
 
@@ -99,9 +101,9 @@ export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; si
       }
     };
     return <main className={`px-auth px-auth-${role}`}>
-      <AuthStory role={role} dedicated={signupFirst}/>
+      <AuthStory role={role} dedicated={dedicated}/>
       <section className="px-auth-panel">
-        <AuthBrand dedicated={signupFirst} mobile/>
+        <AuthBrand dedicated={dedicated} mobile/>
         <div className="px-auth-form-wrap">
           <div className="px-auth-heading"><h1>Verify your email</h1><p>Open the verification link for {user.email}. Request a new link if you need one.</p></div>
           <div className="px-auth-form">
@@ -117,14 +119,20 @@ export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; si
   }
 
   return <main className={`px-auth px-auth-${role}`}>
-    <AuthStory role={role} dedicated={signupFirst}/>
+    <AuthStory role={role} dedicated={dedicated}/>
     <section className="px-auth-panel">
-      <AuthBrand dedicated={signupFirst} mobile/>
+      <AuthBrand dedicated={dedicated} mobile/>
       <div className="px-auth-form-wrap">
-        {!signupFirst && !customerDevice && role !== "rider" ? (
-          <Link className="px-auth-role-back" href="/login"><Icon name="back"/>Choose another account type</Link>
-        ) : null}
-        <div className="px-auth-heading"><span>PARTX {copy.heading.toUpperCase()}</span><h2>{mode === "signin" ? "Welcome back" : role === "seller" ? "Create your seller account" : role === "rider" ? "Create your rider account" : "Create your customer account"}</h2><p>{mode === "signin" ? copy.signInDescription : copy.registerDescription}</p></div>
+        {!appRole && role === "customer" && !user && (
+          <Link className="px-btn px-btn-outline px-auth-seller-link" href={roleLogin("seller")}><Icon name="store"/>Seller sign in</Link>
+        )}
+        <div className="px-auth-heading"><span>PARTX {copy.heading.toUpperCase()}</span><h2>{mode === "signin" ? (role === "seller" ? "Seller sign in" : "Welcome back") : role === "seller" ? "Create your seller account" : role === "rider" ? "Create your rider account" : "Create your customer account"}</h2><p>{mode === "signin" ? copy.signInDescription : copy.registerDescription}</p></div>
+        {sellerSignup && <p className="px-auth-mode-switch px-auth-existing-seller">
+          <span>Already have a seller account?</span>
+          <button className="px-btn px-btn-outline" type="button" disabled={busy} onClick={() => changeMode("signin")}>
+            Seller sign in
+          </button>
+        </p>}
         <form className="px-auth-form" key={mode} onSubmit={complete}>
           {mode === "register" ? <label>Full name<div><Icon name="user"/><input name="name" autoComplete="name" placeholder="Your full name" maxLength={role === "rider" ? 120 : undefined} required/></div></label> : null}
           {mode === "register" && role === "seller" ? <label>Store name<div><Icon name="store"/><input name="storeName" placeholder="Your business name" required/></div></label> : null}
@@ -137,12 +145,12 @@ export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; si
           {notice ? <p className="px-auth-notice" role="status">{notice}</p> : null}
           <button className="px-btn px-btn-red px-auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "signin" ? `Sign in as ${role}` : `Create ${role} account`}<Icon name="arrow"/></button>
         </form>
-        <p className="px-auth-options px-auth-mode-switch">
+        {!sellerSignup && <p className="px-auth-options px-auth-mode-switch">
           {mode === "register" ? "Already have an account?" : "New to PartX?"}
           <button type="button" disabled={busy} onClick={() => changeMode(mode === "register" ? "signin" : "register")}>
             {mode === "register" ? "Sign in" : "Create account"}
           </button>
-        </p>
+        </p>}
       </div>
     </section>
   </main>;

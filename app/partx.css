@@ -402,9 +402,11 @@ body:has(.px-auth), body:has(.px-seller-pending) { padding-bottom: 0; }
 .px-auth-options { display: flex; align-items: center; justify-content: space-between; font-size: 11px; }
 .px-auth-options label { display: flex; align-items: center; gap: 7px; }
 .px-auth-mode-switch { justify-content: center; flex-wrap: wrap; gap: 6px; margin: 18px 0 0; font-size: 13px; }
-.px-auth-mode-switch button { padding: 8px 4px; font-size: inherit; }
 .px-auth-options input { width: 15px; height: 15px; accent-color: var(--px-red); }
 .px-auth-options button, .px-auth-otp { padding: 0; border: 0; background: transparent; color: var(--px-red); font-size: 11px; font-weight: 850; }
+.px-auth-options.px-auth-mode-switch button { padding: 10px 6px; font-size: inherit; }
+.px-auth-existing-seller { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 4px; color: #444952; }
+.px-auth-existing-seller .px-btn, .px-auth-seller-link { min-height: 44px; padding-inline: 16px; color: #12151b; border-color: #cfd3d8; }
 .px-auth-submit { width: 100%; min-height: 55px; margin-top: 2px; }
 .px-auth-otp { justify-self: center; }
 .px-auth-error { margin: -3px 0 0; padding: 10px 12px; border-left: 3px solid var(--px-red); background: #fff2f3; color: #a50e17; font-size: 11px; }

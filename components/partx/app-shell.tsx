@@ -53,7 +53,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     else if (user && needsEmailVerification && !authRoute) destination = roleLogin(user.activeRole);
     else if (user?.activeRole === "customer" && pathname === "/sell") destination = "/";
     else if (riderRoute && user?.activeRole !== "rider") destination = "/login/rider";
-    else if (sellerRoute && !isSeller) destination = "/";
+    else if (sellerRoute && !isSeller) destination = roleLogin("seller");
     else if (sellerRoute && pathname === "/seller/pending") destination = "/seller";
     else if (user && !authRoute && !sellerRoute && !riderRoute) {
       if (!isCustomer) destination = roleHome[user.activeRole];
