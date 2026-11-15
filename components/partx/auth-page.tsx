@@ -103,7 +103,7 @@ export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; si
     return <main className={`px-auth px-auth-${role}`}>
       <AuthStory role={role} dedicated={dedicated}/>
       <section className="px-auth-panel">
-        <AuthBrand dedicated={dedicated} mobile/>
+        <AuthBrand role={role} dedicated={dedicated} mobile/>
         <div className="px-auth-form-wrap">
           <div className="px-auth-heading"><h1>Verify your email</h1><p>Open the verification link for {user.email}. Request a new link if you need one.</p></div>
           <div className="px-auth-form">
@@ -121,7 +121,7 @@ export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; si
   return <main className={`px-auth px-auth-${role}`}>
     <AuthStory role={role} dedicated={dedicated}/>
     <section className="px-auth-panel">
-      <AuthBrand dedicated={dedicated} mobile/>
+      <AuthBrand role={role} dedicated={dedicated} mobile/>
       <div className="px-auth-form-wrap">
         {!appRole && role === "customer" && !user && (
           <Link className="px-btn px-btn-outline px-auth-seller-link" href={roleLogin("seller")}><Icon name="store"/>Seller sign in</Link>
@@ -158,12 +158,12 @@ export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; si
 
 function AuthStory({ role, dedicated = false }: { role: UserRole; dedicated?: boolean }) {
   const copy = roleCopy[role];
-  return <section className="px-auth-story"><AuthBrand dedicated={dedicated}/><div className="px-auth-message"><span>{copy.label}</span><h1>{copy.story}</h1><p>{copy.storyDescription}</p></div><Image className="px-auth-part" src="/parts/0-v2.png" alt="Bosch brake parts" width={720} height={520} priority/><div className="px-auth-proof"><div><Icon name="check"/><span><b>Verified fitment</b>Shop confidently</span></div><div><Icon name="store"/><span><b>Compare sellers</b>You choose the price</span></div><div><Icon name="orders"/><span><b>Live tracking</b>Every order update</span></div></div></section>;
+  return <section className="px-auth-story"><AuthBrand role={role} dedicated={dedicated}/><div className="px-auth-message"><span>{copy.label}</span><h1>{copy.story}</h1><p>{copy.storyDescription}</p></div><Image className="px-auth-part" src="/parts/0-v2.png" alt="Bosch brake parts" width={720} height={520} priority/><div className="px-auth-proof"><div><Icon name="check"/><span><b>Verified fitment</b>Shop confidently</span></div><div><Icon name="store"/><span><b>Compare sellers</b>You choose the price</span></div><div><Icon name="orders"/><span><b>Live tracking</b>Every order update</span></div></div></section>;
 }
 
-function AuthBrand({ dedicated, mobile = false }: { dedicated: boolean; mobile?: boolean }) {
+function AuthBrand({ role, dedicated, mobile = false }: { role: UserRole; dedicated: boolean; mobile?: boolean }) {
   const className = mobile ? "px-auth-mobile-brand" : "px-auth-brand";
   const size = mobile ? 48 : 58;
-  const brand = <><Image src={mobile ? "/brand/partx-light.png" : "/brand/partx-dark.png"} alt="" width={size} height={size} priority/><span>Part<b>X</b></span></>;
-  return dedicated ? <div className={className}>{brand}</div> : <Link href="/" className={className} aria-label="PartX home">{brand}</Link>;
+  const brand = <><Image src={mobile ? "/brand/partx-light.png" : "/brand/partx-dark.png"} alt="" width={size} height={size} priority/><span>Part<b>X</b>{role === "rider" && <small> Rider</small>}</span></>;
+  return dedicated ? <div className={className}>{brand}</div> : <Link href="/" className={className} aria-label={role === "rider" ? "PartX Rider home" : "PartX home"}>{brand}</Link>;
 }
