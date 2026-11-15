@@ -154,7 +154,15 @@ export function createRiderCore(database, runtime) {
       const riderRef = database.doc(`riders/${delivery.riderId}`);
       const rider = (await tx.get(riderRef)).data();
       if (input.action === "cancel" && !["ASSIGNED", "ACCEPTED"].includes(delivery.state)) fail("failed-precondition", "A picked-up delivery must be returned to the store before it can be reassigned.");
-      if (input.action === "returned" && (delivery.state !== "PICKED_UP" || !delivery.issue)) fail("failed-precondition", "Confirm a reported delivery has physically returned to the store.");
+      if (input.action === "returned" && (delivery.state !== "PICKED_UP" || (delivery.requestId != null && !delivery.issue))) {
+        fail("failed-precondition", "Confirm the parts have physically returned to the store.");
+      }
+      if (input.action === "returned" && delivery.requestId == null) {
+        const order = (await tx.get(database.doc(`orders/${delivery.orderId}`))).data();
+        if (order?.riderDeliveryId !== deliveryId || order.stage === "Delivered") {
+          fail("failed-precondition", "This order is no longer assigned to that ride.");
+        }
+      }
       const reason = text(input.reason, 500);
       if (reason.length < 5) fail("invalid-argument", "Please explain why this delivery is being closed.");
       tx.update(ref, { state: input.action === "cancel" ? "CANCELLED" : "RETURNED", closedReason: reason, closedAt: stamp(), updatedAt: stamp() });
@@ -215,6 +223,9 @@ export function createRiderCore(database, runtime) {
           tx.update(secretRef, { attempts, ...(attempts >= 5 ? { lockedUntil: timestampFromMillis(Date.now() + 300_000) } : {}) });
           return { incorrectCode: true };
         }
+        if (secret.source === "sellerEmergency" && input.handoverConfirmed !== true) {
+          fail("failed-precondition", "Confirm the customer received the parts before completing this ride.");
+        }
         tx.delete(secretRef);
       }
       if (action === "accept") {
@@ -242,7 +253,16 @@ export function createRiderCore(database, runtime) {
       } else if (action === "exchange") {
         tx.update(deliveryRef, { exchangeAt: stamp(), updatedAt: stamp() });
       } else {
-        tx.update(deliveryRef, { state: "DELIVERED", ...(delivery.earnings ? { earnings: { ...delivery.earnings, status: "EARNED", earnedAt: timestampNow() } } : {}), codCollected: delivery.codAmount > 0, ...(delivery.codAmount > 0 ? { codCollectedAt: stamp() } : {}), deliveredAt: stamp(), updatedAt: stamp() });
+        const emergencyCompletion = secret.source === "sellerEmergency" ? {
+          method: "sellerEmergency", sellerId: secret.issuedBy,
+          issuedAt: secret.createdAt,
+        } : null;
+        if (emergencyCompletion) {
+          tx.create(database.doc(`deliveryCompletionAudits/${deliveryId}`), {
+            ...emergencyCompletion, reason: secret.reason, completedAt: stamp(),
+          });
+        }
+        tx.update(deliveryRef, { state: "DELIVERED", ...(emergencyCompletion ? { completionProof: emergencyCompletion } : {}), ...(delivery.earnings ? { earnings: { ...delivery.earnings, status: "EARNED", earnedAt: timestampNow() } } : {}), codCollected: delivery.codAmount > 0, ...(delivery.codAmount > 0 ? { codCollectedAt: stamp() } : {}), deliveredAt: stamp(), updatedAt: stamp() });
         if (requestRef) tx.update(requestRef, { state: "COMPLETED", updatedAt: stamp() });
         else tx.update(orderRef, { status: "Delivered", stage: "Delivered", eta: "Delivered", deliveredAt: stamp(), ...(delivery.codAmount > 0 ? { codCollected: true, codCollectedAt: stamp(), codCollectedBy: uid } : {}), updatedAt: stamp() });
         tx.update(riderRef, { activeDeliveryId: null, updatedAt: stamp() });
@@ -250,27 +270,40 @@ export function createRiderCore(database, runtime) {
       }
       return { ok: true };
     });
-    if (result.incorrectCode) fail("invalid-argument", "That delivery code is incorrect. Check the code with the customer.");
+    if (result.incorrectCode) fail("invalid-argument", "That delivery code is incorrect. Check the code with the person who shared it.");
     return result;
   }
 
   async function customerCode(uid, input) {
     const storeReceipt = input?.storeReceipt === true;
-    await actor(uid, storeReceipt ? "seller" : "customer");
+    const sellerEmergency = input?.sellerEmergency === true;
+    if (storeReceipt && sellerEmergency) fail("invalid-argument", "Choose one confirmation type.");
+    const sellerCode = storeReceipt || sellerEmergency;
+    const source = sellerEmergency ? "sellerEmergency" : storeReceipt ? "storeReceipt" : "customer";
+    await actor(uid, sellerCode ? "seller" : "customer");
+    const reason = sellerEmergency ? text(input.reason, 500) : "";
+    if (sellerEmergency && (input.handoverConfirmed !== true || reason.length < 5)) {
+      fail("invalid-argument", "Confirm the customer received the parts and explain why an emergency code is needed.");
+    }
     const deliveryId = documentId(input?.deliveryId);
     return database.runTransaction(async (tx) => {
       const delivery = (await tx.get(database.doc(`deliveries/${deliveryId}`))).data();
-      if (!delivery || (storeReceipt ? delivery.sellerId !== uid : delivery.customerId !== uid)) fail("permission-denied", "This is not your delivery.");
-      const allowed = storeReceipt
-        ? delivery.state === "PICKED_UP" && (delivery.kind === "return" || (delivery.kind === "replacement" && delivery.exchangeAt))
-        : delivery.kind === "return" ? delivery.state === "ACCEPTED" : delivery.state === "PICKED_UP" && !delivery.exchangeAt;
+      if (!delivery || (sellerCode ? delivery.sellerId !== uid : delivery.customerId !== uid)) fail("permission-denied", "This is not your delivery.");
+      const regularDelivery = delivery.requestId == null && (!delivery.kind || delivery.kind === "delivery");
+      let allowed;
+      if (sellerEmergency) allowed = regularDelivery && delivery.state === "PICKED_UP";
+      else if (storeReceipt) allowed = delivery.state === "PICKED_UP" && (delivery.kind === "return" || (delivery.kind === "replacement" && delivery.exchangeAt));
+      else allowed = delivery.kind === "return" ? delivery.state === "ACCEPTED" : delivery.state === "PICKED_UP" && !delivery.exchangeAt;
       if (!allowed) fail("failed-precondition", "This ride is not awaiting your confirmation code.");
-      if (storeReceipt) {
+      if (sellerCode) {
         const store = (await tx.get(database.doc(`stores/${delivery.storeId}`))).data();
         if (store?.ownerId !== uid) fail("permission-denied", "This is not your store.");
       }
       const [orderSnapshot, riderSnapshot] = await Promise.all([tx.get(database.doc(`orders/${delivery.orderId}`)), tx.get(database.doc(`riders/${delivery.riderId}`))]);
       const order = orderSnapshot.data();
+      if (sellerEmergency && (order?.sellerId !== uid || order.storeId !== delivery.storeId || order.stage === "Delivered")) {
+        fail("failed-precondition", "This order is no longer awaiting confirmation from your store.");
+      }
       if (!order || (!delivery.requestId && (order.riderDeliveryId !== deliveryId || order.orderStatus !== "PLACED")) || riderSnapshot.data()?.activeDeliveryId !== deliveryId) fail("failed-precondition", "This delivery is no longer awaiting confirmation. Refresh your order for its latest status.");
       if (!delivery.requestId && !["PAID", "PAYMENT_DUE"].includes(order.paymentStatus)) fail("failed-precondition", "Your seller must confirm the payment before a delivery code can be generated.");
       const ref = database.doc(`deliverySecrets/${deliveryId}`);
@@ -279,12 +312,18 @@ export function createRiderCore(database, runtime) {
       const currentTime = Date.now();
       const validSecret = secret && millis(secret.expiresAt) > currentTime && !secret.lockedUntil;
       const regenerateAfter = millis(secret?.createdAt) + 30_000;
-      if (validSecret && input.regenerate !== true) return { code: secret.code, expiresAt: millis(secret.expiresAt), regenerateAfter };
+      // Older codes did not record a source. They cannot be shown to the emergency issuer.
+      const sameSource = secret?.source === source || (!secret?.source && !sellerEmergency);
+      if (validSecret && sameSource && input.regenerate !== true) return { code: secret.code, expiresAt: millis(secret.expiresAt), regenerateAfter };
       if (validSecret && currentTime < regenerateAfter) fail("resource-exhausted", "Wait 30 seconds between generating delivery codes. You can still show the current code.");
       let code = generateCode();
       if (code === secret?.code) code = String(100000 + (Number(code) - 100000 + 1) % 900000);
-      const expiresAt = currentTime + 30 * 60_000;
-      tx.set(ref, { code, expiresAt: timestampFromMillis(expiresAt), attempts: validSecret ? secret.attempts || 0 : 0, createdAt: stamp() });
+      const expiresAt = currentTime + (sellerEmergency ? 5 : 30) * 60_000;
+      tx.set(ref, {
+        code, source, expiresAt: timestampFromMillis(expiresAt),
+        attempts: validSecret ? secret.attempts || 0 : 0, createdAt: stamp(),
+        ...(sellerEmergency ? { issuedBy: uid, reason } : {}),
+      });
       return { code, expiresAt, regenerateAfter: currentTime + 30_000 };
     });
   }

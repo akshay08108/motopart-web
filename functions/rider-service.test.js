@@ -13,7 +13,7 @@ const order = (extra = {}) => ({ customerId: "cx", sellerId: "seller", storeId: 
 const rejected = (promise, code) => assert.rejects(promise, (error) => error.code === code);
 
 beforeEach(async () => {
-  for (const collection of ["users", "riders", "stores", "orders", "deliveries", "deliverySecrets"]) await db.recursiveDelete(db.collection(collection));
+  for (const collection of ["users", "riders", "stores", "orders", "deliveries", "deliverySecrets", "deliveryCompletionAudits"]) await db.recursiveDelete(db.collection(collection));
   await Promise.all([
     db.doc("users/cx").set({ roles: ["customer"] }), db.doc("users/other-cx").set({ roles: ["customer"] }),
     db.doc("users/seller").set({ roles: ["seller"] }), db.doc("users/other-seller").set({ roles: ["seller"] }),
@@ -195,4 +195,54 @@ test("cancelled assignments release riders and prepaid delivery requires no cash
   const { code } = await service.customerCode("cx", { deliveryId });
   await service.riderAction("rider", { action: "complete", deliveryId, code });
   assert.equal((await db.doc("orders/order").get()).data().paymentStatus, "PAID");
+});
+
+test("the assigned rider can complete a confirmed handover using a store's emergency code", async () => {
+  const { deliveryId } = await assign();
+  const emergency = { deliveryId, sellerEmergency: true, handoverConfirmed: true, reason: "Customer confirmed receipt by phone" };
+  await rejected(service.customerCode("seller", emergency), "failed-precondition");
+  await service.riderAction("rider", { action: "accept", deliveryId });
+  await service.riderAction("rider", { action: "pickup", deliveryId });
+  await rejected(service.customerCode("other-seller", emergency), "permission-denied");
+  await rejected(service.customerCode("cx", emergency), "permission-denied");
+  await rejected(service.customerCode("seller", { ...emergency, handoverConfirmed: false }), "invalid-argument");
+
+  const customer = await service.customerCode("cx", { deliveryId });
+  const secretRef = db.doc(`deliverySecrets/${deliveryId}`);
+  await secretRef.update({ createdAt: Timestamp.fromMillis(Date.now() - 31_000), attempts: 2 });
+  const { code, expiresAt } = await service.customerCode("seller", emergency);
+  assert.notEqual(code, customer.code);
+  assert.ok(expiresAt > Date.now() && expiresAt <= Date.now() + 300_000);
+  assert.equal((await secretRef.get()).data().attempts, 2);
+  await rejected(service.customerCode("cx", { deliveryId }), "resource-exhausted");
+
+  const completion = { action: "complete", deliveryId, code, codCollected: true, handoverConfirmed: true };
+  await rejected(service.riderAction("other-rider", completion), "permission-denied");
+  await rejected(service.riderAction("rider", { ...completion, handoverConfirmed: false }), "failed-precondition");
+  await rejected(service.riderAction("rider", { ...completion, codCollected: false }), "failed-precondition");
+  await rejected(service.riderAction("rider", { ...completion, code: customer.code }), "invalid-argument");
+  await service.riderAction("rider", completion);
+
+  const savedRide = (await db.doc(`deliveries/${deliveryId}`).get()).data();
+  assert.equal(savedRide.state, "DELIVERED");
+  assert.equal(savedRide.completionProof.method, "sellerEmergency");
+  assert.equal(savedRide.earnings.status, "EARNED");
+  assert.equal((await db.doc(`deliveryCompletionAudits/${deliveryId}`).get()).data().reason, emergency.reason);
+  assert.equal((await secretRef.get()).exists, false);
+  const savedOrder = (await db.doc("orders/order").get()).data();
+  assert.equal(savedOrder.stage, "Delivered");
+  assert.equal(savedOrder.codCollected, true);
+  await rejected(service.customerCode("seller", emergency), "failed-precondition");
+  await service.dispatch("seller", { action: "assign", orderId: "order-2", riderId: "rider", oneWayDistanceKm: 5 });
+});
+
+test("seller can recover a stuck ride after the parts return even if the rider could not report an issue", async () => {
+  const deliveryId = await pickup();
+  await service.dispatch("seller", { action: "returned", deliveryId, reason: "Parts received at the store" });
+  const ride = (await db.doc(`deliveries/${deliveryId}`).get()).data();
+  assert.equal(ride.state, "RETURNED");
+  assert.equal(ride.earnings.status, "PENDING_DELIVERY");
+  assert.equal(ride.deliveredAt, undefined);
+  assert.equal((await db.doc("orders/order").get()).data().status, "Packed");
+  assert.notEqual((await assign()).deliveryId, deliveryId);
 });
