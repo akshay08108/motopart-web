@@ -39,6 +39,24 @@ button, select { cursor: pointer; }
 .px-brand { flex: 0 0 auto; display: flex; align-items: center; font-family: "Racing Sans One", "Sora Variable", sans-serif; font-size: 31px; font-weight: 400; line-height: 1; letter-spacing: -.015em; text-transform: uppercase; }
 .px-brand b, .px-footer-brand span { color: var(--px-red); }
 .px-mark { width: 48px; height: 48px; object-fit: contain; margin-right: 2px; }
+@keyframes px-logo-arrive {
+  from { opacity: .55; transform: translateX(-6px) scale(.95); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .px-brand img, .px-auth-brand img, .px-auth-mobile-brand img, .rx-brand img, .sx-logo img {
+    animation: px-logo-arrive 380ms ease-out both;
+    transition: transform 180ms ease-out;
+  }
+
+  .px-brand:is(:hover, :focus-visible) img,
+  .rx-brand:is(:hover, :focus-visible) img,
+  .sx-logo:is(:hover, :focus-visible) img {
+    animation-fill-mode: backwards;
+    transform: translateX(2px) rotate(-7deg);
+  }
+}
 .px-mark-dark { display: none; }
 [data-theme="dark"] .px-mark-light { display: none; }
 [data-theme="dark"] .px-mark-dark { display: block; }

@@ -64,6 +64,7 @@ export type SellerProduct = {
 export type NewSellerProduct = Omit<SellerProduct, "id" | "sellerId" | "storeId" | "status">;
 
 export type CartLine = {
+  cartEntryId?: string;
   product: Product;
   quantity: number;
   storeId?: string;

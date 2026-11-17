@@ -4,7 +4,7 @@ def keystoreProperties = new Properties()
 def partxAppRole = providers.environmentVariable('PARTX_ANDROID_APP')
     .orElse(project.hasProperty('riderApp') ? 'rider' : 'customer').get()
 def partxApps = [
-    customer: [id: 'com.partx.app', label: 'PartX', versionCode: 2, versionName: '1.1', signingFile: 'key.properties'],
+    customer: [id: 'com.partx.app', label: 'PartX', versionCode: 3, versionName: '1.2', signingFile: 'key.properties'],
     seller: [id: 'com.partx.seller', label: 'PartX Seller', versionCode: 3, versionName: '1.2', signingFile: 'seller-key.properties'],
     rider: [id: 'com.partx.rider', label: 'PartX Rider', versionCode: 5, versionName: '0.5.0', signingFile: 'rider-key.properties'],
 ]

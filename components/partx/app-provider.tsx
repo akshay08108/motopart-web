@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { createUserWithEmailAndPassword, deleteUser, onAuthStateChanged, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, signOut as firebaseSignOut, updateProfile } from "firebase/auth";
+import { browserLocalPersistence, browserSessionPersistence, setPersistence, createUserWithEmailAndPassword, deleteUser, onAuthStateChanged, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, signOut as firebaseSignOut, updateProfile } from "firebase/auth";
 import { arrayUnion, collection, doc, getDoc, getDocsFromServer, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import type { AppLocation, CartLine, CustomerUser, Garage, LiveAnnouncement, Order, OrderStage, PartnerStore, PaymentMethod, PaymentOrderStatus, Product, SellerPaymentStatus, SellerProduct, StorePaymentSettings, UserRole, Vehicle } from "@/lib/types";
 import { getDemoCatalog } from "@/lib/demo-data";
@@ -14,6 +14,9 @@ import { browserNotificationPermission, registerPushNotifications, unregisterPus
 import { formatDeliveryTime } from "@/lib/delivery-time";
 import { freeDeliverySlots, occupiesDeliveryOffer, quoteDelivery } from "@/lib/delivery-pricing";
 
+import { removePurchasedItems, type CheckoutLine } from "@/lib/cart-checkout";
+
+const CART_KEY = "partx-cart-v1";
 const AUTH_PROFILE_CACHE_KEY = "partx-firebase-profile-v1";
 
 export type PartXOrder = Order & {
@@ -50,6 +53,7 @@ type AppContextValue = {
   cart: CartLine[];
   cartCount: number;
   cartTotal: number;
+  trackRazorpayCheckout: (orderId: string) => void;
   addToCart: (product: CartLine["product"], quantity?: number, seller?: CartSellerSelection) => void;
   setQuantity: (id: string, quantity: number) => void;
   removeFromCart: (id: string) => void;
@@ -83,7 +87,7 @@ type AppContextValue = {
   emailVerified: boolean;
   requestEmailVerification: () => Promise<void>;
   refreshEmailVerification: () => Promise<boolean>;
-  signIn: (identifier: string, password: string, role: UserRole) => Promise<boolean>;
+  signIn: (identifier: string, password: string, role: UserRole, remember: boolean) => Promise<"ok" | "credentials" | "role" | "network" | "retry">;
   register: (input: RegisterInput) => Promise<boolean>;
   resetPassword: (email: string) => Promise<boolean>;
   notificationPermission: NotificationPermission | "unsupported";
@@ -104,6 +108,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [cartNotice, setCartNotice] = useState<AppContextValue["cartNotice"]>(null);
   const cartNoticeSequence = useRef(0);
+  const trackedRazorpayCarts = useRef<Record<string, Record<string, CheckoutLine[]>>>({});
   const [savedGarage, setSavedGarage] = useState<(typeof emptyGarage & { uid: string }) | null>(null);
   const [savedLocation, setSavedLocation] = useState<{ uid: string; value: AppLocation } | null>(null);
   const [stores, setStores] = useState<PartnerStore[]>(demoStores);
@@ -234,7 +239,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       setCustomerDevice(readBrowserStorage("local", "partx-device-role") === "customer");
       const savedTheme = readBrowserStorage("local", "partx-theme") ?? readBrowserStorage("local", "motopart-theme");
       if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
-      const savedCart = readBrowserStorage("local", "partx-cart-v1");
+      const savedCart = readBrowserStorage("local", CART_KEY);
       const savedProfile = readBrowserStorage("local", "partx-profile-v1");
       try {
         if (savedCart) {
@@ -316,9 +321,29 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!hydrated) return;
-    writeBrowserStorage("local", "partx-cart-v1", JSON.stringify(cart));
+    writeBrowserStorage("local", CART_KEY, JSON.stringify(cart));
     writeBrowserStorage("local", "partx-profile-v1", JSON.stringify({ stores }));
   }, [cart, stores, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || !customerId || !ordersReady) return;
+    const key = `partx-razorpay-cart:${customerId}`;
+    const pending = trackedRazorpayCarts.current[key] ??= savedRazorpayCarts(key);
+    const completed = orders.filter((order) =>
+      order.paymentMethod === "razorpay" &&
+      (order.paymentStatus === "PAID" || order.stage === "Delivered") &&
+      pending[order.id]
+    );
+    if (!completed.length) return;
+
+    const purchased = completed.map((order) => pending[order.id]);
+    for (const order of completed) delete pending[order.id];
+    writeBrowserStorage("local", key, JSON.stringify(pending));
+    queueMicrotask(() => {
+      setCart((current) => purchased.reduce(removePurchasedItems, current));
+      setCartNotice(null);
+    });
+  }, [customerId, hydrated, orders, ordersReady]);
 
   const marketplaceStores = useMemo(() => {
     const combined = new Map(stores.map((store) => [store.id, store]));
@@ -380,6 +405,16 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     cart: resolvedCart,
     cartCount: resolvedCart.reduce((sum, line) => sum + line.quantity, 0),
     cartTotal: resolvedCart.reduce((sum, line) => sum + (line.unitPrice ?? line.product.price) * line.quantity, 0),
+    trackRazorpayCheckout: (orderId) => {
+      if (!customerId) return;
+      const key = `partx-razorpay-cart:${customerId}`;
+      const pending = trackedRazorpayCarts.current[key] ??= savedRazorpayCarts(key);
+      if (pending[orderId]) return;
+      pending[orderId] = resolvedCart.map(({ product, quantity, storeId, cartEntryId }) => ({
+        productId: product.id, partNumber: product.partNumber, quantity, storeId, cartEntryId,
+      }));
+      writeBrowserStorage("local", key, JSON.stringify(pending));
+    },
     addToCart: (product, quantity = 1, seller) => {
       const exactStore = marketplaceStores.find((store) => store.listings.some((listing) => listing.productId === product.id));
       const defaultStore = exactStore ?? marketplaceStores.find((store) => store.listings.some((listing) => listing.partNumber === product.partNumber));
@@ -396,10 +431,11 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       const canAdd = selectedProduct.stock > 0 && (!sameStore || (existing?.quantity ?? 0) < selectedProduct.stock);
       setCartNotice({ id: ++cartNoticeSequence.current, productName: selectedProduct.name, message: canAdd ? (existing && !sameStore ? "Store updated in cart" : "Added to cart") : selectedProduct.stock <= 0 ? "Currently out of stock" : "Maximum available stock already in cart", added: canAdd, expiresAt: Date.now() + 3500 });
       if (!canAdd) return;
+      const cartEntryId = crypto.randomUUID();
       setCart((current) => {
       const found = current.find((line) => line.product.id === selectedProduct.id || line.product.partNumber === selectedProduct.partNumber);
-      if (!found) return [...current, { product: selectedProduct, quantity: Math.min(requestedQuantity, selectedProduct.stock), storeId: selection.storeId, storeName: selection.storeName, unitPrice: selection.price }];
-      if (found.storeId !== selection.storeId) return current.map((line) => line.product.id === found.product.id ? { ...line, product: selectedProduct, storeId: selection.storeId, storeName: selection.storeName, unitPrice: selection.price } : line);
+      if (!found) return [...current, { product: selectedProduct, cartEntryId, quantity: Math.min(requestedQuantity, selectedProduct.stock), storeId: selection.storeId, storeName: selection.storeName, unitPrice: selection.price }];
+      if (found.storeId !== selection.storeId) return current.map((line) => line.product.id === found.product.id ? { ...line, product: selectedProduct, cartEntryId, storeId: selection.storeId, storeName: selection.storeName, unitPrice: selection.price } : line);
       return current.map((line) => line.product.id === found.product.id ? { ...line, product: selectedProduct, quantity: Math.min(line.quantity + requestedQuantity, selectedProduct.stock), unitPrice: selection.price } : line);
       });
     },
@@ -677,23 +713,30 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       setVerifiedUid(authUser.uid);
       return true;
     },
-    signIn: async (identifier, password, role) => {
-      if (!identifier.trim() || password.length < 6) return false;
+    signIn: async (identifier, password, role, remember) => {
+      if (!identifier.trim() || !password) return "credentials";
+      let signedInUid: string | undefined;
       try {
+        await setPersistence(firebaseAuth, remember ? browserLocalPersistence : browserSessionPersistence);
         const credential = await signInWithEmailAndPassword(firebaseAuth, identifier.trim().toLowerCase(), password);
+        signedInUid = credential.user.uid;
         const profileSnapshot = await getDoc(doc(firestore, "users", credential.user.uid));
         const profile = profileSnapshot.exists() ? parseFirebaseUser(credential.user.uid, credential.user.email ?? identifier, profileSnapshot.data()) : null;
         if (!profile?.roles.includes(role) || profile.activeRole !== role) {
           await firebaseSignOut(firebaseAuth);
-          return false;
+          return "role";
         }
         setVerifiedUid(credential.user.emailVerified ? credential.user.uid : null);
         const activeProfile = { ...profile, activeRole: role };
         setUser(activeProfile);
         writeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY, JSON.stringify(activeProfile));
-        return true;
-      } catch {
-        return false;
+        return "ok";
+      } catch (reason) {
+        if (signedInUid && firebaseAuth.currentUser?.uid === signedInUid) await firebaseSignOut(firebaseAuth).catch(() => undefined);
+        const code = (reason as { code?: string } | null)?.code;
+        if (code === "auth/network-request-failed" || code === "unavailable") return "network";
+        if (["auth/invalid-credential", "auth/user-not-found", "auth/wrong-password", "auth/invalid-email"].includes(code ?? "")) return "credentials";
+        return "retry";
       }
     },
     register: async (input) => {
@@ -703,6 +746,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       if (input.role === "rider" && (name.length > 120 || !/^\+?[1-9]\d{9,14}$/.test(mobile))) return false;
       let credential;
       try {
+        await setPersistence(firebaseAuth, browserLocalPersistence);
         credential = await createUserWithEmailAndPassword(firebaseAuth, input.email.trim().toLowerCase(), input.password);
         await updateProfile(credential.user, { displayName: name });
         const storeId = input.role === "seller" ? `store-${credential.user.uid}` : undefined;
@@ -761,7 +805,8 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     },
     resetPassword: async (email) => {
       if (!email.includes("@")) return false;
-      try { await sendPasswordResetEmail(firebaseAuth, email.trim()); return true; } catch { return false; }
+      try { await sendPasswordResetEmail(firebaseAuth, email.trim().toLowerCase()); return true; }
+      catch (reason) { return (reason as { code?: string } | null)?.code === "auth/user-not-found"; }
     },
     notificationPermission,
     notificationsEnabled,
@@ -972,4 +1017,13 @@ export function usePartX() {
   const context = useContext(AppContext);
   if (!context) throw new Error("usePartX must be used inside PartXProvider");
   return context;
+}
+
+function savedRazorpayCarts(key: string): Record<string, CheckoutLine[]> {
+  try {
+    const pending: Record<string, unknown> = JSON.parse(readBrowserStorage("local", key) ?? "{}");
+    return Object.fromEntries(Object.entries(pending).filter((entry): entry is [string, CheckoutLine[]] => Array.isArray(entry[1])));
+  } catch {
+    return {};
+  }
 }

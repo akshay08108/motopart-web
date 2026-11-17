@@ -26,7 +26,7 @@ export { CartPage } from "./cart-page";
 
 export function CheckoutPage() {
   const router = useRouter();
-  const { cart, cartTotal, location, garages, stores, placeOrder, submitUpiReference, cancelPayment, user, orders, ordersReady, freeDeliveriesRemaining } = usePartX();
+  const { cart, cartTotal, location, garages, stores, placeOrder, trackRazorpayCheckout, submitUpiReference, cancelPayment, user, orders, ordersReady, freeDeliveriesRemaining } = usePartX();
   const [fulfilment, setFulfilment] = useState<FulfilmentMode>("delivery");
   const [payment, setPayment] = useState<PaymentMethod>("upi");
   const [processing, setProcessing] = useState(false);
@@ -71,6 +71,7 @@ export function CheckoutPage() {
         const saved = readBrowserStorage("session", key);
         const orderId = saved ?? `PX-TEST-${crypto.randomUUID().replaceAll("-", "")}`;
         writeBrowserStorage("session", key, orderId);
+        trackRazorpayCheckout(orderId);
         const result = await openRazorpayCheckout({
           orderId, storeId: selectedStore.id, fulfilment, expectedAmount,
           items: cart.map((line) => ({ productId: line.product.id, quantity: line.quantity })),
