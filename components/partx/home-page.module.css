@@ -1,0 +1,415 @@
+.home {
+  background: var(--px-surface);
+  padding-block: 26px 52px;
+}
+
+.hero,
+.section {
+  max-width: 1320px;
+}
+
+.heroMain {
+  --hero-red: #d60c1d;
+  position: relative;
+  isolation: isolate;
+  border: 1px solid var(--px-line);
+  border-top: 2px solid var(--hero-red);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--hero-red) 2%, var(--px-card));
+}
+
+.heroCopy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  padding: 36px 24px 28px;
+  text-align: center;
+}
+
+.heroCopy h1 {
+  margin: 0;
+  color: var(--px-ink);
+  font-family: "Plus Jakarta Sans Variable", sans-serif;
+  font-size: clamp(42px, 5vw, 72px);
+  font-weight: 650;
+  font-style: italic;
+  font-synthesis: none;
+  line-height: 1.08;
+  letter-spacing: -.035em;
+}
+
+.heroCopy h1 em {
+  color: var(--hero-red);
+  font-weight: 800;
+  font-style: inherit;
+}
+
+.heroCopy p {
+  margin: 15px 0 23px;
+  color: var(--px-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.heroCopy .search {
+  width: min(100%, 620px);
+  min-width: 0;
+  margin: 0;
+  z-index: 6;
+  text-align: left;
+}
+
+.search :global(.px-search-form) {
+  height: 60px;
+  padding: 0 7px 0 20px;
+  border: 1px solid var(--px-line);
+  border-radius: 14px;
+  background: var(--px-card);
+  color: var(--px-ink);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 4%);
+}
+
+.search :global(.px-search-form) input {
+  font-size: 16px;
+}
+
+.search :global(.px-search-form) button {
+  min-width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--px-red-deep);
+  color: #fff;
+}
+
+.search :global(.px-search-form) button svg {
+  color: inherit;
+}
+
+.search :global(.px-search-dropdown) {
+  color: var(--px-ink);
+}
+
+.quickSearches {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin-top: 17px;
+}
+
+.quickSearches a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  color: var(--px-muted);
+  font-size: 12px;
+  transition: color .18s ease;
+}
+
+.quickSearches a:hover {
+  color: var(--px-red);
+}
+
+.quickSearches svg,
+.sectionHeading svg {
+  width: 14px;
+  flex-shrink: 0;
+}
+
+.shortcuts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 10px;
+  border: 1px solid var(--px-line);
+  border-radius: 14px;
+  background: var(--px-card);
+}
+
+.shortcut {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+  padding: 14px 22px;
+}
+
+.shortcut + .shortcut {
+  border-left: 1px solid var(--px-line);
+}
+
+.shortcut > svg {
+  width: 22px;
+  flex-shrink: 0;
+  color: var(--px-red);
+}
+
+.shortcut > div {
+  min-width: 0;
+}
+
+.shortcut > div > span,
+.shortcut > div > a > span,
+.vehicleSelect > span {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 12px;
+  color: var(--px-muted);
+}
+
+.shortcut strong,
+.vehicleSelect select {
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.vehicleSelect select {
+  display: block;
+  width: 100%;
+  min-height: 26px;
+  padding: 0;
+  border: 0;
+  background: var(--px-card);
+  color: var(--px-ink);
+}
+
+.shortcut .location {
+  justify-content: flex-start;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  overflow-wrap: anywhere;
+  color: var(--px-ink);
+  font-size: 14px;
+  text-align: left;
+}
+
+.location > svg:first-child {
+  display: none;
+}
+
+.shortcut .shortcutArrow {
+  width: 16px;
+  margin-left: auto;
+}
+
+.vehicleError {
+  margin: 8px 0 0;
+  color: var(--px-ink);
+  font-size: 14px;
+}
+
+.section {
+  padding-top: 32px;
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.sectionHeading h2 {
+  margin: 0;
+  font-family: "Sora Variable", sans-serif;
+  font-size: clamp(21px, 2.3vw, 31px);
+  font-weight: 750;
+  letter-spacing: -.035em;
+}
+
+.sectionHeading a {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--px-ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.sectionHeading svg {
+  color: var(--px-red);
+}
+
+.categories {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.category {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 7px;
+  border: 1px solid var(--px-line);
+  border-radius: 12px;
+  background: var(--px-card);
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+
+.category:hover {
+  border-color: var(--px-red);
+  box-shadow: 0 5px 18px rgba(12, 14, 18, .09);
+}
+
+.categoryImage {
+  display: grid;
+  width: clamp(49px, 5.6vw, 76px);
+  aspect-ratio: 1;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 8px;
+  background: #f2eeee;
+  overflow: hidden;
+}
+
+.categoryImage img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+}
+
+.categoryText {
+  min-width: 0;
+  padding-right: 3px;
+  line-height: 1.32;
+}
+
+.categoryText strong {
+  display: block;
+  font-size: 13px;
+}
+
+.categoryText small {
+  display: block;
+  margin-top: 4px;
+  color: var(--px-muted);
+  font-size: 11px;
+}
+
+.home a:focus-visible,
+.home button:focus-visible,
+.home select:focus-visible {
+  outline: 2px solid var(--px-red);
+  outline-offset: 3px;
+}
+
+@media (max-width: 860px) {
+  .heroCopy .search {
+    display: none;
+  }
+}
+
+@media (max-width: 1080px) {
+  .categories {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .parts :global(.px-product-grid) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .home {
+    padding-block: 14px 36px;
+  }
+
+  .heroMain {
+    display: block;
+    border-radius: 18px;
+  }
+
+  .heroCopy {
+    padding: 23px 16px 18px;
+  }
+
+  .heroCopy h1 {
+    font-size: clamp(37px, 10vw, 54px);
+  }
+
+  .heroCopy p {
+    margin: 12px 0 0;
+    max-width: 29ch;
+    font-size: 13px;
+  }
+
+  .quickSearches {
+    gap: 6px 16px;
+    margin-top: 12px;
+  }
+
+  .quickSearches a {
+    min-height: 32px;
+    font-size: 11px;
+  }
+
+  .shortcuts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-radius: 14px;
+  }
+
+  .shortcut {
+    gap: 7px;
+    padding: 9px 10px;
+  }
+
+  .shortcut > svg {
+    width: 17px;
+  }
+
+  .shortcut strong,
+  .shortcut .location {
+    font-size: 12px;
+  }
+
+  .vehicleSelect select {
+    font-size: 16px;
+  }
+
+  .shortcut:last-child {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--px-line);
+    border-left: 0;
+  }
+
+  .shortcut:last-child > div > span,
+  .categoryText small {
+    display: none;
+  }
+
+  .section {
+    padding-top: 24px;
+  }
+
+  .categories,
+  .parts :global(.px-product-grid) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .category {
+    gap: 7px;
+    padding: 5px;
+  }
+
+  .categoryText strong {
+    font-size: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quickSearches a,
+  .category {
+    transition: none;
+  }
+
+}

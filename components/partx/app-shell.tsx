@@ -91,7 +91,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav className={open ? "px-nav is-open" : "px-nav"} aria-label="Primary navigation">
           {nav.map(([href, label]) => <Link key={href} className={active(href) ? "active" : ""} href={href} onClick={() => setOpen(false)}>{label}</Link>)}
         </nav>
-        <PartSearch className="px-nav-search"/>
+        <PartSearch className={pathname === "/" ? "px-nav-search px-nav-search-home" : "px-nav-search"} placeholder={pathname === "/" ? "Search parts" : undefined}/>
         <div className="px-header-actions">
           <button className="px-icon-button" onClick={toggleTheme} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><Icon name={theme === "light" ? "moon" : "sun"}/></button>
           <Link href={isCustomer ? "/account" : isSeller ? "/seller" : "/login"} className="px-icon-button" aria-label={user ? "Account" : "Sign in"}><Icon name="user"/></Link>

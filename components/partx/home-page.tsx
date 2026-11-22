@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { vehicleName } from "@/lib/vehicle-display";
 import { usePartX } from "./app-provider";
@@ -10,6 +9,7 @@ import { Icon } from "./icons";
 import { ProductCard } from "./product-card";
 import { PartSearch } from "./part-search";
 import { DeliveryLocationButton } from "./delivery-location-button";
+import styles from "./home-page.module.css";
 
 const categories = [
   { name: "Brakes", image: "/categories/0-v2.png", description: "Pads, discs & calipers", href: "/shop?category=Brakes" },
@@ -25,51 +25,87 @@ const categories = [
 ] as const;
 
 export function HomePage() {
-  const router = useRouter();
   const { vehicles, activeVehicleId, setActiveVehicleId, catalog } = usePartX();
   const [vehicleError, setVehicleError] = useState("");
-  const [term, setTerm] = useState("");
   const activeVehicle = vehicles.find((vehicle) => vehicle.id === activeVehicleId) ?? vehicles[0];
   const compatibleParts = activeVehicle ? catalog.filter((product) =>
     product.compatibleVehicleIds.includes(activeVehicle.id)
     || Boolean(activeVehicle.vehicleModelId && product.compatibleVehicleIds.includes(activeVehicle.vehicleModelId))) : [];
-  const go = () => router.push(`/shop${term.trim() ? `?q=${encodeURIComponent(term)}` : ""}`);
+  const shownParts = (compatibleParts.length ? compatibleParts : catalog).slice(0, 5);
 
-  return <>
-    <section className="px-hero">
-      <div className="px-container px-hero-grid">
-        <div className="px-hero-copy">
-          <div className="px-eyebrow">VEHICLE-VERIFIED AUTO PARTS</div>
-          <div className="px-hero-headline"><h1><span className="px-hero-line">Find the exact part</span> <span className="px-hero-line">for your <span className="px-hero-accent">vehicle.</span></span></h1></div>
-          <p>Vehicle-verified parts from trusted stores, ready for pickup or delivery.</p>
-          <div className="px-vehicle-finder">
-            {vehicles.length ? <label>Your vehicle<select value={activeVehicle?.id ?? ""} onChange={(event) => {
-              setVehicleError("");
-              void setActiveVehicleId(event.target.value).catch(() => setVehicleError("Could not change your vehicle. Try again."));
-            }}>{vehicles.map((vehicle) => <option value={vehicle.id} key={vehicle.id}>{vehicleName(vehicle)} · {vehicle.variant || "Model"}</option>)}</select></label> : <Link href="/garage?add=vehicle" className="px-btn px-btn-outline"><Icon name="plus"/>Add your vehicle</Link>}
-            <div className="px-hero-part-search"><span>Part or part number</span><PartSearch value={term} onChange={setTerm} label="Search hero parts" placeholder="e.g. brake pads, LX-3541"/></div>
-            <button className="px-btn px-btn-red" onClick={go}>Find parts <Icon name="arrow"/></button>
+  return <div className={styles.home}>
+    <section className={`px-container ${styles.hero}`} aria-labelledby="storefront-heading">
+      <div className={styles.heroMain}>
+        <div className={styles.heroCopy}>
+          <h1 id="storefront-heading">Your next part,<br/><em>right here.</em></h1>
+          <p>Find what fits. Compare local stores. Get back on the road.</p>
+          <PartSearch className={styles.search} label="Find a part" placeholder="Search a part, brand or part number"/>
+          <div className={styles.quickSearches} aria-label="Quick part searches">
+            <Link href="/shop?q=brake%20pads">Brake pads<Icon name="arrow"/></Link>
+            <Link href="/shop?q=air%20filter">Air filters<Icon name="arrow"/></Link>
+            <Link href="/shop?q=engine%20oil">Engine oil<Icon name="arrow"/></Link>
           </div>
-          {vehicleError && <p role="alert">{vehicleError}</p>}
-          <div className="px-hero-facts"><span><Icon name="check"/>Fitment checked</span><DeliveryLocationButton/></div>
         </div>
       </div>
+
+      <div className={styles.shortcuts}>
+        <div className={styles.shortcut}>
+          <Icon name="garage"/>
+          <div>
+            {vehicles.length ? <label className={styles.vehicleSelect}>
+              <span>Your vehicle</span>
+              <select value={activeVehicle?.id ?? ""} onChange={(event) => {
+                setVehicleError("");
+                void setActiveVehicleId(event.target.value).catch(() => setVehicleError("Could not change your vehicle. Try again."));
+              }}>
+                {vehicles.map((vehicle) => <option value={vehicle.id} key={vehicle.id}>{vehicleName(vehicle)}{vehicle.variant ? ` · ${vehicle.variant}` : ""}</option>)}
+              </select>
+            </label> : <Link href="/garage?add=vehicle">
+              <span>Vehicle fitment</span>
+              <strong>Add your vehicle</strong>
+            </Link>}
+          </div>
+        </div>
+        <div className={styles.shortcut}>
+          <Icon name="pin"/>
+          <div>
+            <span>Deliver to</span>
+            <DeliveryLocationButton className={styles.location}/>
+          </div>
+        </div>
+        <Link href="/shop?view=stores" className={styles.shortcut}>
+          <Icon name="store"/>
+          <div><span>Local sellers</span><strong>Shop by store</strong></div>
+          <Icon name="arrow" className={styles.shortcutArrow}/>
+        </Link>
+      </div>
+      {vehicleError && <p className={styles.vehicleError} role="alert">{vehicleError}</p>}
     </section>
 
-    <section className="px-section px-categories-section">
-      <div className="px-container">
-        <div className="px-section-head"><div><span>SHOP BY SYSTEM</span><h2>Popular categories</h2></div><Link href="/shop">View all parts <Icon name="arrow"/></Link></div>
-        <div className="px-category-grid">{categories.map((category) => <Link href={category.href} className="px-category-card" data-category={category.name} key={category.name}><div><Image src={category.image} alt={`${category.name} auto parts`} width={360} height={260}/></div><b>{category.name}</b><span>{category.description}</span><Icon name="arrow"/></Link>)}</div>
+    <section className={`px-container ${styles.section}`} aria-labelledby="storefront-categories">
+      <div className={styles.sectionHeading}>
+        <h2 id="storefront-categories">Shop by category</h2>
+        <Link href="/shop">All parts <Icon name="arrow"/></Link>
+      </div>
+      <div className={styles.categories}>
+        {categories.map((category) => <Link href={category.href} className={styles.category} key={category.name}>
+          <div className={styles.categoryImage}>
+            <Image src={category.image} alt="" width={96} height={96} sizes="80px"/>
+          </div>
+          <div className={styles.categoryText}>
+            <strong>{category.name}</strong>
+            <small>{category.description}</small>
+          </div>
+        </Link>)}
       </div>
     </section>
 
-    <section className="px-section">
-      <div className="px-container">
-        <div className="px-section-head"><div><h2>{activeVehicle && compatibleParts.length ? `Recommended for your ${activeVehicle.model}` : "Browse parts"}</h2></div><Link href="/shop">Shop all <Icon name="arrow"/></Link></div>
-        <div className="px-product-grid">{(compatibleParts.length ? compatibleParts : catalog).slice(0, 5).map((product) => <ProductCard product={product} key={product.id}/>)}</div>
+    <section className={`px-container ${styles.section} ${styles.parts}`} aria-labelledby="storefront-parts">
+      <div className={styles.sectionHeading}>
+        <h2 id="storefront-parts">{activeVehicle && compatibleParts.length ? `Parts for your ${activeVehicle.model}` : "Browse parts"}</h2>
+        <Link href="/shop">Shop all <Icon name="arrow"/></Link>
       </div>
+      <div className="px-product-grid">{shownParts.map((product) => <ProductCard product={product} key={product.id}/>)}</div>
     </section>
-
-    <section className="px-trust"><div className="px-container"><div><Icon name="check"/><span><b>Fitment verified</b>Against your vehicle</span></div><div><Icon name="garage"/><span><b>Trusted sellers</b>Prices from local stores</span></div><div><Icon name="orders"/><span><b>Easy fulfilment</b>Delivery, pickup or garage</span></div><div><Icon name="headset"/><span><b>Order support</b>Help when you need it</span></div></div></section>
-  </>;
+  </div>;
 }

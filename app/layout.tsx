@@ -1,4 +1,5 @@
 import "@fontsource-variable/plus-jakarta-sans";
+import "@fontsource-variable/plus-jakarta-sans/wght-italic.css";
 import "@fontsource-variable/sora";
 import "@fontsource/racing-sans-one";
 import "./globals.css";

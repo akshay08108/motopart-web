@@ -23,3 +23,8 @@
 .px-catalog-search .px-search-dropdown { width:100%; }
 @media(max-width:860px) { .px-header { height:auto; min-height:124px; } .px-header-inner { flex-wrap:wrap; gap:8px; padding-block:8px; } .px-brand { order:1; } .px-header-actions { order:2; } .px-nav-search { order:3; width:100%; flex:1 0 100%; margin:0; } .px-search-form input { font-size:16px; } .px-search-dropdown { width:100%; max-height:min(440px,55dvh); } .px-nav { top:124px; } .px-menu-scrim { top:124px; } }
 @media(prefers-reduced-motion:reduce) { .px-search-form { scroll-behavior:auto; } }
+
+@media (min-width: 861px) {
+  .px-nav-search-home { display: none; }
+  .px-nav-search-home + .px-header-actions { margin-left: auto; }
+}
