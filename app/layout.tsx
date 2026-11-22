@@ -12,6 +12,7 @@ import "./search.css";
 import "./rider.css";
 import "./rider-earnings.css";
 import "./seller-payments.css";
+import "./typography.css";
 import type { Metadata, Viewport } from "next";
 import { AppShell } from "@/components/partx/app-shell";
 import { PartXProvider } from "@/components/partx/app-provider";

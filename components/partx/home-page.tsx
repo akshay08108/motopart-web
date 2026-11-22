@@ -36,6 +36,27 @@ export function HomePage() {
   return <div className={styles.home}>
     <section className={`px-container ${styles.hero}`} aria-labelledby="storefront-heading">
       <div className={styles.heroMain}>
+        <div className={styles.heroArt} aria-hidden="true">
+          <span className={styles.heroGear}/>
+          <svg className={styles.heroWrench} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94Z"/>
+          </svg>
+          <svg className={styles.heroBrakePads} viewBox="0 0 80 56" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+            <path d="M9 17Q40-3 71 17l-4 18q-27-15-54 0Z"/>
+            <path d="m9 22-6 2 3 10 7-2m58-10 6 2-3 10-7-2M29 9l-2 17m24-17 2 17M15 41q25-13 50 0l-3 10q-22-10-44 0Z"/>
+            <circle cx="20" cy="20" r="2"/><circle cx="60" cy="20" r="2"/>
+          </svg>
+          <svg className={styles.heroSuspension} viewBox="0 0 56 100" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+            <circle cx="28" cy="8" r="5"/><circle cx="28" cy="92" r="5"/>
+            <path d="M28 13v11m0 52v11M20 24h16v52H20ZM16 25l24 9-24 9 24 9-24 9 24 9M16 76h24M16 22h24"/>
+          </svg>
+          <svg className={styles.heroFilter} viewBox="0 0 60 70" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+            <path d="M12 15q18-9 36 0v42q-18 12-36 0ZM12 15q18 12 36 0M12 23q18 12 36 0M20 32v20m10-17v20m10-23v20"/>
+          </svg>
+          <svg className={styles.heroSparkPlug} viewBox="0 0 40 100" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+            <path d="M16 4h8v12h-8ZM14 16h12v33H14ZM12 23h16M12 30h16M12 37h16M12 44h16M11 49h18l5 10-5 9H11L6 59ZM14 68h12v19H14ZM12 73h16M12 79h16M12 85h16M20 87v6m6-6v9h-6"/>
+          </svg>
+        </div>
         <div className={styles.heroCopy}>
           <h1 id="storefront-heading">Your next part,<br/><em>right here.</em></h1>
           <p>Find what fits. Compare local stores. Get back on the road.</p>

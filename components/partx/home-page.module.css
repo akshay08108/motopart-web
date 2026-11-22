@@ -11,6 +11,7 @@
 .heroMain {
   --hero-red: #d60c1d;
   position: relative;
+  z-index: 2;
   isolation: isolate;
   border: 1px solid var(--px-line);
   border-top: 2px solid var(--hero-red);
@@ -18,7 +19,82 @@
   background: color-mix(in srgb, var(--hero-red) 2%, var(--px-card));
 }
 
+.heroArt {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.heroGear {
+  position: absolute;
+  top: -35px;
+  right: -25px;
+  width: clamp(140px, 18vw, 230px);
+  aspect-ratio: 1;
+  background: var(--hero-red);
+  opacity: .07;
+  -webkit-mask: url("/brand/account-card-gear.svg") center / contain no-repeat;
+  mask: url("/brand/account-card-gear.svg") center / contain no-repeat;
+}
+
+.heroWrench {
+  position: absolute;
+  bottom: 14px;
+  left: 30px;
+  width: clamp(90px, 11vw, 145px);
+  height: auto;
+  color: var(--hero-red);
+  opacity: .07;
+  transform: rotate(-12deg);
+}
+
+.heroBrakePads,
+.heroSuspension,
+.heroFilter,
+.heroSparkPlug {
+  position: absolute;
+  color: var(--hero-red);
+  opacity: .07;
+}
+
+.heroBrakePads {
+  top: 42px;
+  left: 52px;
+  width: 100px;
+  height: auto;
+  transform: rotate(-12deg);
+}
+
+.heroSuspension {
+  right: 45px;
+  bottom: 22px;
+  width: 65px;
+  height: auto;
+  transform: rotate(12deg);
+}
+
+.heroFilter {
+  top: 28px;
+  left: 22%;
+  width: 44px;
+  height: auto;
+  transform: rotate(14deg);
+}
+
+.heroSparkPlug {
+  right: 19%;
+  bottom: 18px;
+  width: 28px;
+  height: auto;
+  transform: rotate(-18deg);
+}
+
 .heroCopy {
+  position: relative;
+  z-index: 1;
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -243,6 +319,9 @@
 }
 
 .category {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: flex;
   min-width: 0;
   align-items: center;
@@ -254,12 +333,28 @@
   transition: border-color .18s ease, box-shadow .18s ease;
 }
 
+.category::after {
+  content: "";
+  position: absolute;
+  right: -18px;
+  bottom: -24px;
+  width: 56px;
+  height: 56px;
+  background: color-mix(in srgb, var(--px-red) 7%, transparent);
+  -webkit-mask: url("/brand/account-card-gear.svg") center / contain no-repeat;
+  mask: url("/brand/account-card-gear.svg") center / contain no-repeat;
+  pointer-events: none;
+  z-index: 0;
+}
+
 .category:hover {
   border-color: var(--px-red);
   box-shadow: 0 5px 18px rgba(12, 14, 18, .09);
 }
 
 .categoryImage {
+  position: relative;
+  z-index: 1;
   display: grid;
   width: clamp(49px, 5.6vw, 76px);
   aspect-ratio: 1;
@@ -278,6 +373,8 @@
 }
 
 .categoryText {
+  position: relative;
+  z-index: 1;
   min-width: 0;
   padding-right: 3px;
   line-height: 1.32;
@@ -326,6 +423,35 @@
   .heroMain {
     display: block;
     border-radius: 18px;
+  }
+
+  .heroGear {
+    top: -20px;
+    right: -22px;
+    width: 95px;
+  }
+
+  .heroWrench {
+    bottom: 12px;
+    left: 2px;
+    width: 60px;
+  }
+
+  .heroBrakePads {
+    top: 18px;
+    left: -10px;
+    width: 55px;
+  }
+
+  .heroSuspension {
+    right: -9px;
+    bottom: 18px;
+    width: 38px;
+  }
+
+  .heroFilter,
+  .heroSparkPlug {
+    display: none;
   }
 
   .heroCopy {
@@ -403,6 +529,50 @@
 
   .categoryText strong {
     font-size: 12px;
+  }
+}
+
+@keyframes heroGearTurn {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes heroWrenchFloat {
+  0%, 100% { transform: translateY(0) rotate(-12deg); }
+  50% { transform: translateY(-8px) rotate(-5deg); }
+}
+
+@keyframes heroPartFloat {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -8px; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .heroGear {
+    animation: heroGearTurn 36s linear infinite;
+  }
+
+  .heroWrench {
+    animation: heroWrenchFloat 9s ease-in-out infinite;
+  }
+
+  .heroBrakePads,
+  .heroSuspension,
+  .heroFilter,
+  .heroSparkPlug {
+    animation: heroPartFloat 10s ease-in-out infinite;
+  }
+
+  .heroSuspension { animation-delay: -3s; }
+  .heroFilter { animation-delay: -5s; }
+  .heroSparkPlug { animation-delay: -7s; }
+
+  .heroMain:focus-within .heroGear,
+  .heroMain:focus-within .heroWrench,
+  .heroMain:focus-within .heroBrakePads,
+  .heroMain:focus-within .heroSuspension,
+  .heroMain:focus-within .heroFilter,
+  .heroMain:focus-within .heroSparkPlug {
+    animation-play-state: paused;
   }
 }
 
