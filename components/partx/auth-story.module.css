@@ -1,0 +1,85 @@
+.auth:global(.px-auth) { grid-template-columns: minmax(0, 1.04fr) minmax(0, .96fr); }
+
+.story:global(.px-auth-story) {
+  isolation: isolate;
+  padding: 30px clamp(28px, 3.7vw, 64px) 28px;
+  background: radial-gradient(ellipse at 63% 62%, #3f101b55, transparent 48%), linear-gradient(150deg, #171b23, #080b10 72%);
+}
+
+.story:global(.px-auth-story)::after {
+  z-index: -1;
+  opacity: .45;
+  background: linear-gradient(135deg, transparent 48%, #ffffff05 49%, transparent 50%);
+  background-size: 110px 110px;
+}
+
+.story .message {
+  width: 100%;
+  margin-top: clamp(34px, 5vh, 65px);
+}
+
+.story .message > span { font-size: 11px; letter-spacing: .22em; }
+.story .message h1 {
+  margin: 17px 0 18px;
+  font-family: "Plus Jakarta Sans Variable", sans-serif;
+  font-size: clamp(40px, 4vw, 65px);
+  font-weight: 850;
+  line-height: 1.02;
+  letter-spacing: -.045em;
+}
+.story .message p { width: min(390px, 100%); font-size: 15px; line-height: 1.6; }
+.story .proof { gap: 12px; margin-top: 15px; padding-top: 21px; }
+.story .proof b { font-size: 10px; }
+.story .proof span { font-size: 10px; line-height: 1.6; }
+.story .proof svg { flex-shrink: 0; }
+
+.motionWrap { position: relative; flex: 1; min-height: 300px; margin-top: 12px; }
+.scene { position: relative; width: 100%; height: 100%; min-height: 300px; max-height: 390px; pointer-events: none; }
+.grid { position: absolute; inset: 8px -25px 40px; background-image: radial-gradient(#ffffff22 1px, transparent 1px); background-size: 22px 22px; mask-image: radial-gradient(ellipse, #000, transparent 70%); }
+.orbit { position: absolute; top: 12px; left: 50%; width: 270px; height: 230px; margin-left: -135px; border: 1px dashed #6f414855; border-radius: 50%; transform: rotate(-25deg); }
+.gear { position: absolute; top: 16px; left: 50%; width: 225px; aspect-ratio: 1; margin-left: -112.5px; background: linear-gradient(140deg, #ed2634, #6a1825); opacity: .45; mask: url("/brand/account-card-gear.svg") center / contain no-repeat; -webkit-mask: url("/brand/account-card-gear.svg") center / contain no-repeat; }
+.hub { position: absolute; top: 65px; left: 50%; display: flex; width: 127px; height: 127px; margin-left: -63.5px; align-items: center; justify-content: center; flex-direction: column; border: 1px solid #79404c; border-radius: 50%; background: linear-gradient(140deg, #2b303a, #10141b 68%); box-shadow: 0 0 0 8px #0c0e1480, inset 0 1px 1px #ffffff25, 0 10px 35px #0008; }
+.hub > span { padding-right: 3px; color: #fff; font: italic 800 25px/1 "Exo 2", sans-serif; text-transform: uppercase; }
+.hub b { color: #ed101c; font-weight: inherit; }
+.hub small { margin-top: 10px; font-size: 7px; letter-spacing: .19em; color: #a9aeba; }
+.part { position: absolute; display: grid; justify-items: center; gap: 8px; padding: 13px 15px 11px; border: 1px solid #737e8d30; border-radius: 16px; background: linear-gradient(135deg, #2d333dce, #131820ee); box-shadow: 0 18px 26px #0004, inset 0 1px #ffffff0d; }
+.part svg { display: block; filter: drop-shadow(0 5px 4px #0006); }
+.part span { font-size: 10px; font-weight: 650; letter-spacing: .04em; color: #c9cdd6; }
+.brakes { top: 5px; left: 0; rotate: -10deg; }
+.brakes svg { width: 103px; height: 72px; }
+.suspension { top: 9px; right: -3px; rotate: 10deg; }
+.suspension svg { width: 65px; height: 110px; }
+.filter { top: 146px; left: 14%; rotate: 7deg; padding: 8px 15px; }
+.filter svg { width: 61px; height: 70px; }
+.route { position: absolute; width: 100%; height: 55px; bottom: 6px; overflow: visible; }
+.routeLabels { position: absolute; right: 0; bottom: 0; left: 0; display: flex; justify-content: space-between; color: #8b94a3; font-size: 10px; }
+.motionControl { position: absolute; right: 0; top: 215px; display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 7px 9px; border: 1px solid #ffffff18; border-radius: 20px; background: #10151c; color: #a8afbb; font: inherit; font-size: 10px; cursor: pointer; }
+.motionControl:hover { border-color: #ed2634; color: #fff; }
+.motionControl:focus-visible { outline: 2px solid #ed2634; outline-offset: 3px; }
+.motionControl > span { color: #f12b38; font-size: 13px; }
+
+@keyframes turnGear { to { transform: rotate(360deg); } }
+@keyframes floatPart { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+@keyframes moveRoute { to { stroke-dashoffset: -468; } }
+
+@media (prefers-reduced-motion: no-preference) {
+  .gear { animation: turnGear 32s linear infinite; }
+  .brakes, .suspension, .filter { animation: floatPart 7s ease-in-out infinite; }
+  .suspension { animation-delay: -2s; }
+  .filter { animation-delay: -4s; }
+  .routeFlow { animation: moveRoute 5s linear infinite; }
+}
+.motionWrap[data-paused="true"] * { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) { .motionControl { display: none; } }
+@media (max-height: 780px) and (min-width: 1001px) {
+  .story .message { margin-top: 28px; }
+  .story .message h1 { font-size: clamp(38px, 3.7vw, 53px); margin-block: 12px; }
+  .motionWrap, .scene { min-height: 290px; }
+}
+@media (min-width: 1600px) {
+  .scene { max-width: 630px; margin-inline: auto; }
+}
+@media (max-width: 900px) {
+  .auth:global(.px-auth) { grid-template-columns: 1fr; }
+  .story:global(.px-auth-story) { display: none; }
+}

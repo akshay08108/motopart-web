@@ -8,6 +8,8 @@ import { appRole, roleHome, roleLogin } from "@/lib/app-role";
 import type { UserRole } from "@/lib/types";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
+import { AuthStoryMotion } from "./auth-story-motion";
+import storyStyles from "./auth-story.module.css";
 
 type AuthMode = "signin" | "register" | "reset";
 
@@ -18,7 +20,7 @@ const roleCopy = {
 } as const;
 
 export function RoleChoicePage() {
-  return <main className="px-auth px-role-gateway">
+  return <main className={`px-auth px-role-gateway ${storyStyles.auth}`}>
     <AuthStory role="customer"/>
     <section className="px-auth-panel px-role-panel">
       <Link href="/" className="px-auth-mobile-brand" aria-label="PartX home"><Image src="/brand/partx-light.png" alt="" width={48} height={48} priority/><span>Part<b>X</b></span></Link>
@@ -113,7 +115,7 @@ export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; si
         setBusy(false);
       }
     };
-    return <main className={`px-auth px-auth-${role}`}>
+    return <main className={`px-auth px-auth-${role} ${storyStyles.auth}`}>
       <AuthStory role={role} dedicated={dedicated}/>
       <section className="px-auth-panel">
         <AuthBrand role={role} dedicated={dedicated} mobile/>
@@ -131,7 +133,7 @@ export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; si
     </main>;
   }
 
-  return <main className={`px-auth px-auth-${role}`}>
+  return <main className={`px-auth px-auth-${role} ${storyStyles.auth}`}>
     <AuthStory role={role} dedicated={dedicated}/>
     <section className="px-auth-panel">
       <AuthBrand role={role} dedicated={dedicated} mobile/>
@@ -170,7 +172,16 @@ export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; si
 
 function AuthStory({ role, dedicated = false }: { role: UserRole; dedicated?: boolean }) {
   const copy = roleCopy[role];
-  return <section className="px-auth-story"><AuthBrand role={role} dedicated={dedicated}/><div className="px-auth-message"><span>{copy.label}</span><h1>{copy.story}</h1><p>{copy.storyDescription}</p></div><Image className="px-auth-part" src="/parts/0-v2.png" alt="Bosch brake parts" width={720} height={520} priority/><div className="px-auth-proof"><div><Icon name="check"/><span><b>Verified fitment</b>Shop confidently</span></div><div><Icon name="store"/><span><b>Compare sellers</b>You choose the price</span></div><div><Icon name="orders"/><span><b>Live tracking</b>Every order update</span></div></div></section>;
+  return <section className={`px-auth-story ${storyStyles.story}`}>
+    <AuthBrand role={role} dedicated={dedicated}/>
+    <div className={`px-auth-message ${storyStyles.message}`}><span>{copy.label}</span><h1>{copy.story}</h1><p>{copy.storyDescription}</p></div>
+    <AuthStoryMotion/>
+    <div className={`px-auth-proof ${storyStyles.proof}`}>
+      <div><Icon name="check"/><span><b>Verified fitment</b>Shop confidently</span></div>
+      <div><Icon name="store"/><span><b>Compare sellers</b>You choose the price</span></div>
+      <div><Icon name="orders"/><span><b>Live tracking</b>Every order update</span></div>
+    </div>
+  </section>;
 }
 
 function AuthBrand({ role, dedicated, mobile = false }: { role: UserRole; dedicated: boolean; mobile?: boolean }) {
