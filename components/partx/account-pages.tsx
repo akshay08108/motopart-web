@@ -26,7 +26,7 @@ export { CartPage } from "./cart-page";
 
 export function CheckoutPage() {
   const router = useRouter();
-  const { cart, cartTotal, location, garages, stores, placeOrder, trackRazorpayCheckout, submitUpiReference, cancelPayment, user, orders, ordersReady, freeDeliveriesRemaining } = usePartX();
+  const { cart, cartReady, cartError, retryCart, cartTotal, location, garages, stores, placeOrder, trackRazorpayCheckout, submitUpiReference, cancelPayment, user, orders, ordersReady, freeDeliveriesRemaining } = usePartX();
   const [fulfilment, setFulfilment] = useState<FulfilmentMode>("delivery");
   const [payment, setPayment] = useState<PaymentMethod>("upi");
   const [processing, setProcessing] = useState(false);
@@ -45,6 +45,7 @@ export function CheckoutPage() {
   const enabledMethods = ([razorpay?.enabled ? "razorpay" : null, paymentSettings?.upiEnabled ? "upi" : null, paymentSettings?.codEnabled ? "cod" : null].filter(Boolean)) as PaymentMethod[];
   const selectedPayment = enabledMethods.includes(payment) ? payment : enabledMethods[0];
   const upiUri = attempt?.sellerUpiIdSnapshot && attempt.sellerUpiNameSnapshot && isValidUpiId(attempt.sellerUpiIdSnapshot) ? createUpiUri({ upiId: attempt.sellerUpiIdSnapshot, displayName: attempt.sellerUpiNameSnapshot, amount: attempt.total, orderId: attempt.id }) : "";
+  if (!cartReady || cartError) return <div className="px-page px-container"><div className="px-empty"><h1>{cartError ? "Cart sync interrupted" : "Syncing your cart…"}</h1><p>{cartError || "Loading the latest cart for your account."}</p>{cartError && <button className="px-btn px-btn-red" onClick={retryCart}>Retry cart sync</button>}</div></div>;
   if (!cart.length) return <div className="px-page px-container"><div className="px-empty"><h1>No items to checkout</h1><p>Add a part before starting checkout.</p><Link href="/shop" className="px-btn px-btn-red">Shop parts</Link></div></div>;
   const attemptKey = `partx-payment-attempt:${user?.id ?? "guest"}:${selectedStore.id}:${fulfilment}:${cart.map((line) => `${line.product.id}-${line.quantity}`).join("|")}`;
   const savedAttemptId = selectedPayment === "upi" ? readBrowserStorage("session", attemptKey) ?? undefined : undefined;
@@ -71,7 +72,7 @@ export function CheckoutPage() {
         const saved = readBrowserStorage("session", key);
         const orderId = saved ?? `PX-TEST-${crypto.randomUUID().replaceAll("-", "")}`;
         writeBrowserStorage("session", key, orderId);
-        trackRazorpayCheckout(orderId);
+        await trackRazorpayCheckout(orderId);
         const result = await openRazorpayCheckout({
           orderId, storeId: selectedStore.id, fulfilment, expectedAmount,
           items: cart.map((line) => ({ productId: line.product.id, quantity: line.quantity })),

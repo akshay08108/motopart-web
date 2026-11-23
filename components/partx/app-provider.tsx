@@ -14,9 +14,9 @@ import { browserNotificationPermission, registerPushNotifications, unregisterPus
 import { formatDeliveryTime } from "@/lib/delivery-time";
 import { freeDeliverySlots, occupiesDeliveryOffer, quoteDelivery } from "@/lib/delivery-pricing";
 
-import { removePurchasedItems, type CheckoutLine } from "@/lib/cart-checkout";
+import { removePurchasedItems } from "@/lib/cart-checkout";
 
-const CART_KEY = "partx-cart-v1";
+import { useAccountCart } from "./use-account-cart";
 const AUTH_PROFILE_CACHE_KEY = "partx-firebase-profile-v1";
 
 export type PartXOrder = Order & {
@@ -53,7 +53,10 @@ type AppContextValue = {
   cart: CartLine[];
   cartCount: number;
   cartTotal: number;
-  trackRazorpayCheckout: (orderId: string) => void;
+  cartReady: boolean;
+  cartError: string;
+  retryCart: () => void;
+  trackRazorpayCheckout: (orderId: string) => Promise<void>;
   addToCart: (product: CartLine["product"], quantity?: number, seller?: CartSellerSelection) => void;
   setQuantity: (id: string, quantity: number) => void;
   removeFromCart: (id: string) => void;
@@ -105,10 +108,9 @@ const emptyLocation: AppLocation = { id: "default", label: "Home", address: "" }
 
 export function PartXProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [cart, setCart] = useState<CartLine[]>([]);
   const [cartNotice, setCartNotice] = useState<AppContextValue["cartNotice"]>(null);
   const cartNoticeSequence = useRef(0);
-  const trackedRazorpayCarts = useRef<Record<string, Record<string, CheckoutLine[]>>>({});
+  const clearingCheckouts = useRef(new Set<string>());
   const [savedGarage, setSavedGarage] = useState<(typeof emptyGarage & { uid: string }) | null>(null);
   const [savedLocation, setSavedLocation] = useState<{ uid: string; value: AppLocation } | null>(null);
   const [stores, setStores] = useState<PartnerStore[]>(demoStores);
@@ -130,6 +132,12 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   const ordersRef = useRef<PartXOrder[]>([]);
 
   const customerId = user?.roles.includes("customer") ? user.id : undefined;
+  const { cart, pendingCheckouts, ready: cartReady, error: cartError, retry: retryCart, save: saveCart, trackCheckout } = useAccountCart(customerId);
+  const changeCart = useCallback((change: (items: CartLine[]) => CartLine[], checkoutId?: string) => {
+    return saveCart(change, checkoutId).catch(() => {
+      setCartNotice({ id: ++cartNoticeSequence.current, productName: "Your cart", message: "Cart could not sync. Please try again.", added: false, expiresAt: Date.now() + 5000 });
+    });
+  }, [saveCart]);
   const orders = customerId && orderState?.uid === customerId ? orderState.entries : emptyOrders;
   const ordersReady = Boolean(customerId && orderState?.uid === customerId && orderState.ready);
   const freeDeliveriesRemaining = Math.max(0, freeDeliverySlots.length - orders.filter((order) =>
@@ -239,14 +247,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       setCustomerDevice(readBrowserStorage("local", "partx-device-role") === "customer");
       const savedTheme = readBrowserStorage("local", "partx-theme") ?? readBrowserStorage("local", "motopart-theme");
       if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
-      const savedCart = readBrowserStorage("local", CART_KEY);
       const savedProfile = readBrowserStorage("local", "partx-profile-v1");
-      try {
-        if (savedCart) {
-          const restoredCart = JSON.parse(savedCart);
-          if (Array.isArray(restoredCart)) setCart(restoredCart);
-        }
-      } catch {}
       try {
         if (savedProfile) {
           const profile = JSON.parse(savedProfile);
@@ -321,29 +322,22 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!hydrated) return;
-    writeBrowserStorage("local", CART_KEY, JSON.stringify(cart));
     writeBrowserStorage("local", "partx-profile-v1", JSON.stringify({ stores }));
-  }, [cart, stores, hydrated]);
+  }, [stores, hydrated]);
 
   useEffect(() => {
     if (!hydrated || !customerId || !ordersReady) return;
-    const key = `partx-razorpay-cart:${customerId}`;
-    const pending = trackedRazorpayCarts.current[key] ??= savedRazorpayCarts(key);
     const completed = orders.filter((order) =>
-      order.paymentMethod === "razorpay" &&
-      (order.paymentStatus === "PAID" || order.stage === "Delivered") &&
-      pending[order.id]
+      order.paymentMethod === "razorpay" && (order.paymentStatus === "PAID" || order.stage === "Delivered")
+      && pendingCheckouts[order.id] && !clearingCheckouts.current.has(`${customerId}:${order.id}`)
     );
-    if (!completed.length) return;
-
-    const purchased = completed.map((order) => pending[order.id]);
-    for (const order of completed) delete pending[order.id];
-    writeBrowserStorage("local", key, JSON.stringify(pending));
-    queueMicrotask(() => {
-      setCart((current) => purchased.reduce(removePurchasedItems, current));
-      setCartNotice(null);
-    });
-  }, [customerId, hydrated, orders, ordersReady]);
+    for (const order of completed) {
+      const key = `${customerId}:${order.id}`;
+      clearingCheckouts.current.add(key);
+      void changeCart((current) => removePurchasedItems(current, pendingCheckouts[order.id]), order.id)
+        .finally(() => clearingCheckouts.current.delete(key));
+    }
+  }, [customerId, hydrated, orders, ordersReady, pendingCheckouts, changeCart]);
 
   const marketplaceStores = useMemo(() => {
     const combined = new Map(stores.map((store) => [store.id, store]));
@@ -405,17 +399,18 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     cart: resolvedCart,
     cartCount: resolvedCart.reduce((sum, line) => sum + line.quantity, 0),
     cartTotal: resolvedCart.reduce((sum, line) => sum + (line.unitPrice ?? line.product.price) * line.quantity, 0),
-    trackRazorpayCheckout: (orderId) => {
-      if (!customerId) return;
-      const key = `partx-razorpay-cart:${customerId}`;
-      const pending = trackedRazorpayCarts.current[key] ??= savedRazorpayCarts(key);
-      if (pending[orderId]) return;
-      pending[orderId] = resolvedCart.map(({ product, quantity, storeId, cartEntryId }) => ({
+    cartReady, cartError, retryCart,
+    trackRazorpayCheckout: async (orderId) => {
+      if (!cartReady) throw new Error("Wait for your cart to sync, then try again.");
+      await trackCheckout(orderId, resolvedCart.map(({ product, quantity, storeId, cartEntryId }) => ({
         productId: product.id, partNumber: product.partNumber, quantity, storeId, cartEntryId,
-      }));
-      writeBrowserStorage("local", key, JSON.stringify(pending));
+      })));
     },
     addToCart: (product, quantity = 1, seller) => {
+      if (!cartReady || cartError) {
+        setCartNotice({ id: ++cartNoticeSequence.current, productName: product.name, message: cartError ? "Your cart could not sync. Open your cart to retry." : "Your cart is syncing. Please try again in a moment.", added: false, expiresAt: Date.now() + 5000 });
+        return;
+      }
       const exactStore = marketplaceStores.find((store) => store.listings.some((listing) => listing.productId === product.id));
       const defaultStore = exactStore ?? marketplaceStores.find((store) => store.listings.some((listing) => listing.partNumber === product.partNumber));
       const defaultListing = defaultStore?.listings.find((listing) => listing.productId === product.id)
@@ -432,7 +427,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       setCartNotice({ id: ++cartNoticeSequence.current, productName: selectedProduct.name, message: canAdd ? (existing && !sameStore ? "Store updated in cart" : "Added to cart") : selectedProduct.stock <= 0 ? "Currently out of stock" : "Maximum available stock already in cart", added: canAdd, expiresAt: Date.now() + 3500 });
       if (!canAdd) return;
       const cartEntryId = crypto.randomUUID();
-      setCart((current) => {
+      void changeCart((current) => {
       const found = current.find((line) => line.product.id === selectedProduct.id || line.product.partNumber === selectedProduct.partNumber);
       if (!found) return [...current, { product: selectedProduct, cartEntryId, quantity: Math.min(requestedQuantity, selectedProduct.stock), storeId: selection.storeId, storeName: selection.storeName, unitPrice: selection.price }];
       if (found.storeId !== selection.storeId) return current.map((line) => line.product.id === found.product.id ? { ...line, product: selectedProduct, cartEntryId, storeId: selection.storeId, storeName: selection.storeName, unitPrice: selection.price } : line);
@@ -441,11 +436,11 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     },
     setQuantity: (id, quantity) => {
       const partNumber = resolvedCart.find((line) => line.product.id === id)?.product.partNumber;
-      setCart((current) => current.map((line) => line.product.id === id || (partNumber && line.product.partNumber === partNumber) ? { ...line, quantity: Math.max(1, Math.min(quantity, line.product.stock)) } : line));
+      void changeCart((current) => current.map((line) => line.product.id === id || (partNumber && line.product.partNumber === partNumber) ? { ...line, quantity: Math.max(1, Math.min(quantity, line.product.stock)) } : line));
     },
     removeFromCart: (id) => {
       const partNumber = resolvedCart.find((line) => line.product.id === id)?.product.partNumber;
-      setCart((current) => current.filter((line) => line.product.id !== id && (!partNumber || line.product.partNumber !== partNumber)));
+      void changeCart((current) => current.filter((line) => line.product.id !== id && (!partNumber || line.product.partNumber !== partNumber)));
     },
     vehicles,
     activeVehicleId,
@@ -561,6 +556,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         items: resolvedCart.map((item) => ({
           productId: item.product.id,
           productName: item.product.name,
+          ...(item.cartEntryId ? { cartEntryId: item.cartEntryId } : {}),
           partNumber: item.product.partNumber,
           imageUrl: item.product.imageUrl ?? null,
           imageIndex: item.product.imageIndex,
@@ -646,7 +642,9 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       setOrderState((current) => current && current.uid === customerId
         ? { ...current, entries: [savedOrder, ...current.entries.filter((item) => item.id !== savedOrder.id)] }
         : current);
-      if (payment === "cod") setCart([]);
+      if (payment === "cod") await changeCart((current) => removePurchasedItems(current, resolvedCart.map((line) => ({
+        productId: line.product.id, partNumber: line.product.partNumber, quantity: line.quantity, storeId: line.storeId, cartEntryId: line.cartEntryId,
+      }))), savedOrder.id);
       return savedOrder;
     },
     submitUpiReference: async (orderId, reference) => {
@@ -683,7 +681,10 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         });
       });
       setOrderState((current) => current && current.uid === customerId ? { ...current, entries: current.entries.map((item) => item.id === orderId ? { ...item, paymentReference: normalizedReference, paymentStatus: "PAYMENT_SUBMITTED", orderStatus: "PAYMENT_VERIFICATION_PENDING", paymentSubmittedAt: "Just now", eta: "Payment verification in progress" } : item) } : current);
-      setCart([]);
+      const purchased = orders.find((item) => item.id === orderId)?.items ?? resolvedCart;
+      await changeCart((current) => removePurchasedItems(current, purchased.map((line) => ({
+        productId: line.product.id, partNumber: line.product.partNumber, quantity: line.quantity, storeId: line.storeId, cartEntryId: line.cartEntryId,
+      }))), orderId);
     },
     cancelPayment: async (orderId) => {
       if (!user) throw new Error("Sign in before cancelling a payment attempt.");
@@ -830,7 +831,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       removeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY);
       await firebaseSignOut(firebaseAuth);
     },
-  }), [cartNotice, theme, saveGaragePreferences, resolvedCart, vehicles, activeVehicleId, location, garages, garageReady, needsVehicle, customerId, customerDevice, emailVerified, marketplaceStores, announcements, catalog, catalogById, storesById, orders, ordersReady, freeDeliveriesRemaining, liveOrderUpdate, user, hydrated, firebaseHydrated, notificationPermission, notificationError, notificationsEnabled]);
+  }), [cartReady, cartError, retryCart, changeCart, trackCheckout, cartNotice, theme, saveGaragePreferences, resolvedCart, vehicles, activeVehicleId, location, garages, garageReady, needsVehicle, customerId, customerDevice, emailVerified, marketplaceStores, announcements, catalog, catalogById, storesById, orders, ordersReady, freeDeliveriesRemaining, liveOrderUpdate, user, hydrated, firebaseHydrated, notificationPermission, notificationError, notificationsEnabled]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
@@ -927,6 +928,7 @@ function toCustomerOrder(id: string, data: Record<string, unknown>): PartXOrder 
         returnable: line.returnable === true, replaceable: line.replaceable === true,
         deliveryLabel: "Order item", warranty: "See product details", seller: String(line.storeName ?? data.storeName ?? "PartX seller"),
       },
+      ...(typeof line.cartEntryId === "string" ? { cartEntryId: line.cartEntryId } : {}),
       quantity: Number(line.quantity ?? 1), storeId: String(line.storeId ?? data.storeId ?? ""),
       storeName: String(line.storeName ?? data.storeName ?? "PartX seller"), unitPrice,
     }];
@@ -1017,13 +1019,4 @@ export function usePartX() {
   const context = useContext(AppContext);
   if (!context) throw new Error("usePartX must be used inside PartXProvider");
   return context;
-}
-
-function savedRazorpayCarts(key: string): Record<string, CheckoutLine[]> {
-  try {
-    const pending: Record<string, unknown> = JSON.parse(readBrowserStorage("local", key) ?? "{}");
-    return Object.fromEntries(Object.entries(pending).filter((entry): entry is [string, CheckoutLine[]] => Array.isArray(entry[1])));
-  } catch {
-    return {};
-  }
 }

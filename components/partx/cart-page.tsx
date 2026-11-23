@@ -20,7 +20,7 @@ const relatedCategories: Record<string, string[]> = {
 };
 
 export function CartPage() {
-  const { cart, cartTotal, setQuantity, removeFromCart, catalog, vehicles, activeVehicleId } = usePartX();
+  const { cart, cartReady, cartError, retryCart, cartTotal, setQuantity, removeFromCart, catalog, vehicles, activeVehicleId } = usePartX();
   const vehicle = vehicles.find((item) => item.id === activeVehicleId);
   const vehicleIds = [activeVehicleId, vehicle?.vehicleModelId].filter(Boolean) as string[];
   const inCart = new Set(cart.map(({ product }) => product.id));
@@ -43,6 +43,8 @@ export function CartPage() {
     .filter(({ product }, index, list) => !product.partNumber || list.findIndex((item) => item.product.partNumber.trim().toLowerCase() === product.partNumber.trim().toLowerCase()) === index)
     .slice(0, 4)
     .map(({ product }) => product);
+
+  if (!cartReady || cartError) return <div className="px-page px-container px-cart-page"><div className="px-empty"><Icon name="cart"/><h1>{cartError ? "Cart sync interrupted" : "Syncing your cart…"}</h1><p>{cartError || "Loading the latest cart for your account."}</p>{cartError && <button className="px-btn px-btn-red" onClick={retryCart}>Retry cart sync</button>}</div></div>;
 
   return <div className="px-page px-container px-cart-page">
     <div className="px-cart-heading"><div><h1>Your cart <small>({cart.reduce((sum, line) => sum + line.quantity, 0)})</small></h1><p>{cart.length ? "Review your parts and proceed to checkout." : "Find the right parts for your vehicle."}</p></div><Link href="/shop">Continue shopping <Icon name="arrow"/></Link></div>

@@ -121,6 +121,17 @@ service cloud.firestore {
           && previousOrder().paymentStatus in ['PAYMENT_CANCELLED', 'PAYMENT_EXPIRED'];
       }
 
+      match /preferences/cart {
+        allow read: if ownsUser(uid) && isCustomer();
+        allow create, update: if ownsUser(uid) && isCustomer()
+          && request.resource.data.keys().hasOnly(['items', 'pendingCheckouts', 'appliedCheckouts', 'updatedAt'])
+          && request.resource.data.items is list && request.resource.data.items.size() <= 100
+          && request.resource.data.pendingCheckouts is map && request.resource.data.pendingCheckouts.size() <= 20
+          && request.resource.data.appliedCheckouts is list && request.resource.data.appliedCheckouts.size() <= 200
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if false;
+      }
+
       match /preferences/garage {
         allow read: if ownsUser(uid);
         allow create, update: if ownsUser(uid)
