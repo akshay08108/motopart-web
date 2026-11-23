@@ -1,0 +1,170 @@
+:global(body):has(.splash) {
+  overflow: hidden;
+}
+
+.splash {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  min-height: 100svh;
+  overflow: hidden;
+  background: #0b0d11;
+  color: #fff;
+  touch-action: none;
+  transition: opacity 260ms ease, visibility 260ms ease;
+}
+
+.closing {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.scene {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(430px, calc(100% - 40px));
+  min-height: 290px;
+  isolation: isolate;
+}
+
+.gear {
+  position: absolute;
+  z-index: -1;
+  width: 280px;
+  aspect-ratio: 1;
+  background: #ed101c;
+  opacity: .11;
+  -webkit-mask: url("/brand/account-card-gear.svg") center / contain no-repeat;
+  mask: url("/brand/account-card-gear.svg") center / contain no-repeat;
+}
+
+.signature {
+  display: grid;
+  justify-items: center;
+  width: 100%;
+  padding: 16px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.mark {
+  width: 76px;
+  height: 76px;
+  object-fit: contain;
+}
+
+.wordmark {
+  display: inline-block;
+  padding-right: 7px;
+  font-family: "Exo 2", sans-serif;
+  font-size: clamp(42px, 9vw, 60px);
+  font-weight: 800;
+  font-style: italic;
+  font-synthesis: none;
+  line-height: 1;
+  letter-spacing: -.035em;
+  text-transform: uppercase;
+}
+
+.wordmark b {
+  color: #ed101c;
+  font-weight: inherit;
+}
+
+.role {
+  margin-top: 7px;
+  padding-left: .32em;
+  font: italic 800 13px/1.2 "Exo 2", sans-serif;
+  letter-spacing: .32em;
+  text-transform: uppercase;
+}
+
+.tagline {
+  margin: 18px 0 0;
+  color: #c2c6ce;
+  font-size: 13px;
+  letter-spacing: .015em;
+  text-align: center;
+}
+
+.accent {
+  width: 112px;
+  height: 2px;
+  margin-top: 26px;
+  border-radius: 2px;
+  background: #ed101c;
+  transform-origin: left;
+}
+
+.skip {
+  position: absolute;
+  right: max(24px, env(safe-area-inset-right));
+  bottom: max(26px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #343943;
+  border-radius: 8px;
+  background: #11151b;
+  color: #d9dce2;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.skip:focus-visible {
+  outline: 2px solid #ed101c;
+  outline-offset: 4px;
+}
+
+@keyframes markArrive {
+  from { opacity: 0; transform: translateY(7px) rotate(-15deg) scale(.94); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes wordmarkArrive {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes taglineArrive {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes accentDraw {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes gearSettle {
+  from { transform: rotate(-35deg); }
+  to { transform: rotate(0deg); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mark { animation: markArrive 450ms ease-out both; }
+  .wordmark { animation: wordmarkArrive 450ms ease-out 100ms both; }
+  .tagline { animation: taglineArrive 350ms ease-out 300ms both; }
+  .accent { animation: accentDraw 650ms ease-out 200ms both; }
+  .gear { animation: gearSettle 1200ms ease-out both; }
+}
+
+@media (max-width: 480px) {
+  .mark { width: 60px; height: 60px; }
+  .brand { gap: 5px; }
+  .gear { width: 240px; }
+  .tagline { font-size: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash { transition: none; }
+}

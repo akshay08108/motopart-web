@@ -1,7 +1,7 @@
 import "@fontsource-variable/plus-jakarta-sans";
 import "@fontsource-variable/plus-jakarta-sans/wght-italic.css";
 import "@fontsource-variable/sora";
-import "@fontsource/racing-sans-one";
+import "@fontsource/exo-2/800-italic.css";
 import "./globals.css";
 import "leaflet/dist/leaflet.css";
 import "./partx.css";
@@ -18,6 +18,7 @@ import { AppShell } from "@/components/partx/app-shell";
 import { PartXProvider } from "@/components/partx/app-provider";
 import { SellerProvider } from "@/components/partx/seller-provider";
 import { CapacitorBridge } from "@/components/partx/capacitor-bridge";
+import { OpeningAnimation } from "@/components/partx/opening-animation";
 
 export const metadata: Metadata = {
   title: { default: "PartX · The right part. The first time.", template: "%s · PartX" },
@@ -38,7 +39,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth">
-      <body><PartXProvider><SellerProvider><CapacitorBridge/><AppShell>{children}</AppShell></SellerProvider></PartXProvider></body>
+      <body><OpeningAnimation><PartXProvider><SellerProvider><CapacitorBridge/><AppShell>{children}</AppShell></SellerProvider></PartXProvider></OpeningAnimation></body>
     </html>
   );
 }
