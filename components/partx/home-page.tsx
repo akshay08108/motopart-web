@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { vehicleName } from "@/lib/vehicle-display";
@@ -12,16 +11,16 @@ import { DeliveryLocationButton } from "./delivery-location-button";
 import styles from "./home-page.module.css";
 
 const categories = [
-  { name: "Brakes", image: "/categories/0-v2.png", description: "Pads, discs & calipers", href: "/shop?category=Brakes" },
-  { name: "Filters", image: "/categories/1-v2.png", description: "Air, oil & cabin filters", href: "/shop?category=Filters" },
-  { name: "Batteries", image: "/categories/2-v2.png", description: "Starting & charging", href: "/shop?category=Batteries" },
-  { name: "Electrical & lighting", image: "/categories/3-v2.png", description: "Headlamps, bulbs & electrics", href: "/shop?category=Electrical" },
-  { name: "Suspension", image: "/categories/4-v2.png", description: "Struts, shocks & springs", href: "/shop?category=Suspension" },
-  { name: "Engine", image: "/categories/5-v2.png", description: "Engine & service parts", href: "/shop?category=Engine" },
-  { name: "Ignition", image: "/parts/3-v2.png", description: "Spark plugs, coils & leads", href: "/shop?q=spark%20plug" },
-  { name: "Wipers", image: "/parts/4-v2.png", description: "Blades, arms & washers", href: "/shop?q=wiper" },
-  { name: "Fluids", image: "/categories/fluids.webp", description: "Coolant, power steering fluid & DEF", href: "/shop?category=Fluids" },
-  { name: "Oil filters", image: "/parts/5-v2.png", description: "Spin-on & cartridge filters", href: "/shop?q=oil%20filter" },
+  { name: "Brakes", icon: "brakes", description: "Pads, discs & calipers", href: "/shop?category=Brakes" },
+  { name: "Filters", icon: "filter", description: "Air, oil & cabin filters", href: "/shop?category=Filters" },
+  { name: "Batteries", icon: "battery", description: "Starting & charging", href: "/shop?category=Batteries" },
+  { name: "Electrical & lighting", icon: "headlight", description: "Headlamps, bulbs & electrics", href: "/shop?category=Electrical" },
+  { name: "Suspension", icon: "suspension", description: "Struts, shocks & springs", href: "/shop?category=Suspension" },
+  { name: "Engine", icon: "engine", description: "Engine & service parts", href: "/shop?category=Engine" },
+  { name: "Ignition", icon: "spark-plug", description: "Spark plugs, coils & leads", href: "/shop?q=spark%20plug" },
+  { name: "Wipers", icon: "wipers", description: "Blades, arms & washers", href: "/shop?q=wiper" },
+  { name: "Fluids", icon: "fluids", description: "Coolant, power steering fluid & DEF", href: "/shop?category=Fluids" },
+  { name: "Oil filters", icon: "oil-filter", description: "Spin-on & cartridge filters", href: "/shop?q=oil%20filter" },
 ] as const;
 
 export function HomePage() {
@@ -110,9 +109,7 @@ export function HomePage() {
       </div>
       <div className={styles.categories}>
         {categories.map((category) => <Link href={category.href} className={styles.category} key={category.name}>
-          <div className={styles.categoryImage}>
-            <Image src={category.image} alt="" width={96} height={96} sizes="80px"/>
-          </div>
+          <span className={styles.categoryIcon}><Icon name={category.icon}/></span>
           <div className={styles.categoryText}>
             <strong>{category.name}</strong>
             <small>{category.description}</small>

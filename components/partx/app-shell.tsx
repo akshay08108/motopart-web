@@ -14,7 +14,7 @@ import { RiderShell } from "./rider-portal";
 import { appRole, roleHome, roleLogin } from "@/lib/app-role";
 
 const nav = [
-  ["/", "Home"], ["/shop", "Shop Parts"], ["/garage", "My Garage"], ["/orders", "Orders"], ["/offers", "Offers"],
+  ["/", "Home", "home"], ["/shop", "Shop Parts", "grid"], ["/garage", "My Garage", "garage"], ["/orders", "Orders", "orders"], ["/offers", "Offers", "offer"],
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -89,7 +89,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span>Part<b>X</b></span>
         </Link>
         <nav className={open ? "px-nav is-open" : "px-nav"} aria-label="Primary navigation">
-          {nav.map(([href, label]) => <Link key={href} className={active(href) ? "active" : ""} href={href} onClick={() => setOpen(false)}>{label}</Link>)}
+          {nav.map(([href, label, icon]) => <Link key={href} className={active(href) ? "active" : ""} aria-current={active(href) ? "page" : undefined} href={href} onClick={() => setOpen(false)}><Icon name={icon}/><span>{label}</span></Link>)}
         </nav>
         <PartSearch className={pathname === "/" ? "px-nav-search px-nav-search-home" : "px-nav-search"} placeholder={pathname === "/" ? "Search parts" : undefined}/>
         <div className="px-header-actions">

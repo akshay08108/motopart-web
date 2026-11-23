@@ -10,7 +10,7 @@ import { usePartX } from "./app-provider";
 import { useSeller } from "./seller-provider";
 
 const sellerNav = [
-  ["/seller", "grid", "Dashboard"], ["/seller/orders", "orders", "Orders"], ["/seller/payments", "orders", "Payments"], ["/seller/packing", "box", "Packing Queue"], ["/seller/tickets", "ticket", "Tickets"], ["/seller/products", "package", "Products & Prices"], ["/seller/reviews", "star", "Reviews"], ["/seller/settings", "settings", "Store Settings"],
+  ["/seller", "grid", "Dashboard"], ["/seller/orders", "orders", "Orders"], ["/seller/payments", "wallet", "Payments"], ["/seller/packing", "box", "Packing Queue"], ["/seller/tickets", "ticket", "Tickets"], ["/seller/products", "package", "Products & Prices"], ["/seller/reviews", "star", "Reviews"], ["/seller/settings", "settings", "Store Settings"],
 ] as const;
 
 export function SellerShell({ children }: { children: React.ReactNode }) {

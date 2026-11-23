@@ -1,0 +1,33 @@
+/* Shared outline icons; currentColor adapts to customer, seller and rider themes. */
+svg[data-px-icon] { flex-shrink: 0; }
+.px-nav { gap: 20px; }
+.px-nav a { display: flex; align-items: center; justify-content: center; gap: 7px; }
+.px-nav a > svg { width: 17px; height: 17px; }
+.px-nav a.active > svg { color: var(--px-red); }
+.px-icon-button, .px-menu-button { border-radius: 12px; }
+.px-icon-button:hover, .px-menu-button:hover { color: var(--px-red); background: color-mix(in srgb, var(--px-red) 7%, var(--px-card)); }
+.px-account-links > a > span:first-child { border-radius: 16px; }
+.px-mobile-nav a > span { display: grid; place-items: center; width: 46px; height: 30px; border-radius: 12px; }
+.px-mobile-nav a.active > span { color: var(--px-red); background: color-mix(in srgb, var(--px-red) 9%, var(--px-card)); }
+.px-mobile-nav svg { width: 21px; height: 21px; }
+.rx-navigation a.active svg { color: #e91427; }
+
+@media (max-width: 1350px) and (min-width: 861px) {
+  .px-header-inner { gap: 16px; }
+  .px-nav { gap: 12px; }
+  .px-nav a { gap: 5px; }
+  .px-nav a > svg { width: 15px; height: 15px; }
+}
+@media (max-width: 1100px) and (min-width: 861px) {
+  .px-nav a > svg { display: none; }
+}
+@media (max-width: 860px) {
+  .px-nav a { justify-content: flex-start; gap: 12px; border-radius: 10px; font-size: 13px; }
+  .px-nav a > svg { width: 20px; height: 20px; }
+  .px-nav a.active { background: color-mix(in srgb, var(--px-red) 7%, var(--px-card)); }
+  .px-nav a.active::after { display: none; }
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .px-nav a > svg, .px-icon-button > svg { transition: transform 180ms ease; }
+  .px-nav a:hover > svg, .px-icon-button:hover > svg { transform: translateY(-2px); }
+}
