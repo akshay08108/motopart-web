@@ -9,6 +9,7 @@ const paths: Record<string, React.ReactNode> = {
   sun: <><circle cx="12" cy="12" r="3.75"/><path d="M12 2.5V4m0 16v1.5M5.3 5.3l1.1 1.1m11.2 11.2 1.1 1.1M2.5 12H4m16 0h1.5M5.3 18.7l1.1-1.1M17.6 6.4l1.1-1.1"/></>,
   home: <><path d="m3 10 7.7-6.4a2 2 0 0 1 2.6 0L21 10M5 9v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M9 21v-7h6v7"/></>,
   grid: <><rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1.5"/><rect x="14" y="3.5" width="6.5" height="6.5" rx="1.5"/><rect x="3.5" y="14" width="6.5" height="6.5" rx="1.5"/><rect x="14" y="14" width="6.5" height="6.5" rx="1.5"/></>,
+  car: <><path d="m5 8 1.5-4h11L19 8M3 10l2-2h14l2 2v9H3ZM3 14h18M6 11h2m8 0h2M5 19v2m14-2v2"/></>,
   garage: <><path d="M3 20V9.5a2 2 0 0 1 1.1-1.8l7-3.5a2 2 0 0 1 1.8 0l7 3.5A2 2 0 0 1 21 9.5V20M7 20V11h10v9M7 14h10M7 17h10"/></>,
   orders: <><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h3M14 18l1.5 1.5L18 17"/></>,
   wallet: <><path d="M19 8V5a1 1 0 0 0-1.2-1L5 6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2H5"/><path d="M21 12h-5a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h5M17.5 14.5h.01"/></>,

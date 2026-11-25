@@ -1,0 +1,82 @@
+{
+  "maruti_suzuki__wagon_r": {
+    "make": "Maruti Suzuki",
+    "model": "Wagon R",
+    "src": "/vehicles/maruti_suzuki__wagon_r.webp",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:2020_Maruti_Suzuki_Wagon_R_VXi_(O)_(India)_front_view.png",
+    "author": "Riding Hub",
+    "license": "CC BY 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/3.0",
+    "referenceOnly": true
+  },
+  "volkswagen__polo": {
+    "make": "Volkswagen",
+    "model": "Polo",
+    "src": "/vehicles/volkswagen__polo.webp",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:2020_Volkswagen_Polo_GT_TSI_(India)_front_view.png",
+    "author": "TheDriversHub",
+    "license": "CC BY 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/3.0",
+    "referenceOnly": true
+  },
+  "maruti_suzuki__celerio": {
+    "make": "Maruti Suzuki",
+    "model": "Celerio",
+    "src": "/vehicles/maruti_suzuki__celerio.webp",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:2021_Maruti_Suzuki_Celerio_ZXi_(India)_front_view_01.png",
+    "author": "Exhibit Magazine",
+    "license": "CC BY 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/3.0",
+    "referenceOnly": true
+  },
+  "maruti_suzuki__baleno": {
+    "make": "Maruti Suzuki",
+    "model": "Baleno",
+    "src": "/vehicles/maruti_suzuki__baleno.webp",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:2022_Maruti_Suzuki_Baleno_Alpha_(India)_front_view.jpg",
+    "author": "Milind Kwatra",
+    "license": "CC BY 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/3.0",
+    "referenceOnly": true
+  },
+  "hyundai__creta": {
+    "make": "Hyundai",
+    "model": "Creta",
+    "src": "/vehicles/hyundai__creta.webp",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:2024_Hyundai_Creta_1.5_MPi_SX(O)_(India)_front_view.png",
+    "author": "CARS WORLD Kannada",
+    "license": "CC BY 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/3.0",
+    "referenceOnly": true
+  },
+  "mahindra__thar": {
+    "make": "Mahindra",
+    "model": "Thar",
+    "src": "/vehicles/mahindra__thar.webp",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mahindra_Thar_Photoshoot_at_Perupalem_Beach_(West_Godavari_District,_AP,_India)_Djdavid.jpg",
+    "author": "DjDavid1998",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "referenceOnly": true
+  },
+  "maruti_suzuki__swift": {
+    "make": "Maruti Suzuki",
+    "model": "Swift",
+    "src": "/vehicles/maruti_suzuki__swift.webp",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:2018_Suzuki_Swift_SZ5_Boosterjet_SHVS_1.0_Front.jpg",
+    "author": "Vauxford",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "referenceOnly": true
+  },
+  "maruti_suzuki__vitara_brezza_brezza": {
+    "make": "Maruti Suzuki",
+    "model": "Vitara Brezza / Brezza",
+    "src": "/vehicles/maruti_suzuki__brezza.webp",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:2022_Maruti_Suzuki_Brezza_ZXi%2B_(India)_front_view_01.png",
+    "author": "DriveSpark",
+    "license": "CC BY 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/3.0",
+    "referenceOnly": true
+  }
+}

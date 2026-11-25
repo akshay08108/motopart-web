@@ -17,6 +17,7 @@ import { freeDeliverySlots, occupiesDeliveryOffer, quoteDelivery } from "@/lib/d
 import { removePurchasedItems } from "@/lib/cart-checkout";
 
 import { useAccountCart } from "./use-account-cart";
+import { removeAccountVehicle } from "@/lib/account-garage";
 const AUTH_PROFILE_CACHE_KEY = "partx-firebase-profile-v1";
 
 export type PartXOrder = Order & {
@@ -64,6 +65,7 @@ type AppContextValue = {
   activeVehicleId: string;
   setActiveVehicleId: (id: string) => Promise<void>;
   addVehicle: (vehicle: Vehicle) => Promise<void>;
+  removeVehicle: (id: string) => Promise<void>;
   garageReady: boolean;
   needsVehicle: boolean;
   skipVehicleSetup: () => Promise<void>;
@@ -452,6 +454,10 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       activeVehicleId: vehicle.id,
       needsVehicle: false,
     }),
+    removeVehicle: async (id) => {
+      if (!customerId || firebaseAuth.currentUser?.uid !== customerId) throw new Error("Sign in as a customer to update My Garage.");
+      await removeAccountVehicle(firestore, customerId, id);
+    },
     skipVehicleSetup: () => saveGaragePreferences({ needsVehicle: false }),
     location,
     setLocation: async (nextLocation) => {

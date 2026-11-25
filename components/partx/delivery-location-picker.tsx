@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Map as LeafletMap, Marker } from "leaflet";
 import { hasMapPin } from "@/lib/delivery-pricing";
 import type { AppLocation } from "@/lib/types";
@@ -24,6 +25,7 @@ export function DeliveryLocationPicker({ close }: { close: () => void }) {
 }
 
 export function MapLocationPicker({ value: location, onSave: setLocation, close, title = "Where should we deliver?", saveLabel = "Use this location", requirePin = false }: { value:AppLocation; onSave:(location:AppLocation) => void | Promise<void>; close:() => void; title?:string; saveLabel?:string; requirePin?:boolean }) {
+  const formId = useId();
   const { latitude, longitude } = location;
   const hasSavedPin = hasMapPin(location);
   const [draft, setDraft] = useState<AppLocation>(location);
@@ -39,6 +41,7 @@ export function MapLocationPicker({ value: location, onSave: setLocation, close,
   const selectPin = useRef<(lat: number, lng: number) => void>(() => {});
   const dialog = useRef<HTMLDivElement>(null);
   const closeRef = useRef(close);
+  const savingRef = useRef(false);
   useEffect(() => { closeRef.current = close; }, [close]);
 
   useEffect(() => {
@@ -46,7 +49,7 @@ export function MapLocationPicker({ value: location, onSave: setLocation, close,
     const oldOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     dialog.current?.focus();
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") closeRef.current(); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !savingRef.current) closeRef.current(); };
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = oldOverflow; previous?.focus(); reverseRequest.current?.abort(); };
   }, []);
@@ -121,7 +124,8 @@ export function MapLocationPicker({ value: location, onSave: setLocation, close,
     }, () => { setBusy(false); setError("Location access failed. Allow location permission or search for your address."); }, { enableHighAccuracy: true, timeout: 12000 });
   }
 
-  return <div className="px-delivery-overlay" onClick={close}><div className="px-delivery-dialog" ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="delivery-location-title" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => {
+  if (typeof document === "undefined") return null;
+  return createPortal(<div className="px-delivery-overlay" onClick={() => { if (!saving) close(); }}><div className="px-delivery-dialog" ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={`${formId}-title`} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => {
     if (event.key === "Tab") {
       const controls = dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input, textarea, a[href], [tabindex="0"]');
       if (!controls?.length) return;
@@ -129,18 +133,21 @@ export function MapLocationPicker({ value: location, onSave: setLocation, close,
       if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     }
-  }}><header><div><small>{title === "Where should we deliver?" ? "DELIVERY ADDRESS" : "LOCATION"}</small><h2 id="delivery-location-title">{title}</h2></div><button type="button" aria-label="Close address picker" onClick={close} disabled={saving}>×</button></header>
+  }}><header><div><small>{title === "Where should we deliver?" ? "DELIVERY ADDRESS" : "LOCATION"}</small><h2 id={`${formId}-title`}>{title}</h2></div><button type="button" aria-label="Close address picker" onClick={close} disabled={saving}>×</button></header>
+    <div className="px-delivery-body">
     {apiKey ? <><label className="px-map-search">Search for an address<input value={query} onChange={(event) => { setQuery(event.target.value); setPlaces([]); }} placeholder="Area, street, city or postcode" autoComplete="off"/></label>{places.length ? <ul className="px-map-results">{places.map((place) => <li key={place.id}><button type="button" onClick={() => choose(place)}>{place.place_name}</button></li>)}</ul> : null}<button className="px-btn px-btn-outline" type="button" disabled={busy} onClick={locate}>Use my current location</button><div ref={mount} className="px-delivery-map" aria-label="Delivery map. Click to select a location or drag the pin."/><p className="px-form-note">{requirePin ? "Tap the map or drag the pin to your store entrance. Add the shop number and landmark below." : "Tap the map or drag the pin to your entrance. Add your flat number and landmark below."}</p></> : <p className="px-form-note">{requirePin ? "Map search is unavailable. Try again when the map is available." : "Map search is unavailable. You can still save your full delivery address."}</p>}
     {requirePin && !hasMapPin(draft) && <p className="px-form-note">Choose a search result, tap the map, or use your current location to place the pin before saving.</p>}
     {busy ? <p role="status">Finding address…</p> : null}{error ? <p className="px-checkout-error" role="alert">{error}</p> : null}
-    <form className="px-form" onSubmit={async (event) => {
+    <form id={formId} className="px-form" onSubmit={async (event) => {
       event.preventDefault();
       event.stopPropagation();
       if (requirePin && !hasMapPin(draft)) { setError("Choose a point on the map before saving."); return; }
-      setSaving(true); setError("");
+      savingRef.current = true; setSaving(true); setError("");
       try { await setLocation({ ...draft, id: location.id || "default", label: draft.label.trim(), address: draft.address.trim() }); close(); }
       catch { setError("We could not save your address. Check your connection and try again."); }
-      finally { setSaving(false); }
-    }}><label>Address label<input value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} placeholder="Home or Work" required maxLength={50}/></label><label>{requirePin ? "Full store address" : "Full delivery address"}<textarea value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} required minLength={10} maxLength={500} placeholder="Flat / building, street, landmark, city and postcode"/></label><button className="px-btn px-btn-red" type="submit" disabled={busy || saving || (requirePin && !hasMapPin(draft))}>{saving ? "Saving…" : saveLabel}</button></form>
-  </div></div>;
+      finally { savingRef.current = false; setSaving(false); }
+    }}><label>Address label<input value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} placeholder="Home or Work" required maxLength={50}/></label><label>{requirePin ? "Full store address" : "Full delivery address"}<textarea value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} required minLength={10} maxLength={500} placeholder="Flat / building, street, landmark, city and postcode"/></label></form>
+    </div>
+    <footer className="px-delivery-actions"><button type="button" className="px-btn px-btn-outline" onClick={close} disabled={saving}>Cancel</button><button className="px-btn px-btn-red" type="submit" form={formId} disabled={busy || saving || (requirePin && !hasMapPin(draft))}>{saving ? "Saving…" : saveLabel}</button></footer>
+  </div></div>, document.body);
 }

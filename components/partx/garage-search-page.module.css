@@ -219,3 +219,34 @@
   .confirm button { grid-column: 1; }
   .confirm button { width: 100%; }
 }
+
+.photoCredits { margin-top: 18px; font-size: 11px; color: var(--px-muted); }
+.photoCredits summary { cursor: pointer; }
+
+
+.vehicleList { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.vehicleCard { min-width: 0; border: 1px solid var(--px-line); background: var(--px-surface); border-radius: 14px; overflow: hidden; }
+.activeCard { border-color: var(--px-red); box-shadow: inset 0 0 0 1px var(--px-red); }
+.selectVehicle { position: relative; display: flex; align-items: center; gap: 14px; width: 100%; min-height: 112px; padding: 20px 14px 10px; border: 0; background: transparent; color: var(--px-ink); text-align: left; cursor: pointer; }
+.selectVehicle > span { display: grid; gap: 5px; min-width: 0; }
+.selectVehicle b { font-size: 13px; overflow-wrap: anywhere; }
+.selectVehicle small { font-size: 11px; color: var(--px-muted); }
+.selectVehicle em { position: absolute; right: 12px; top: 7px; display: flex; align-items: center; gap: 3px; font-size: 10px; color: var(--px-red); font-style: normal; }
+.selectVehicle em svg { width: 12px; height: 12px; }
+.removeVehicle { display: flex; align-items: center; gap: 6px; min-height: 40px; margin-left: auto; padding: 8px 16px; border: 0; background: transparent; color: var(--px-muted); font-size: 11px; cursor: pointer; }
+.removeVehicle:hover { color: var(--px-red); }
+.removeVehicle svg { width: 14px; height: 14px; }
+.removeConfirm { padding: 12px 14px; border-top: 1px solid var(--px-line); }
+.removeConfirm p { margin: 0 0 4px; font-size: 12px; font-weight: 700; }
+.removeConfirm small { color: var(--px-muted); font-size: 11px; }
+.removeConfirm > div { display: flex; gap: 10px; margin-top: 10px; }
+.removeConfirm button { min-height: 40px; padding: 8px 12px; border: 1px solid var(--px-line); border-radius: 8px; background: var(--px-card); color: var(--px-ink); font-size: 12px; cursor: pointer; }
+.removeConfirm button:first-child { border-color: var(--px-red); color: var(--px-red); }
+.vehicleNotice { font-size: 12px; color: var(--px-muted); }
+.vehicleCard button:focus-visible { outline: 2px solid var(--px-red); outline-offset: -3px; }
+@media(max-width:760px) { .vehicleList { grid-template-columns: 1fr; } }
+
+
+.activeImage :global([data-vehicle-photo]) img { height: auto; aspect-ratio: 3 / 2; object-fit: contain; }
+.activeImage :global([data-vehicle-photo]) > div { min-height: 100px; }
+.activeHero .photoNote { display: block; margin-top: 8px; color: #c4cbd5; font-size: 10px; line-height: 1.5; opacity: 1; }
