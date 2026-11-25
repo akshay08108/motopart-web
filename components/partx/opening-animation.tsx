@@ -34,7 +34,6 @@ export function OpeningAnimation({ children }: { children: React.ReactNode }) {
           <div className={styles.accent}/>
         </div>
       </div>
-      <button type="button" className={styles.skip} onClick={() => setVisible(false)}>Skip intro <span aria-hidden="true">↗</span></button>
     </div>}
   </>;
 }

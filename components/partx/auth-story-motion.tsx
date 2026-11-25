@@ -1,12 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import styles from "./auth-story.module.css";
 
 export function AuthStoryMotion() {
-  const [paused, setPaused] = useState(false);
-
-  return <div className={styles.motionWrap} data-paused={paused}>
+  return <div className={styles.motionWrap}>
     <div className={styles.scene} aria-hidden="true">
       <div className={styles.grid}/>
       <div className={styles.orbit}/>
@@ -48,8 +45,5 @@ export function AuthStoryMotion() {
       </svg>
       <div className={styles.routeLabels}><span>Your vehicle</span><span>Your store</span><span>Your door</span></div>
     </div>
-    <button type="button" className={styles.motionControl} onClick={() => setPaused((value) => !value)} aria-pressed={paused}>
-      <span aria-hidden="true">{paused ? "▷" : "Ⅱ"}</span>{paused ? "Play motion" : "Pause motion"}
-    </button>
   </div>;
 }

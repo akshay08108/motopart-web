@@ -23,7 +23,7 @@ export function RoleChoicePage() {
   return <main className={`px-auth px-role-gateway ${storyStyles.auth}`}>
     <AuthStory role="customer"/>
     <section className="px-auth-panel px-role-panel">
-      <Link href="/" className="px-auth-mobile-brand" aria-label="PartX home"><Image src="/brand/partx-light.png" alt="" width={48} height={48} priority/><span>Part<b>X</b></span></Link>
+      <Link href="/" className="px-auth-mobile-brand" aria-label="PartX home"><Image src="/brand/partx-dark.png" alt="" width={48} height={48} priority/><span>Part<b>X</b></span></Link>
       <div className="px-role-wrap">
         <div className="px-role-heading"><span>PARTX ACCOUNT</span><h1>How are you<br/>using PartX?</h1><p>Choose your account type to continue.</p></div>
         <div className="px-role-choices">
@@ -115,7 +115,7 @@ export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; si
         setBusy(false);
       }
     };
-    return <main className={`px-auth px-auth-${role} ${storyStyles.auth}`}>
+    return <main className={`px-auth px-auth-${role} ${storyStyles.auth}`} data-auth-mode={awaitingVerification ? "verify" : mode}>
       <AuthStory role={role} dedicated={dedicated}/>
       <section className="px-auth-panel">
         <AuthBrand role={role} dedicated={dedicated} mobile/>
@@ -133,7 +133,7 @@ export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; si
     </main>;
   }
 
-  return <main className={`px-auth px-auth-${role} ${storyStyles.auth}`}>
+  return <main className={`px-auth px-auth-${role} ${storyStyles.auth}`} data-auth-mode={awaitingVerification ? "verify" : mode}>
     <AuthStory role={role} dedicated={dedicated}/>
     <section className="px-auth-panel">
       <AuthBrand role={role} dedicated={dedicated} mobile/>
@@ -187,6 +187,6 @@ function AuthStory({ role, dedicated = false }: { role: UserRole; dedicated?: bo
 function AuthBrand({ role, dedicated, mobile = false }: { role: UserRole; dedicated: boolean; mobile?: boolean }) {
   const className = mobile ? "px-auth-mobile-brand" : "px-auth-brand";
   const size = mobile ? 48 : 58;
-  const brand = <><Image src={mobile ? "/brand/partx-light.png" : "/brand/partx-dark.png"} alt="" width={size} height={size} priority/><span>Part<b>X</b>{role === "rider" && <small> Rider</small>}</span></>;
+  const brand = <><Image src="/brand/partx-dark.png" alt="" width={size} height={size} priority/><span>Part<b>X</b>{role === "rider" && <small> Rider</small>}</span></>;
   return dedicated ? <div className={className}>{brand}</div> : <Link href="/" className={className} aria-label={role === "rider" ? "PartX Rider home" : "PartX home"}>{brand}</Link>;
 }

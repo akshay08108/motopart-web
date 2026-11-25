@@ -103,28 +103,6 @@
   transform-origin: left;
 }
 
-.skip {
-  position: absolute;
-  right: max(24px, env(safe-area-inset-right));
-  bottom: max(26px, env(safe-area-inset-bottom));
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 10px 12px;
-  border: 1px solid #343943;
-  border-radius: 8px;
-  background: #11151b;
-  color: #d9dce2;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.skip:focus-visible {
-  outline: 2px solid #ed101c;
-  outline-offset: 4px;
-}
-
 @keyframes markArrive {
   from { opacity: 0; transform: translateY(7px) rotate(-15deg) scale(.94); }
   to { opacity: 1; transform: none; }
