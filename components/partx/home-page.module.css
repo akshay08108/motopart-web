@@ -587,3 +587,84 @@
   }
 
 }
+
+/* Keep vehicle selection and the actual catalogue filter one step apart. */
+.heroMain {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(310px, .85fr);
+  gap: 36px;
+  align-items: center;
+  padding: 34px;
+}
+.heroCopy { z-index: 3; align-items: flex-start; padding: 12px 0; text-align: left; }
+.heroEyebrow { margin-bottom: 18px; color: var(--hero-red); font-size: 10px; font-weight: 800; letter-spacing: .16em; }
+.heroCopy h1 { font-size: clamp(40px, 4.5vw, 61px); }
+.heroCopy p { max-width: 38ch; margin: 16px 0 23px; }
+.quickSearches { justify-content: flex-start; gap: 8px 18px; }
+.finder {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid var(--px-line);
+  border-radius: 16px;
+  background: var(--px-card);
+  box-shadow: 0 12px 36px rgb(0 0 0 / 4%);
+  color: var(--px-ink);
+}
+.finderEyebrow { display: flex; align-items: center; gap: 8px; color: var(--px-muted); font-size: 9px; font-weight: 800; letter-spacing: .12em; }
+.finderEyebrow > svg { width: 19px; height: 19px; color: var(--px-red); }
+.finderEyebrow a { margin-left: auto; padding: 5px 0 5px 8px; color: var(--px-ink); font-size: 11px; letter-spacing: 0; text-decoration: underline; text-underline-offset: 3px; }
+.finder h2 { margin: 15px 0 8px; font-family: "Plus Jakarta Sans Variable", sans-serif; font-size: clamp(23px, 2.6vw, 32px); font-style: italic; line-height: 1.2; font-weight: 800; letter-spacing: -.035em; }
+.finderIntro { margin: 0 0 20px; color: var(--px-muted); font-size: 12px; line-height: 1.6; }
+.selectedCar { display: flex; gap: 12px; align-items: center; min-width: 0; padding: 14px 12px; border: 1px solid var(--px-line); border-radius: 11px; background: var(--px-surface); }
+.selectedCarIcon { display: grid; flex-shrink: 0; place-items: center; width: 44px; height: 44px; border-radius: 10px; color: var(--px-red); background: color-mix(in srgb, var(--px-red) 8%, var(--px-card)); }
+.selectedCarIcon svg { width: 28px; height: 28px; }
+.selectedCar > div { flex: 1; min-width: 0; }
+.selectedCar small { display: block; margin-bottom: 5px; color: var(--px-muted); font-size: 8px; letter-spacing: .1em; font-weight: 700; }
+.selectedCar strong { display: block; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.selectedCar > div > span { display: block; margin-top: 4px; color: var(--px-muted); font-size: 10px; line-height: 1.4; }
+.selectedCar button { border: 0; min-height: 44px; padding: 5px; background: transparent; color: var(--px-red); font-size: 11px; font-weight: 700; cursor: pointer; }
+.finderMatch { display: flex; gap: 7px; align-items: center; margin: 13px 0; color: var(--px-muted); font-size: 11px; line-height: 1.5; }
+.finderMatch svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--px-red); }
+.finderMatch b { color: var(--px-ink); }
+.finderAction { display: flex; width: 100%; min-height: 47px; justify-content: center; align-items: center; gap: 10px; border: 1px solid var(--px-red-deep); border-radius: 10px; padding: 12px; background: var(--px-red-deep); color: #fff; font-size: 13px; font-weight: 800; cursor: pointer; }
+.finderAction svg { width: 18px; height: 18px; }
+.finderAction:hover { filter: brightness(.93); }
+.finderAction:disabled, .finderChoose:disabled { opacity: .6; cursor: wait; }
+.finderChoose { display: flex; width: 100%; min-height: 68px; align-items: center; gap: 12px; margin-bottom: 14px; padding: 12px; border: 1px solid var(--px-line); border-radius: 11px; background: var(--px-surface); color: var(--px-ink); text-align: left; cursor: pointer; }
+.finderChoose > svg { width: 23px; height: 23px; color: var(--px-red); flex-shrink: 0; }
+.finderChoose > svg:last-child { width: 17px; height: 17px; margin-left: auto; }
+.finderChoose > span { font-size: 13px; font-weight: 750; }
+.finderChoose small { display: block; margin-top: 5px; color: var(--px-muted); font-size: 10px; font-weight: 450; }
+.finderNote { display: flex; align-items: flex-start; gap: 7px; margin: 14px 0 0; color: var(--px-muted); font-size: 10px; line-height: 1.6; }
+.finderNote svg { margin-top: 2px; width: 13px; height: 13px; flex-shrink: 0; }
+@media (max-width: 1080px) {
+  .heroMain { padding: 26px; gap: 24px; grid-template-columns: minmax(0, 1fr) minmax(300px, .9fr); }
+  .heroCopy h1 { font-size: 46px; }
+  .finder { padding: 20px; }
+}
+@media (max-width: 860px) {
+  .heroMain { grid-template-columns: minmax(0, 1fr); gap: 22px; padding: 24px; }
+  .heroCopy { padding: 0; }
+  .heroCopy .search { display: none; }
+  .heroCopy h1 { font-size: clamp(39px, 6vw, 56px); }
+  .heroCopy p { max-width: 45ch; margin: 12px 0 0; }
+  .finder { width: 100%; }
+}
+@media (max-width: 600px) {
+  .heroMain { padding: 20px 16px 16px; gap: 20px; }
+  .heroCopy h1 { font-size: clamp(36px, 10vw, 50px); }
+  .heroEyebrow { margin-bottom: 13px; font-size: 9px; }
+  .heroCopy p { font-size: 12px; }
+  .search :global(.px-search-form) { height: 52px; padding-left: 12px; }
+  .search :global(.px-search-form) button { height: 38px; min-width: 38px; }
+  .quickSearches { gap: 4px 14px; margin-top: 9px; }
+  .finder { padding: 18px 15px; border-radius: 12px; }
+  .finder h2 { font-size: 27px; }
+  .finderIntro { margin-bottom: 15px; }
+  .selectedCar { gap: 9px; padding: 12px 9px; }
+  .selectedCarIcon { width: 36px; height: 36px; }
+  .selectedCarIcon svg { width: 24px; height: 24px; }
+  .selectedCar strong { font-size: 12px; }
+}

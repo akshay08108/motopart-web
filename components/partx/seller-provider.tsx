@@ -1,9 +1,10 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { collection, deleteDoc, doc, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import type { LiveAnnouncement, NewSellerProduct, SellerOrder, SellerOrderItem, SellerOrderStatus, SellerPaymentStatus, SellerProduct, SellerTicket, StorePaymentSettings, StoreRating } from "@/lib/types";
 import { createPartXId } from "@/lib/seller-data";
+import { createTicketAlertTracker } from "@/lib/seller-ticket-alerts";
 import { deleteCloudinaryProductImage, uploadProductImageToCloudinary } from "@/lib/cloudinary-client";
 import { firestore } from "@/lib/firebase";
 import { usePartX } from "./app-provider";
@@ -84,7 +85,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   const [tickets, setTickets] = useState<SellerTicket[]>([]);
   const [ratings, setRatings] = useState<StoreRating[]>([]);
   const [alertsEnabled, setAlertsEnabled] = useState(false);
-  const [activeAlert, setActiveAlert] = useState<SellerAlert | null>(null);
+  const [alertState, setAlertState] = useState<{ scope: string; alert: SellerAlert } | null>(null);
   const [productOverrides, setProductOverrides] = useState<Record<string, { price: number; stock: number }>>({
     "BP-0986-424-384": { price: 1299, stock: 3 }, "LX-3541": { price: 649, stock: 12 }, MTRED60L: { price: 4999, stock: 2 }, "3397011417": { price: 799, stock: 4 }, "OC-523": { price: 259, stock: 0 },
   });
@@ -94,6 +95,12 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   const sellerOrdersRef = useRef<SellerOrder[]>([]);
   const alertAudioRef = useRef<AudioContext | null>(null);
   const sellerStoreIdsKey = user?.activeRole === "seller" ? (user.storeIds ?? []).join("|") : "";
+  const alertScope = `${user?.id ?? ""}:${user?.activeRole ?? ""}:${sellerStoreIdsKey}`;
+  const activeAlert = alertState?.scope === alertScope ? alertState.alert : null;
+  const setActiveAlert = useCallback((alert: SellerAlert | null) => {
+    setAlertState(alert ? { scope: alertScope, alert } : null);
+  }, [alertScope]);
+  const dismissAlert = useCallback(() => setActiveAlert(null), [setActiveAlert]);
 
   useEffect(() => {
     alertsEnabledRef.current = alertsEnabled;
@@ -180,7 +187,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     ));
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
-  }, [sellerStoreIdsKey, user]);
+  }, [sellerStoreIdsKey, user, setActiveAlert]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -209,35 +216,50 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     }
     const ticketsByStore = new Map<string, SellerTicket[]>();
     const ratingsByStore = new Map<string, StoreRating[]>();
-    const initializedTicketStores = new Set<string>();
-    const refreshTickets = () => setTickets([...ticketsByStore.values()].flat().sort(newestFirst));
+    let subscribed = true;
+    const refreshTickets = () => {
+      const currentTickets = [...ticketsByStore.values()].flat().sort(newestFirst);
+      setTickets(currentTickets);
+      setAlertState((current) => {
+        if (current?.scope !== alertScope || current.alert.kind !== "ticket") return current;
+        const ticketId = current.alert.ticket.id;
+        return currentTickets.some((ticket) => ticket.id === ticketId && ticket.status === "Open") ? current : null;
+      });
+    };
     const refreshRatings = () => setRatings([...ratingsByStore.values()].flat().sort(newestFirst));
-    const stops = storeIds.flatMap((storeId) => [
-      onSnapshot(query(collection(firestore, "tickets"), where("storeId", "==", storeId)), (snapshot) => {
-        ticketsByStore.set(storeId, snapshot.docs.map((ticketDoc) => toSellerTicket(ticketDoc.id, ticketDoc.data())));
-        refreshTickets();
-        if (initializedTicketStores.has(storeId)) {
-          const added = snapshot.docChanges().find((change) => change.type === "added");
-          if (added) {
-            const ticket = toSellerTicket(added.doc.id, added.doc.data());
+    const stops = storeIds.flatMap((storeId) => {
+      const trackTickets = createTicketAlertTracker<SellerTicket>(storeId);
+      return [
+        onSnapshot(query(collection(firestore, "tickets"), where("storeId", "==", storeId)), { includeMetadataChanges: true }, (snapshot) => {
+          if (!subscribed) return;
+          const storeTickets = snapshot.docs.map((ticketDoc) => toSellerTicket(ticketDoc.id, ticketDoc.data()));
+          ticketsByStore.set(storeId, storeTickets);
+          refreshTickets();
+          const ticket = trackTickets(storeTickets, snapshot.metadata.fromCache);
+          if (ticket) {
             setActiveAlert({ kind: "ticket", ticket });
             if (alertsEnabledRef.current && alertAudioRef.current) resumeAndPlayAlert(alertAudioRef.current);
           }
-        } else initializedTicketStores.add(storeId);
-      }, () => { ticketsByStore.set(storeId, []); refreshTickets(); }),
-      onSnapshot(query(collection(firestore, "ratings"), where("storeId", "==", storeId)), (snapshot) => {
-        ratingsByStore.set(storeId, snapshot.docs.map((ratingDoc) => toStoreRating(ratingDoc.id, ratingDoc.data())));
-        refreshRatings();
-      }, () => { ratingsByStore.set(storeId, []); refreshRatings(); }),
-    ]);
-    return () => stops.forEach((stop) => stop());
-  }, [user?.activeRole, user?.id, sellerStoreIdsKey]);
+        }, () => { if (subscribed) { ticketsByStore.set(storeId, []); refreshTickets(); } }),
+        onSnapshot(query(collection(firestore, "ratings"), where("storeId", "==", storeId)), (snapshot) => {
+          if (!subscribed) return;
+          ratingsByStore.set(storeId, snapshot.docs.map((ratingDoc) => toStoreRating(ratingDoc.id, ratingDoc.data())));
+          refreshRatings();
+        }, () => { if (subscribed) { ratingsByStore.set(storeId, []); refreshRatings(); } }),
+      ];
+    });
+    return () => { subscribed = false; stops.forEach((stop) => stop()); };
+  }, [user?.activeRole, user?.id, sellerStoreIdsKey, alertScope, setActiveAlert]);
 
-  useEffect(() => () => {
-    const context = alertAudioRef.current;
-    alertAudioRef.current = null;
-    if (context && context.state !== "closed") void context.close();
-  }, []);
+  useEffect(() => {
+    alertsEnabledRef.current = false;
+    queueMicrotask(() => { setAlertState(null); setAlertsEnabled(false); });
+    return () => {
+      const context = alertAudioRef.current;
+      alertAudioRef.current = null;
+      if (context && context.state !== "closed") void context.close().catch(() => undefined);
+    };
+  }, [alertScope]);
 
   useEffect(() => {
     sellerOrdersRef.current = sellerOrders;
@@ -290,10 +312,10 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       }
       setAlertsEnabled(true);
       alertsEnabledRef.current = true;
-      if (alertAudioRef.current) resumeAndPlayAlert(alertAudioRef.current);
+      if (alertAudioRef.current) await alertAudioRef.current.resume().catch(() => undefined);
       await enableNotifications();
     },
-    dismissAlert: () => setActiveAlert(null),
+    dismissAlert,
     savePaymentSettings: async (settings) => {
       const storeId = user?.storeIds?.[0];
       if (!user || user.activeRole !== "seller" || !storeId) throw new Error("A seller store is required before saving payment settings.");
@@ -517,7 +539,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       }
       if (product.imagePublicId) await deleteCloudinaryProductImage(product.imagePublicId).catch(() => undefined);
     },
-  }), [sellerOrders, paymentVerifications, paymentSettings, announcements, tickets, ratings, alertsEnabled, activeAlert, productOverrides, sellerProducts, customerOrders, updateOrderStage, user, enableNotifications]);
+  }), [sellerOrders, paymentVerifications, paymentSettings, announcements, tickets, ratings, alertsEnabled, activeAlert, dismissAlert, productOverrides, sellerProducts, customerOrders, updateOrderStage, user, enableNotifications]);
 
   return <SellerContext.Provider value={value}>{children}</SellerContext.Provider>;
 }

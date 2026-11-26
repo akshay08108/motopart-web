@@ -8,6 +8,8 @@ import { Icon } from "./icons";
 import { ProductCard } from "./product-card";
 import { PartSearch } from "./part-search";
 import { DeliveryLocationButton } from "./delivery-location-button";
+import { HomeVehicleFinder } from "./home-vehicle-finder";
+import { matchesVehicle } from "@/lib/vehicle-fitment";
 import styles from "./home-page.module.css";
 
 const categories = [
@@ -24,12 +26,10 @@ const categories = [
 ] as const;
 
 export function HomePage() {
-  const { vehicles, activeVehicleId, setActiveVehicleId, catalog } = usePartX();
+  const { vehicles, activeVehicleId, setActiveVehicleId, catalog, user } = usePartX();
   const [vehicleError, setVehicleError] = useState("");
   const activeVehicle = vehicles.find((vehicle) => vehicle.id === activeVehicleId) ?? vehicles[0];
-  const compatibleParts = activeVehicle ? catalog.filter((product) =>
-    product.compatibleVehicleIds.includes(activeVehicle.id)
-    || Boolean(activeVehicle.vehicleModelId && product.compatibleVehicleIds.includes(activeVehicle.vehicleModelId))) : [];
+  const compatibleParts = catalog.filter((product) => matchesVehicle(product, activeVehicle));
   const shownParts = (compatibleParts.length ? compatibleParts : catalog).slice(0, 5);
 
   return <div className={styles.home}>
@@ -57,6 +57,7 @@ export function HomePage() {
           </svg>
         </div>
         <div className={styles.heroCopy}>
+          <span className={styles.heroEyebrow}>THE RIGHT PART STARTS HERE</span>
           <h1 id="storefront-heading">Your next part,<br/><em>right here.</em></h1>
           <p>Find what fits. Compare local stores. Get back on the road.</p>
           <PartSearch className={styles.search} label="Find a part" placeholder="Search a part, brand or part number"/>
@@ -66,11 +67,12 @@ export function HomePage() {
             <Link href="/shop?q=engine%20oil">Engine oil<Icon name="arrow"/></Link>
           </div>
         </div>
+        <HomeVehicleFinder key={user?.id ?? "guest"}/>
       </div>
 
       <div className={styles.shortcuts}>
         <div className={styles.shortcut}>
-          <Icon name="garage"/>
+          <Icon name="car"/>
           <div>
             {vehicles.length ? <label className={styles.vehicleSelect}>
               <span>Your vehicle</span>
@@ -121,7 +123,7 @@ export function HomePage() {
     <section className={`px-container ${styles.section} ${styles.parts}`} aria-labelledby="storefront-parts">
       <div className={styles.sectionHeading}>
         <h2 id="storefront-parts">{activeVehicle && compatibleParts.length ? `Parts for your ${activeVehicle.model}` : "Browse parts"}</h2>
-        <Link href="/shop">Shop all <Icon name="arrow"/></Link>
+        <Link href={compatibleParts.length ? "/shop?fitment=selected" : "/shop"}>Shop all <Icon name="arrow"/></Link>
       </div>
       <div className="px-product-grid">{shownParts.map((product) => <ProductCard product={product} key={product.id}/>)}</div>
     </section>

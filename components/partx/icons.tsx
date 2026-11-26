@@ -2,6 +2,7 @@ import type { SVGProps } from "react";
 
 // A single 24px grid keeps navigation, actions and part categories consistent.
 const paths: Record<string, React.ReactNode> = {
+  info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></>,
   search: <><circle cx="10.75" cy="10.75" r="6.75"/><path d="m16 16 4.25 4.25"/></>,
   cart: <><path d="M3 4h2l2.1 10.5a2 2 0 0 0 2 1.5h8.1a2 2 0 0 0 2-1.6L20.5 8H6"/><circle cx="9.5" cy="20" r="1"/><circle cx="17.5" cy="20" r="1"/></>,
   user: <><circle cx="12" cy="8" r="3.5"/><path d="M5 20v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1"/></>,

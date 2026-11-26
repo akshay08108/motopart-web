@@ -1,0 +1,8 @@
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 0 0 18px; padding: 12px 16px; border: 1px solid var(--px-line); border-radius: 12px; background: var(--px-card); color: var(--px-ink); }
+.bar button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--px-line); border-radius: 8px; background: var(--px-surface); color: var(--px-ink); font-size: 13px; cursor: pointer; }
+.bar button[aria-pressed="true"] { border-color: var(--px-red); background: color-mix(in srgb, var(--px-red) 7%, var(--px-card)); }
+.bar svg { width: 20px; height: 20px; flex-shrink: 0; color: var(--px-red); }
+.bar span { flex: 1; color: var(--px-muted); font-size: 12px; }
+.bar a { font-size: 12px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.bar button:focus-visible, .bar a:focus-visible { outline: 2px solid var(--px-red); outline-offset: 3px; }
+@media (max-width: 600px) { .bar { padding: 10px; gap: 8px; } .bar span { flex-basis: 100%; order: 2; } .bar a { margin-left: auto; } }
