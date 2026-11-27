@@ -19,6 +19,7 @@ export type RiderDelivery = {
   fulfilment: "delivery" | "garage"; state: DeliveryState; totalAmount: number; codAmount: number; codCollected: boolean; razorpayTest?: boolean;
   items: Array<{ name: string; partNumber: string; quantity: number; imageUrl?: string }>;
   assignedAt?: number; acceptedAt?: number; pickedUpAt?: number; deliveredAt?: number; closedAt?: number;
+  gpsDistanceMeters?: number;
   issue?: { reason: string; reportedAt?: number }; closedReason?: string;
   earnings?: RiderEarning | null;
 };
@@ -102,7 +103,7 @@ export function useAfterSales(orderId: string, userId?: string) {
   return result?.key === key ? result : { requests: [], error: undefined };
 }
 
-export async function deliveryCall<T = { ok: boolean }>(name: "dispatchPartXDelivery" | "updatePartXDelivery" | "getPartXDeliveryCode" | "requestPartXAfterSale" | "quotePartXRoute", data: Record<string, unknown>): Promise<T> {
+export async function deliveryCall<T = { ok: boolean }>(name: "dispatchPartXDelivery" | "updatePartXDelivery" | "getPartXDeliveryCode" | "requestPartXAfterSale" | "quotePartXRoute" | "getPartXTracking" | "publishPartXRiderLocation", data: Record<string, unknown>): Promise<T> {
   const localFunctions = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_FIREBASE_EMULATORS === "1" && !process.env.NEXT_PUBLIC_PARTX_DELIVERY_API_URL;
   if (!localFunctions) {
     const user = firebaseAuth.currentUser;

@@ -5,6 +5,7 @@ import { deliveryCall, deliveryDate, deliveryLabels, phoneLink, rideTrackingId, 
 import { usePartX } from "./app-provider";
 import { DeliveryMap } from "./delivery-map";
 import { Icon } from "./icons";
+import { formatTrackingDistance } from "@/lib/rider-tracking";
 
 export function DeliveryTracking({ deliveryId }: { deliveryId?: string }) {
   const { user } = usePartX();
@@ -38,5 +39,6 @@ export function DeliveryTracking({ deliveryId }: { deliveryId?: string }) {
     {delivery.issue && active ? <p className="rx-notice">Your rider reported a delivery issue. Your seller has been notified.</p> : null}
     {showCode ? <div className="rx-customer-otp"><div><b>Handover confirmation code</b><p>{returning ? "Share this code when the rider takes the return." : replacing ? "Share this code after you receive the replacement and hand the original to the rider." : "Share this code only when your parts arrive and you have checked them."}{delivery.codAmount > 0 ? ` Pay ₹${delivery.codAmount.toLocaleString("en-IN")} in cash before confirming.` : ""}</p></div>{code ? <div className="rx-code-display">{expired ? <b className="rx-code-expired" role="status">Code expired</b> : <strong aria-label={`Delivery code ${code.code.split("").join(" ")}`}>{code.code}</strong>}<small>{expired ? "Generate a new code to finish delivery." : `Valid until ${deliveryDate(code.expiresAt)}`}</small></div> : null}<div className="rx-code-actions">{!code ? <button type="button" className="rx-secondary" disabled={busy} onClick={() => requestCode(false)}>Show delivery code</button> : null}<button type="button" className="rx-secondary" disabled={busy || (!expired && cooldown > 0)} onClick={() => requestCode(true)}>{busy ? "Loading…" : !expired && cooldown > 0 ? `Generate new code (${cooldown}s)` : "Generate new code"}</button></div><p className="rx-code-help">A new code replaces the previous one. The rider stays assigned until delivery is verified or the assignment is closed.</p>{error ? <p className="rx-error" role="alert">{error}</p> : null}</div> : null}
     {expanded && active ? <DeliveryMap delivery={delivery}/> : null}
+    {delivery.state === "DELIVERED" && Number.isFinite(delivery.gpsDistanceMeters) && <p className="rx-notice">Distance covered during GPS sharing · {formatTrackingDistance(delivery.gpsDistanceMeters!)}</p>}
   </section>;
 }

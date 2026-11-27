@@ -15,6 +15,7 @@ const point = { address: "Hill Road, Bandra West, Mumbai 400050", latitude: 19.0
 const origin = "https://motopart-web.vercel.app";
 let privateKey, publicJwk, env, worker;
 let gatewayOrder, gatewayPayment, gatewayTransfer, gatewayCreates;
+let routeBroken = false;
 let databaseRequests = 0; let notifications = []; let abortNextCommit = false;
 const pending = [];
 
@@ -27,6 +28,11 @@ async function token(uid, extra = {}, headerExtra = {}) {
   return `${input}.${b64(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privateKey, new TextEncoder().encode(input)))}`;
 }
 async function testFetch(url, options = {}) {
+  if (url === "https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson") {
+    if (routeBroken) return new Response("", { status: 503 });
+    const coordinates = JSON.parse(options.body).coordinates;
+    return Response.json({features:[{properties:{summary:{distance:5000,duration:600}},geometry:{type:"LineString",coordinates}}]});
+  }
   if (url === "https://api.heigit.org/openrouteservice/v2/directions/driving-car/json") return Response.json({ routes: [{ summary: { distance: 5000, duration: 600 } }] });
   if (url === "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com") return Response.json({ keys: [publicJwk] }, { headers: { "cache-control": "max-age=3600" } });
   if (url === "https://oauth2.googleapis.com/token") {
@@ -68,7 +74,7 @@ beforeEach(async () => {
   await Promise.all(pending.splice(0));
   for (const name of ["users", "riders", "stores", "orders", "products", "razorpayOrders", "deliveries", "deliverySecrets", "notificationDevices"]) await db.recursiveDelete(db.collection(name));
   gatewayOrder = gatewayPayment = gatewayTransfer = null; gatewayCreates = 0;
-  databaseRequests = 0; notifications = []; abortNextCommit = false; worker = createWorker({ fetcher: testFetch });
+  databaseRequests = 0; notifications = []; abortNextCommit = false; routeBroken = false; worker = createWorker({ fetcher: testFetch });
   const order = { customerId: "customer", sellerId: "seller", storeId: "store", customer: { name: "Customer", phone: "+919999999999" }, status: "Packed", stage: "Preparing", orderStatus: "PLACED", paymentStatus: "PAYMENT_DUE", paymentMethod: "cod", fulfilment: "delivery", totalAmount: 199, total: 199, deliveryLocation: point, items: [{ productName: "Filter", partNumber: "F1", quantity: 2 }, { productName: "Oil", partNumber: "O1", quantity: 1 }] };
   await Promise.all([
     ...[["seller", "seller"], ["rider", "rider"], ["other-rider", "rider"], ["customer", "customer"], ["other-customer", "customer"]].map(([id, role]) => db.doc(`users/${id}`).set({ roles: [role] })),
@@ -319,3 +325,87 @@ test("Razorpay Test Mode prices from Firestore, verifies capture once, alerts th
   const owned = await call("quotePartXRoute", "seller", {orderId:"order"});
   assert.equal(owned.status,200);assert.equal(owned.body.data.returnDistanceMeters,5000);
  });
+
+
+test("tracking receives confirmed GPS, serves only participants, keeps road geometry independent from earnings and sends no alerts", async () => {
+  const deliveryId = await pickedUp();
+  await Promise.all(pending.splice(0)); notifications = [];
+  const fix = { deliveryId, latitude:19.061, longitude:72.835, accuracy:20, capturedAt:Date.now() };
+  assert.equal((await call("publishPartXRiderLocation", null, fix)).status,401);
+  assert.equal((await call("publishPartXRiderLocation", "other-rider", fix)).status,403);
+  assert.equal((await call("publishPartXRiderLocation", "customer", fix)).status,403);
+  const shared = await call("publishPartXRiderLocation", "rider", fix);
+  assert.equal(shared.status,200,JSON.stringify(shared.body)); assert.ok(shared.body.data.sharedAt > Date.now()-10000);
+  const stored = (await db.doc(`deliveries/${deliveryId}/location/current`).get()).data();
+  assert.equal(stored.latitude,fix.latitude);assert.equal(stored.riderId,"rider");assert.ok(stored.updatedAt.toMillis());
+  const before = (await db.doc(`deliveries/${deliveryId}`).get()).data().earnings;
+  for (const uid of ["customer","seller","rider"]) {
+    const read = await call("getPartXTracking",uid,{deliveryId,includeRoute:true});
+    assert.equal(read.status,200,JSON.stringify(read.body));assert.equal(read.body.data.position.latitude,fix.latitude);
+    assert.equal(read.body.data.routeFromRider,true);assert.deepEqual(read.body.data.route.geometry[0],[fix.longitude,fix.latitude]);
+    assert.equal(read.body.data.code,undefined);assert.equal(read.body.data.customer,undefined);
+  }
+  assert.equal((await call("getPartXTracking","other-customer",{deliveryId})).status,403);
+  assert.equal((await call("getPartXTracking","other-rider",{deliveryId})).status,403);
+  assert.equal((await call("getPartXTracking",null,{deliveryId})).status,401);
+  assert.deepEqual((await db.doc(`deliveries/${deliveryId}`).get()).data().earnings,before);
+  const throttled=await call("publishPartXRiderLocation","rider",{...fix,latitude:19.062,capturedAt:Date.now()});
+  assert.equal(throttled.status,200);assert.equal(throttled.body.data.sharedAt,stored.updatedAt.toMillis());
+  assert.equal((await db.doc(`deliveries/${deliveryId}/location/current`).get()).data().latitude,fix.latitude);
+  await Promise.all(pending.splice(0));assert.equal(notifications.length,0);
+});
+test("tracking handles route failure, coarse/stale fixes and closed rides without inventing live GPS", async () => {
+  const deliveryId=await pickedUp();
+  const first=await call("getPartXTracking","customer",{deliveryId,includeRoute:true});
+  assert.equal(first.status,200);assert.equal(first.body.data.position,null);assert.equal(first.body.data.routeFromRider,false);
+  await db.doc(`deliveries/${deliveryId}/location/current`).set({riderId:"rider",latitude:19.062,longitude:72.836,accuracy:700,updatedAt:Timestamp.now()});
+  const coarse=await call("getPartXTracking","customer",{deliveryId,includeRoute:true});
+  assert.equal(coarse.body.data.position.accuracy,700);assert.equal(coarse.body.data.routeFromRider,false);
+  await db.doc(`deliveries/${deliveryId}/location/current`).update({accuracy:20,updatedAt:Timestamp.fromMillis(Date.now()-60000)});
+  const stale=await call("getPartXTracking","customer",{deliveryId,includeRoute:true});assert.equal(stale.body.data.routeFromRider,false);
+  await db.doc(`deliveries/${deliveryId}/location/current`).update({latitude:19.063,updatedAt:Timestamp.now()});
+  routeBroken=true;
+  const failed=await call("getPartXTracking","customer",{deliveryId,includeRoute:true});
+  assert.equal(failed.status,200);assert.equal(failed.body.data.position.latitude,19.063);assert.match(failed.body.data.routeError,/unavailable/);
+  await db.doc(`deliveries/${deliveryId}`).update({state:"DELIVERED"});
+  const ended=await call("getPartXTracking","customer",{deliveryId,includeRoute:true});assert.equal(ended.body.data.position,null);assert.equal(ended.body.data.route,undefined);
+  assert.equal((await call("publishPartXRiderLocation","rider",{deliveryId,latitude:19,longitude:72,accuracy:20,capturedAt:Date.now()})).status,409);
+});
+test("customers see recorded distance during the ride and only the total after delivery", async () => {
+  const deliveryId = await pickedUp();
+  const current = db.doc(`deliveries/${deliveryId}/location/current`);
+  const progress = db.doc(`deliveries/${deliveryId}/location/progress`);
+  const fix = { deliveryId, latitude: 19.06, longitude: 72.83, accuracy: 12, capturedAt: Date.now() - 12000 };
+  assert.equal((await call("publishPartXRiderLocation", "rider", fix)).status, 200);
+  await current.update({ updatedAt: Timestamp.fromMillis(Date.now() - 10000) });
+  const second = { ...fix, latitude: 19.061, capturedAt: Date.now() };
+  assert.equal((await call("publishPartXRiderLocation", "rider", second)).status, 200);
+  const live = await call("getPartXTracking", "customer", { deliveryId });
+  assert.equal(live.status, 200);
+  assert.equal(live.body.data.progress.coveredMeters, 111);
+  assert.equal(live.body.data.progress.trail.length, 2);
+  const code = (await call("getPartXDeliveryCode", "customer", { deliveryId })).body.data.code;
+  const completed = await call("updatePartXDelivery", "rider", { action: "complete", deliveryId, code, codCollected: true });
+  assert.equal(completed.status, 200, JSON.stringify(completed.body));
+  const delivered = (await db.doc(`deliveries/${deliveryId}`).get()).data();
+  assert.equal(delivered.gpsDistanceMeters, 111);
+  assert.equal((await progress.get()).exists, false);
+  assert.equal((await current.get()).exists, false);
+  const closed = await call("getPartXTracking", "customer", { deliveryId });
+  assert.deepEqual(closed.body.data, { state: "DELIVERED", position: null });
+});
+test("location publishing validates GPS, pickup, rider status and self-registration email verification", async () => {
+  const deliveryId=await assigned();const fix={deliveryId,latitude:19,longitude:72,accuracy:25,capturedAt:Date.now()};
+  assert.equal((await call("publishPartXRiderLocation","rider",fix)).status,409);
+  await call("updatePartXDelivery","rider",{action:"accept",deliveryId});await call("updatePartXDelivery","rider",{action:"pickup",deliveryId});
+  for(const change of [{latitude:91},{longitude:-181},{accuracy:1001},{accuracy:-1},{capturedAt:Date.now()-60000},{capturedAt:Date.now()+60000},{deliveryId:"../users/customer"}]) assert.equal((await call("publishPartXRiderLocation","rider",{...fix,...change})).status,400);
+  await db.doc("riders/rider").update({active:false});
+  assert.equal((await call("publishPartXRiderLocation","rider",fix)).status,403);
+  assert.equal((await call("getPartXTracking","rider",{deliveryId})).status,403);
+  await db.doc("riders/rider").update({active:true});await db.doc("users/rider").update({riderSelfRegistered:true});
+  assert.equal((await call("publishPartXRiderLocation","rider",fix)).status,403);
+  assert.equal((await call("getPartXTracking","rider",{deliveryId})).status,403);
+  assert.equal((await call("publishPartXRiderLocation","rider",fix,{email_verified:true})).status,200);
+  await db.doc("riders/rider").update({activeDeliveryId:"different-ride"});
+  assert.equal((await call("publishPartXRiderLocation","rider",fix,{email_verified:true})).status,403);
+});

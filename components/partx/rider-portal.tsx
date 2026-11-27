@@ -5,7 +5,7 @@ import Link from "next/link";
 import { appRole } from "@/lib/app-role";
 import { usePathname } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState, type FormEvent } from "react";
-import { doc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { firestore } from "@/lib/firebase";
 import { deliveryCall, deliveryDate, deliveryLabels, isActiveDelivery, navigationLink, phoneLink, rideTrackingId, useRiderJobs, type RiderDelivery } from "@/lib/rider";
 import { usePartX } from "./app-provider";
@@ -91,6 +91,8 @@ function RiderLocationSharing({ delivery }: { delivery: RiderDelivery }) {
   const [sharing, setSharing] = useState(false);
   const [message, setMessage] = useState("Share your location so the customer can follow this delivery.");
   const [lastSent, setLastSent] = useState<number>();
+  const [locationClock, setLocationClock] = useState(0);
+  useEffect(() => { const timer = window.setInterval(() => setLocationClock(Date.now()), 5000); return () => window.clearInterval(timer); }, []);
   useEffect(() => {
     if (!sharing) return;
     if (!navigator.geolocation) { queueMicrotask(() => { setMessage("Location sharing is not supported by this browser."); setSharing(false); }); return; }
@@ -107,11 +109,11 @@ function RiderLocationSharing({ delivery }: { delivery: RiderDelivery }) {
         if (Date.now() - position.timestamp > 20_000) { setMessage("Waiting for a fresh GPS fix…"); return; }
         if (position.coords.accuracy > 1000) { setMessage("GPS accuracy is too low. Move outdoors and try again."); return; }
         inFlight = true;
-        void setDoc(doc(firestore, "deliveries", delivery.id, "location", "current"), {
-          riderId: delivery.riderId, latitude: position.coords.latitude, longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy, updatedAt: serverTimestamp(),
-        }).then(() => { if (!stopped) { lastWrite = Date.now(); setLastSent(lastWrite); setMessage(position.coords.accuracy > 100 ? "Location shared · GPS accuracy is limited" : "Your location is being shared with this customer."); } })
-          .catch(() => { if (!stopped) setMessage("Location could not be shared. Check your connection and retry."); })
+        void deliveryCall<{ sharedAt: number }>("publishPartXRiderLocation", {
+          deliveryId: delivery.id, latitude: position.coords.latitude, longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy, capturedAt: position.timestamp,
+        }).then((result) => { if (!stopped) { lastWrite = Date.now(); setLastSent(result.sharedAt); setLocationClock(Date.now()); setMessage(position.coords.accuracy > 100 ? "Location received by PartX · GPS accuracy is limited" : "PartX confirmed your location. The customer can now see this update."); } })
+          .catch((reason) => { if (!stopped) setMessage(reason instanceof Error ? reason.message : "Location could not be shared. Check your connection and retry."); })
           .finally(() => { inFlight = false; });
       };
       const failed = (error: GeolocationPositionError) => {
@@ -127,7 +129,8 @@ function RiderLocationSharing({ delivery }: { delivery: RiderDelivery }) {
     start(); document.addEventListener("visibilitychange", start); window.addEventListener("online", start); window.addEventListener("offline", start);
     return () => { stopped = true; stop(); document.removeEventListener("visibilitychange", start); window.removeEventListener("online", start); window.removeEventListener("offline", start); };
   }, [sharing, delivery.id, delivery.riderId]);
-  return <section className="rx-location-sharing"><div><Icon name="pin"/><span><b>{sharing ? "Location sharing enabled" : "Start live tracking"}</b><small aria-live="polite">{message}</small>{lastSent ? <small>Last sent {deliveryDate(lastSent)}</small> : null}</span></div><button type="button" className={sharing ? "rx-secondary" : "rx-primary"} onClick={() => setSharing((value) => !value)}>{sharing ? "Pause sharing" : "Share location"}</button><p>Keep this portal open during delivery. Sharing may pause when you lock your phone or switch apps.</p></section>;
+  const confirmed = sharing && lastSent && locationClock - lastSent < 45000;
+  return <section className="rx-location-sharing"><div><Icon name="pin"/><span><b>{sharing ? confirmed ? "Live location confirmed" : "Waiting for a confirmed GPS update" : "Start live tracking"}</b><small aria-live="polite">{message}</small>{lastSent ? <small>Last confirmed by server {deliveryDate(lastSent)}</small> : null}</span></div><button type="button" className={sharing ? "rx-secondary" : "rx-primary"} onClick={() => setSharing((value) => !value)}>{sharing ? "Pause sharing" : "Share location"}</button><p>Keep this portal open during delivery. Sharing may pause when you lock your phone or switch apps.</p></section>;
 }
 
 export function RiderHomePage() {

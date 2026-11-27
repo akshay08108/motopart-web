@@ -21,6 +21,10 @@ function location(value, fallback = "") {
   return result;
 }
 export const defaultRiderEarningsPolicy = { mode: "per_km", ratePaisePerKm: 500, payer: "partx", returnIncluded: true };
+function recordedDistance(progress, riderId) {
+  return progress?.riderId === riderId && Number.isSafeInteger(progress.coveredMeters) && progress.coveredMeters > 0
+    ? { gpsDistanceMeters: progress.coveredMeters } : {};
+}
 function assignmentEarnings(configuredPolicy, oneWayKm, route) {
   const policy = configuredPolicy ?? defaultRiderEarningsPolicy;
   if (policy.mode === "per_km") {
@@ -170,17 +174,20 @@ export function createRiderCore(database, runtime) {
       }
       const reason = text(input.reason, 500);
       if (reason.length < 5) fail("invalid-argument", "Please explain why this delivery is being closed.");
+      const progressRef = database.doc(`deliveries/${deliveryId}/location/progress`);
+      const progress = (await tx.get(progressRef)).data();
       tx.update(ref, { state: input.action === "cancel" ? "CANCELLED" : "RETURNED", closedReason: reason, closedAt: stamp(), updatedAt: stamp() });
       if (rider?.activeDeliveryId === deliveryId) tx.update(riderRef, { activeDeliveryId: null, updatedAt: stamp() });
       if (delivery.requestId != null) {
         const completed = input.action === "returned" && (delivery.kind === "return" || Boolean(delivery.exchangeAt));
         tx.update(database.doc(`orders/${delivery.orderId}/afterSales/${delivery.requestId}`), { state: completed ? "COMPLETED" : "REQUESTED", updatedAt: stamp() });
         if (completed && delivery.earnings) {
-          tx.update(ref, { state: "DELIVERED", deliveredAt: stamp(), earnings: { ...delivery.earnings, status: "EARNED", earnedAt: timestampNow() } });
+          tx.update(ref, { state: "DELIVERED", deliveredAt: stamp(), ...recordedDistance(progress, delivery.riderId), earnings: { ...delivery.earnings, status: "EARNED", earnedAt: timestampNow() } });
         }
       } else tx.update(database.doc(`orders/${delivery.orderId}`), { status: "Packed", stage: "Preparing", eta: "Ready for a new rider assignment", updatedAt: stamp() });
       tx.delete(database.doc(`deliverySecrets/${deliveryId}`));
       tx.delete(database.doc(`deliveries/${deliveryId}/location/current`));
+      tx.delete(progressRef);
     });
     return { ok: true };
   }
@@ -231,8 +238,10 @@ export function createRiderCore(database, runtime) {
         if (secret.source === "sellerEmergency" && input.handoverConfirmed !== true) {
           fail("failed-precondition", "Confirm the customer received the parts before completing this ride.");
         }
-        tx.delete(secretRef);
       }
+      const progressRef = database.doc(`deliveries/${deliveryId}/location/progress`);
+      const progress = action === "complete" ? (await tx.get(progressRef)).data() : undefined;
+      if (needsCode) tx.delete(secretRef);
       if (action === "accept") {
         if (delivery.state !== "ASSIGNED") fail("failed-precondition", "This assignment has already been accepted.");
         tx.update(deliveryRef, { state: "ACCEPTED", acceptedAt: stamp(), updatedAt: stamp() });
@@ -267,11 +276,12 @@ export function createRiderCore(database, runtime) {
             ...emergencyCompletion, reason: secret.reason, completedAt: stamp(),
           });
         }
-        tx.update(deliveryRef, { state: "DELIVERED", ...(emergencyCompletion ? { completionProof: emergencyCompletion } : {}), ...(delivery.earnings ? { earnings: { ...delivery.earnings, status: "EARNED", earnedAt: timestampNow() } } : {}), codCollected: delivery.codAmount > 0, ...(delivery.codAmount > 0 ? { codCollectedAt: stamp() } : {}), deliveredAt: stamp(), updatedAt: stamp() });
+        tx.update(deliveryRef, { state: "DELIVERED", ...recordedDistance(progress, uid), ...(emergencyCompletion ? { completionProof: emergencyCompletion } : {}), ...(delivery.earnings ? { earnings: { ...delivery.earnings, status: "EARNED", earnedAt: timestampNow() } } : {}), codCollected: delivery.codAmount > 0, ...(delivery.codAmount > 0 ? { codCollectedAt: stamp() } : {}), deliveredAt: stamp(), updatedAt: stamp() });
         if (requestRef) tx.update(requestRef, { state: "COMPLETED", updatedAt: stamp() });
         else tx.update(orderRef, { status: "Delivered", stage: "Delivered", eta: "Delivered", deliveredAt: stamp(), ...(delivery.codAmount > 0 ? { codCollected: true, codCollectedAt: stamp(), codCollectedBy: uid } : {}), updatedAt: stamp() });
         tx.update(riderRef, { activeDeliveryId: null, updatedAt: stamp() });
         tx.delete(database.doc(`deliveries/${deliveryId}/location/current`));
+        tx.delete(progressRef);
       }
       return { ok: true };
     });

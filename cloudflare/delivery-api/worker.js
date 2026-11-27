@@ -4,6 +4,7 @@ import { createGoogleAuth, readServiceAccount } from "./google-auth.js";
 import { createRazorpay, paymentEndpoints } from "./razorpay.js";
 import { createRoadRouter, RoutingError } from "../../lib/road-routing.ts";
 import { createRouteQuote } from "./route-quote.js";
+import { createTracking, trackingEndpoints } from "./tracking.js";
 
 const operations = { dispatchPartXDelivery: "dispatch", updatePartXDelivery: "riderAction", getPartXDeliveryCode: "customerCode", requestPartXAfterSale: "requestAfterSale" };
 const statuses = { "invalid-argument": 400, unauthenticated: 401, "permission-denied": 403, "not-found": 404, "failed-precondition": 409, "already-exists": 409, "resource-exhausted": 429, unavailable: 503 };
@@ -67,7 +68,7 @@ export function createWorker({ fetcher = fetch } = {}) {
     return router;
   };
   async function notify(database, env, name, input, result) {
-    if (name === "getPartXDeliveryCode" || name === "requestPartXAfterSale" || name === "quotePartXRoute") return;
+    if (name === "getPartXDeliveryCode" || name === "requestPartXAfterSale" || name === "quotePartXRoute" || trackingEndpoints.has(name)) return;
     if (paymentEndpoints.has(name)) {
       if (!result.newlyPaid) return;
       return sendNotification(database, env, result.orderId, {
@@ -112,7 +113,7 @@ export function createWorker({ fetcher = fetch } = {}) {
         catch { return json({ service: "PartX delivery API", version: "cloudflare-v1", configuration: "required" }, 503, cors); }
       }
       const payment = paymentEndpoints.has(name);
-      if (!Object.hasOwn(operations, name) && !payment && name !== "quotePartXRoute") return json({ error: { code: "not-found", message: "Delivery endpoint not found." } }, 404, cors);
+      if (!Object.hasOwn(operations, name) && !payment && name !== "quotePartXRoute" && !trackingEndpoints.has(name)) return json({ error: { code: "not-found", message: "Delivery endpoint not found." } }, 404, cors);
       if (request.method !== "POST") return json({ error: { code: "invalid-argument", message: "Use POST for delivery actions." } }, 405, { ...cors, Allow: "POST, OPTIONS" });
       try {
         const isWebhook = name === "razorpayWebhook";
@@ -120,19 +121,25 @@ export function createWorker({ fetcher = fetch } = {}) {
         if (!isWebhook && !authorization?.startsWith("Bearer ")) throw new DeliveryError("unauthenticated", "Sign in to continue.");
         const uid = isWebhook ? null : await auth.verifyFirebaseToken(authorization.slice(7), env.FIREBASE_PROJECT_ID, name === "requestPartXAfterSale" || name === "razorpayCreateOrder");
         const input = isWebhook ? {} : await readInput(request);
-        if (name === "quotePartXRoute") {
+        if (name === "quotePartXRoute" || trackingEndpoints.has(name)) {
           const now = Date.now();
-          const count = routeLimits.get(uid);
-          if (count && count.until > now && count.used >= 30) throw new DeliveryError("resource-exhausted", "Too many route requests. Please wait a minute before retrying.");
+          const limitKey = `${uid}:${name}`;
+          const count = routeLimits.get(limitKey);
+          if (count && count.until > now && count.used >= 30) throw new DeliveryError("resource-exhausted", "Too many tracking or route requests. Please wait a minute before retrying.");
           if (routeLimits.size > 2000) for (const [id, entry] of routeLimits) if (entry.until <= now) routeLimits.delete(id);
-          routeLimits.set(uid, count && count.until > now ? { ...count, used: count.used + 1 } : { until: now + 60000, used: 1 });
+          routeLimits.set(limitKey, count && count.until > now ? { ...count, used: count.used + 1 } : { until: now + 60000, used: 1 });
         }
         readServiceAccount(env);
         const database = createFirestoreRest({ projectId: env.FIREBASE_PROJECT_ID, accessToken: () => auth.accessToken(env), fetcher });
+        if (trackingEndpoints.has(name) && (await database.doc(`users/${uid}`).get()).data()?.riderSelfRegistered === true) {
+          await auth.verifyFirebaseToken(authorization.slice(7), env.FIREBASE_PROJECT_ID, true);
+        }
         const route = getRouter(env);
         const razorpay = payment ? createRazorpay(database, env, fetcher, route) : null;
         let result;
         switch (name) {
+          case "getPartXTracking": result = await createTracking(database, route, runtime).read(uid, input); break;
+          case "publishPartXRiderLocation": result = await createTracking(database, route, runtime).publish(uid, input); break;
           case "quotePartXRoute": result = await createRouteQuote(database, route)(uid, input); break;
           case "razorpayAvailability": result = await razorpay.availability(uid, input); break;
           case "razorpayCreateOrder": result = await razorpay.start(uid, input); break;
