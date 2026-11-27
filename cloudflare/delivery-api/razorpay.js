@@ -18,7 +18,7 @@ async function validSignature(secret, message, signature) {
   return crypto.subtle.verify("HMAC", key, bytes, typeof message === "string" ? encoder.encode(message) : message);
 }
 
-export function createRazorpay(database, env, fetcher) {
+export function createRazorpay(database, env, fetcher, roadRoute) {
   const configured = /^rzp_test_[A-Za-z0-9]+$/.test(env.RAZORPAY_TEST_KEY_ID ?? "")
     && Boolean(env.RAZORPAY_TEST_KEY_SECRET && env.RAZORPAY_TEST_WEBHOOK_SECRET);
   const pilotCustomer = (uid) => listed(env.RAZORPAY_TEST_CUSTOMERS, uid);
@@ -121,7 +121,10 @@ export function createRazorpay(database, env, fetcher) {
         }));
         free = available.some(Boolean);
       }
-      const quote = quoteDelivery(fulfilment, { ...store, location: store.location ?? { address: store.address ?? "" } }, typeof address?.address === "string" ? address : undefined, free);
+      const storeLocation = store.location ?? { address: store.address ?? "" };
+      const validPins = [storeLocation, address].every((point) => Number.isFinite(point?.latitude) && Number.isFinite(point?.longitude));
+      const road = fulfilment !== "pickup" && validPins && roadRoute ? await roadRoute(storeLocation, address) : null;
+      const quote = quoteDelivery(fulfilment, { ...store, location: storeLocation }, typeof address?.address === "string" ? address : undefined, free, roadRoute ? (road ? road.distanceMeters / 1000 : null) : undefined);
       if (quote.fee === null) fail("failed-precondition", quote.message);
       const amount = subtotal + paise(quote.fee);
       if (!Number.isSafeInteger(amount) || amount < 100 || amount !== expectedAmount) fail("failed-precondition", "Your price or delivery fee changed. Review the total and try again.");
@@ -135,6 +138,7 @@ export function createRazorpay(database, env, fetcher) {
         paymentMethod: "razorpay", paymentMode: "test", paymentStatus: "PENDING", orderStatus: "PAYMENT_PENDING",
         currency: "INR", subtotal: subtotal / 100, discount: 0, deliveryCharge: quote.fee, total: amount / 100, totalAmount: amount / 100,
         deliveryPricingV1: true, razorpayCartKey: cartKey,
+        ...(road ? { deliveryRoute: road } : {}),
         ...(routeAccount ? { razorpayRouteAccount: routeAccount, razorpayRouteAmount: subtotal } : {}),
         ...(address && fulfilment !== "pickup" ? { deliveryLocation: address } : {}),
         productId: first.productId, productName: first.productName, partNumber: first.partNumber,

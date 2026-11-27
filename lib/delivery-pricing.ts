@@ -40,15 +40,24 @@ export const deliveryRates = [
 
 type DeliveryQuote =
   | { fee: number; distance: number | null; reason?: never; message?: never }
-  | { fee: null; distance: number | null; reason: "store" | "store-pin" | "address" | "address-pin" | "range"; message: string };
+  | { fee: null; distance: number | null; reason: "store" | "store-pin" | "address" | "address-pin" | "range" | "route"; message: string };
 
-export function quoteDelivery(mode: FulfilmentMode, store: PartnerStore | undefined, address: AppLocation | undefined, free: boolean): DeliveryQuote {
+export function quoteDelivery(mode: FulfilmentMode, store: PartnerStore | undefined, address: AppLocation | undefined, free: boolean, roadDistanceKm?: number | null): DeliveryQuote {
   if (mode === "pickup") return { fee: 0, distance: null };
   if (!store) return { fee: null, distance: null, reason: "store", message: "This store is unavailable. Return to your cart to review your items." };
   if (!address || address.address.trim().length < 10) {
     return { fee: null, distance: null, reason: "address", message: mode === "garage" ? "Add a garage with a full address in My Garage." : "Choose a full delivery address." };
   }
-  const distance = distanceBetween(store.location, address);
+  const distance = roadDistanceKm === undefined ? distanceBetween(store.location, address) : roadDistanceKm;
+  if (roadDistanceKm !== undefined && !hasMapPin(store.location)) {
+    return { fee: null, distance: null, reason: "store-pin", message: `${store.name} needs to save its location on the map before PartX can price delivery.` };
+  }
+  if (roadDistanceKm !== undefined && !hasMapPin(address)) {
+    return { fee: null, distance: null, reason: "address-pin", message: "Select the delivery address on the map so PartX can calculate the route." };
+  }
+  if (roadDistanceKm !== undefined && hasMapPin(store.location) && hasMapPin(address) && (distance === null || !Number.isFinite(distance) || distance < 0)) {
+    return { fee: null, distance: null, reason: "route", message: "A road route is needed to calculate delivery. Retry routing or choose self pickup." };
+  }
   if (distance !== null && store.deliveryRadiusKm > 0 && distance > store.deliveryRadiusKm) {
     return { fee: null, distance, reason: "range", message: `This address is outside the store’s ${store.deliveryRadiusKm} km delivery range.` };
   }

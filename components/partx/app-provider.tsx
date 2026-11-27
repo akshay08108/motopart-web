@@ -12,7 +12,9 @@ import { createPaymentOrderId, developmentPaymentSettings, isValidUtr, normalize
 import { readBrowserStorage, removeBrowserStorage, writeBrowserStorage } from "@/lib/browser-storage";
 import { browserNotificationPermission, registerPushNotifications, unregisterPushNotifications } from "@/lib/push-notifications";
 import { formatDeliveryTime } from "@/lib/delivery-time";
-import { freeDeliverySlots, occupiesDeliveryOffer, quoteDelivery } from "@/lib/delivery-pricing";
+import { freeDeliverySlots, hasMapPin, occupiesDeliveryOffer, quoteDelivery } from "@/lib/delivery-pricing";
+import { deliveryCall } from "@/lib/rider";
+import type { RoadRoute } from "@/lib/road-routing";
 
 import { removePurchasedItems } from "@/lib/cart-checkout";
 
@@ -499,6 +501,8 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       const subtotal = resolvedCart.reduce((sum, line) => sum + (line.unitPrice ?? line.product.price) * line.quantity, 0);
       const mode = fulfilment ?? "delivery";
       const address = mode === "garage" ? garages[0]?.location : location;
+      const road = mode !== "pickup" && hasMapPin(selectedStore.location) && hasMapPin(address)
+        ? await deliveryCall<RoadRoute>("quotePartXRoute", { storeId, fulfilment: mode, destination: { latitude: address.latitude, longitude: address.longitude } }) : null;
       const history = mode === "pickup" ? null : await getDocsFromServer(query(collection(firestore, "orders"), where("customerId", "==", customerId)));
       const priorDeliveries = history?.docs.filter((entry) => {
         const data = entry.data();
@@ -599,7 +603,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
           return { slot, ref, available: claimedOrder.exists() && !occupiesDeliveryOffer(claimedOrder.data()) };
         }));
         const claim = claims.find((candidate) => candidate.available);
-        const quote = quoteDelivery(mode, selectedStore, address, Boolean(claim));
+        const quote = quoteDelivery(mode, selectedStore, address, Boolean(claim), road ? road.distanceMeters / 1000 : null);
         if (quote.fee === null) throw new Error(quote.message);
         if (expectedFee !== undefined && quote.fee !== expectedFee) {
           throw new Error("Your delivery fee changed. Review the updated total and try again.");
@@ -611,6 +615,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
           totalAmount,
           deliveryCharge: quote.fee,
           deliveryPricingV1: true,
+          ...(road ? { deliveryRoute: road } : {}),
           ...(claim ? { deliveryOfferSlot: claim.slot } : {}),
         };
         const productRefs = resolvedCart.map((item) => doc(firestore, "products", item.product.id));

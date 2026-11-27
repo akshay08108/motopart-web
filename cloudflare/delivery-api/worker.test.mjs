@@ -27,6 +27,7 @@ async function token(uid, extra = {}, headerExtra = {}) {
   return `${input}.${b64(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privateKey, new TextEncoder().encode(input)))}`;
 }
 async function testFetch(url, options = {}) {
+  if (url === "https://api.heigit.org/openrouteservice/v2/directions/driving-car/json") return Response.json({ routes: [{ summary: { distance: 5000, duration: 600 } }] });
   if (url === "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com") return Response.json({ keys: [publicJwk] }, { headers: { "cache-control": "max-age=3600" } });
   if (url === "https://oauth2.googleapis.com/token") {
     const claims = JSON.parse(Buffer.from(new URLSearchParams(options.body).get("assertion").split(".")[1], "base64url"));
@@ -61,7 +62,7 @@ before(async () => {
   privateKey = pair.privateKey;
   publicJwk = { ...await crypto.subtle.exportKey("jwk", pair.publicKey), kid: "local-test" };
   const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", privateKey)).toString("base64")}\n-----END PRIVATE KEY-----\n`;
-  env = { FIREBASE_PROJECT_ID: projectId, ALLOWED_ORIGINS: origin, FIREBASE_SERVICE_ACCOUNT: JSON.stringify({ project_id: projectId, client_email: `partx-delivery@${projectId}.iam.gserviceaccount.com`, private_key: pem }) };
+  env = { OPENROUTESERVICE_API_KEY: "routing-fixture", FIREBASE_PROJECT_ID: projectId, ALLOWED_ORIGINS: origin, FIREBASE_SERVICE_ACCOUNT: JSON.stringify({ project_id: projectId, client_email: `partx-delivery@${projectId}.iam.gserviceaccount.com`, private_key: pem }) };
 });
 beforeEach(async () => {
   await Promise.all(pending.splice(0));
@@ -304,3 +305,17 @@ test("Razorpay Test Mode prices from Firestore, verifies capture once, alerts th
   assert.equal((await deliveryRef.get()).data().earnings, null);
   assert.equal((await ref.get()).data().stage, "Delivered");
 });
+
+ test("road quote HTTP endpoint verifies roles, owner and coordinates and never exposes the key", async () => {
+  await db.doc("stores/store").update({status:"approved"});
+  const quote = await call("quotePartXRoute", "customer", {storeId:"store", fulfilment:"delivery", destination:point});
+  assert.equal(quote.status,200,JSON.stringify(quote.body));
+  assert.equal(quote.body.data.distanceMeters,5000);
+  assert.equal(JSON.stringify(quote.body).includes("routing-fixture"),false);
+  assert.equal((await call("quotePartXRoute", null, {})).status,401);
+  assert.equal((await call("quotePartXRoute", "other-customer", {orderId:"order"})).status,403);
+  const invalid = await call("quotePartXRoute", "customer", {storeId:"store", fulfilment:"delivery", destination:{latitude:999,longitude:0}});
+  assert.equal(invalid.status,503);
+  const owned = await call("quotePartXRoute", "seller", {orderId:"order"});
+  assert.equal(owned.status,200);assert.equal(owned.body.data.returnDistanceMeters,5000);
+ });

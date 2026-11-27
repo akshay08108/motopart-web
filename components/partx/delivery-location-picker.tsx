@@ -6,6 +6,7 @@ import type { Map as LeafletMap, Marker } from "leaflet";
 import { hasMapPin } from "@/lib/delivery-pricing";
 import type { AppLocation } from "@/lib/types";
 import { usePartX } from "./app-provider";
+import { PincodeAutofill } from "./pincode-autofill";
 
 type Place = { id: string; place_name: string; center: [number, number] };
 const apiKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY;
@@ -127,7 +128,7 @@ export function MapLocationPicker({ value: location, onSave: setLocation, close,
   if (typeof document === "undefined") return null;
   return createPortal(<div className="px-delivery-overlay" onClick={() => { if (!saving) close(); }}><div className="px-delivery-dialog" ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={`${formId}-title`} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => {
     if (event.key === "Tab") {
-      const controls = dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input, textarea, a[href], [tabindex="0"]');
+      const controls = dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input, select, textarea, a[href], [tabindex="0"]');
       if (!controls?.length) return;
       const first = controls[0], last = controls[controls.length - 1];
       if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last.focus(); }
@@ -135,6 +136,7 @@ export function MapLocationPicker({ value: location, onSave: setLocation, close,
     }
   }}><header><div><small>{title === "Where should we deliver?" ? "DELIVERY ADDRESS" : "LOCATION"}</small><h2 id={`${formId}-title`}>{title}</h2></div><button type="button" aria-label="Close address picker" onClick={close} disabled={saving}>×</button></header>
     <div className="px-delivery-body">
+    <PincodeAutofill address={draft.address} onApply={(address) => { reverseRequest.current?.abort(); setBusy(false); setDraft((current) => ({ ...current, address, latitude: undefined, longitude: undefined, placeId: undefined })); marker.current?.remove(); }}/>
     {apiKey ? <><label className="px-map-search">Search for an address<input value={query} onChange={(event) => { setQuery(event.target.value); setPlaces([]); }} placeholder="Area, street, city or postcode" autoComplete="off"/></label>{places.length ? <ul className="px-map-results">{places.map((place) => <li key={place.id}><button type="button" onClick={() => choose(place)}>{place.place_name}</button></li>)}</ul> : null}<button className="px-btn px-btn-outline" type="button" disabled={busy} onClick={locate}>Use my current location</button><div ref={mount} className="px-delivery-map" aria-label="Delivery map. Click to select a location or drag the pin."/><p className="px-form-note">{requirePin ? "Tap the map or drag the pin to your store entrance. Add the shop number and landmark below." : "Tap the map or drag the pin to your entrance. Add your flat number and landmark below."}</p></> : <p className="px-form-note">{requirePin ? "Map search is unavailable. Try again when the map is available." : "Map search is unavailable. You can still save your full delivery address."}</p>}
     {requirePin && !hasMapPin(draft) && <p className="px-form-note">Choose a search result, tap the map, or use your current location to place the pin before saving.</p>}
     {busy ? <p role="status">Finding address…</p> : null}{error ? <p className="px-checkout-error" role="alert">{error}</p> : null}

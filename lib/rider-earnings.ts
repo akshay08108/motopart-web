@@ -13,7 +13,7 @@ export function distanceEarningQuote(policy: RiderEarningsPolicy, oneWayKm: numb
 export function riderKilometers(meters: number) { return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 3 }).format(meters / 1000); }
 export function earningDistance(earning: RiderEarning) {
   const pricing = earning.pricing;
-  return pricing ? `${riderKilometers(pricing.oneWayMeters)} km outward${pricing.returnIncluded ? ` + ${riderKilometers(pricing.oneWayMeters)} km return` : ""} · ${riderMoney(pricing.ratePaisePerKm)}/km · Seller-entered road distance` : "";
+  return pricing ? `${riderKilometers(pricing.oneWayMeters)} km outward${pricing.returnIncluded ? ` + ${riderKilometers(pricing.returnMeters ?? pricing.oneWayMeters)} km return` : ""} · ${riderMoney(pricing.ratePaisePerKm)}/km · ${pricing.source === "openrouteservice" ? "Road route estimate" : "Seller-entered road distance"}` : "";
 }
 
 export type EarningsPeriod = "today" | "week" | "month" | "all";

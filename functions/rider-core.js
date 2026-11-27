@@ -21,15 +21,16 @@ function location(value, fallback = "") {
   return result;
 }
 export const defaultRiderEarningsPolicy = { mode: "per_km", ratePaisePerKm: 500, payer: "partx", returnIncluded: true };
-function assignmentEarnings(configuredPolicy, oneWayKm) {
+function assignmentEarnings(configuredPolicy, oneWayKm, route) {
   const policy = configuredPolicy ?? defaultRiderEarningsPolicy;
   if (policy.mode === "per_km") {
     if (!Number.isSafeInteger(policy.ratePaisePerKm) || policy.ratePaisePerKm < 0 || policy.ratePaisePerKm > 100000 || typeof policy.returnIncluded !== "boolean" || !["store", "partx"].includes(policy.payer)) fail("failed-precondition", "The rider earning rate needs to be corrected by PartX operations.");
     if (typeof oneWayKm !== "number" || !Number.isFinite(oneWayKm) || oneWayKm <= 0 || oneWayKm > 1000 || Math.round(oneWayKm * 1000) < 1) fail("invalid-argument", "Enter the one-way road distance in kilometres before assigning a rider.");
     const oneWayMeters = Math.round(oneWayKm * 1000);
     const returnIncluded = policy.returnIncluded;
-    const billableMeters = oneWayMeters * (returnIncluded ? 2 : 1);
-    return { amountPaise: Math.round(policy.ratePaisePerKm * billableMeters / 1000), payer: policy.payer, currency: "INR", status: "PENDING_DELIVERY", pricing: { mode: "per_km", ratePaisePerKm: policy.ratePaisePerKm, oneWayMeters, billableMeters, returnIncluded, source: "seller_entered" } };
+    const returnMeters = route ? route.returnDistanceMeters : oneWayMeters;
+    const billableMeters = oneWayMeters + (returnIncluded ? returnMeters : 0);
+    return { amountPaise: Math.round(policy.ratePaisePerKm * billableMeters / 1000), payer: policy.payer, currency: "INR", status: "PENDING_DELIVERY", pricing: { mode: "per_km", ratePaisePerKm: policy.ratePaisePerKm, oneWayMeters, billableMeters, returnIncluded, source: route ? "openrouteservice" : "seller_entered", ...(route ? { returnMeters } : {}) } };
   }
   if (policy.mode && policy.mode !== "per_delivery") fail("failed-precondition", "The rider earning rate needs to be corrected by PartX operations.");
   if (!Number.isSafeInteger(policy.amountPaise) || policy.amountPaise < 0 || policy.amountPaise > 100_000_000 || !["store", "partx"].includes(policy.payer)) fail("failed-precondition", "The rider earning rate needs to be corrected by PartX operations.");
@@ -126,6 +127,9 @@ export function createRiderCore(database, runtime) {
         }));
         const amount = Number(order.totalAmount ?? order.total);
         if (!Number.isFinite(amount) || amount <= 0 || !order.customerId) fail("failed-precondition", "This order is missing customer or amount details.");
+        const route = !razorpayTest && runtime.roadRoute && (rider.earningsPolicy ?? defaultRiderEarningsPolicy).mode === "per_km"
+          ? await runtime.roadRoute(pickup, destination, true) : null;
+        const earnings = razorpayTest ? null : assignmentEarnings(rider.earningsPolicy, route ? Math.max(1, route.distanceMeters) / 1000 : input.oneWayDistanceKm, route);
         tx.create(database.doc(`deliveries/${deliveryId}`), {
           id: deliveryId, trackingId: `PX-RIDE-${deliveryId}`, kind, ...(requestId !== null ? { requestId } : {}), ...(pickupId ? { pickupId } : {}), orderId, customerId: order.customerId, sellerId: uid,
           storeId: order.storeId, storeName: text(store.name), storePhone: text(store.phone, 30),
@@ -134,7 +138,7 @@ export function createRiderCore(database, runtime) {
           pickup, destination, fulfilment: order.fulfilment, items, totalAmount: amount,
           codAmount: !request && order.paymentMethod === "cod" && order.paymentStatus === "PAYMENT_DUE" ? amount : 0,
           ...(razorpayTest ? { razorpayTest: true } : {}),
-          codCollected: false, state: "ASSIGNED", issue: null, earnings: razorpayTest ? null : assignmentEarnings(rider.earningsPolicy, input.oneWayDistanceKm),
+          codCollected: false, state: "ASSIGNED", issue: null, earnings,
           assignedAt: stamp(), updatedAt: stamp(),
         });
         tx.update(riderRef, { activeDeliveryId: deliveryId, updatedAt: stamp() });

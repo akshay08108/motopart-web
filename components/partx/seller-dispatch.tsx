@@ -8,6 +8,7 @@ import { deliveryCall, deliveryDate, deliveryLabels, isActiveDelivery, phoneLink
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import { distanceEarningQuote, riderKilometers, riderMoney, riderPolicy } from "@/lib/rider-earnings";
+import { useRoadRoute } from "@/lib/use-road-route";
 
 export function SellerDispatch({ order, request }: { order: SellerOrder; request?: AfterSaleRequest }) {
   const { user } = usePartX();
@@ -20,7 +21,7 @@ export function SellerDispatch({ order, request }: { order: SellerOrder; request
   const [riders, setRiders] = useState<RiderProfile[]>([]); const [selected, setSelected] = useState("");
   const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [now, setNow] = useState(0);
   const [action, setAction] = useState<"cancel" | "returned" | "emergency" | null>(null); const [reason, setReason] = useState("");
-  const [oneWayDistance, setOneWayDistance] = useState("");
+  const road = useRoadRoute(user?.id, canAssign && (!delivery || !isActiveDelivery(delivery.state)) ? { orderId: order.id, ...(request ? { requestId: request.id } : {}) } : null);
   const active = delivery && isActiveDelivery(delivery.state);
   useEffect(() => {
     if (!user?.id || !canAssign) return;
@@ -46,7 +47,10 @@ export function SellerDispatch({ order, request }: { order: SellerOrder; request
   const testOrder = order.paymentMethod === "razorpay" && order.paymentMode === "test";
   const policy = riderPolicy(selectedRider?.earningsPolicy);
   const needsDistance = !testOrder && policy.mode === "per_km";
-  const distanceQuote = policy.mode === "per_km" ? distanceEarningQuote(policy, Number(oneWayDistance)) : null;
+  const outwardKm = road.route ? Math.max(1, road.route.distanceMeters) / 1000 : NaN;
+  const baseQuote = policy.mode === "per_km" ? distanceEarningQuote(policy, outwardKm) : null;
+  const billableMeters = road.route ? Math.max(1, road.route.distanceMeters) + (policy.mode === "per_km" && policy.returnIncluded ? road.route.returnDistanceMeters ?? 0 : 0) : baseQuote?.billableMeters;
+  const distanceQuote = policy.mode === "per_km" && baseQuote && billableMeters !== undefined ? { ...baseQuote, billableMeters, amountPaise: Math.round(policy.ratePaisePerKm * billableMeters / 1000) } : null;
   const run = async (data: Record<string, unknown>) => {
     setBusy(true); setError("");
     try { await deliveryCall("dispatchPartXDelivery", data); setAction(null); setReason(""); setSelected(""); }
@@ -91,11 +95,11 @@ export function SellerDispatch({ order, request }: { order: SellerOrder; request
       }}>{receipt ? "Generate new receipt code" : "Show store receipt code"}</button>
       {receipt && <p role="status"><b>{receipt.code}</b> · Expires {deliveryDate(receipt.expiresAt)}</p>}
     </div>}{delivery.state !== "PICKED_UP" ? <button className="rx-link" type="button" onClick={() => chooseAction("cancel")}>Cancel assignment / choose another rider</button> : (!request || delivery.issue) ? <button className="rx-link" type="button" onClick={() => chooseAction("returned")}>Confirm parts returned to store</button> : null}</> : canAssign ?
-      <form className="rx-assignment-form" onSubmit={(event) => { event.preventDefault(); void run({ action: "assign", orderId: order.id, ...(request ? { requestId: request.id } : {}), riderId: selected, ...(needsDistance ? { oneWayDistanceKm: Number(oneWayDistance) } : {}) }); }}>
+      <form className="rx-assignment-form" onSubmit={(event) => { event.preventDefault(); void run({ action: "assign", orderId: order.id, ...(request ? { requestId: request.id } : {}), riderId: selected, ...(needsDistance ? { oneWayDistanceKm: outwardKm } : {}) }); }}>
         {testOrder && <p>Test ride. The rider collects no cash and earns no payable balance.</p>}
         <p>{request ? "Assign a rider when the store is ready to handle this request." : "Assign one available rider to collect this packed order."}</p><label>Available PartX rider<select required value={selected} onChange={(event) => setSelected(event.target.value)} disabled={busy}><option value="">{available.length ? "Choose a rider" : "No riders online right now"}</option>{available.map((rider) => <option value={rider.id} key={rider.id}>{rider.name} · {rider.phone}</option>)}</select></label>
-        {selectedRider && needsDistance ? <><label className="rx-assignment-distance">One-way road distance (km)<input type="number" inputMode="decimal" min="0.001" max="1000" step="0.001" required value={oneWayDistance} disabled={busy} onChange={(event) => setOneWayDistance(event.target.value)} placeholder="For example, 5"/></label><small>Enter the road distance from this store to the customer. {policy.returnIncluded ? "The same distance is included for the return trip." : "Only the outward distance is included."} This is a seller-entered estimate; check the route before assigning.</small>{distanceQuote ? <div className="rx-assignment-quote"><b>Rider earns {riderMoney(distanceQuote.amountPaise)}</b><span>{riderKilometers(distanceQuote.billableMeters)} km total × {riderMoney(policy.ratePaisePerKm)}/km · Paid by {policy.payer === "partx" ? "PartX" : "your store"}</span><small>The rider sees this quote before accepting. This does not add a charge to the customer’s order.</small></div> : null}</> : null}
-        {occupied.length ? <small>{occupied.map((rider) => rider.name).join(", ")} {occupied.length === 1 ? "is" : "are"} online but finishing an active delivery. An unfinished delivery must be completed or closed before a new pickup.</small> : null}{!available.length ? <small>Ask your rider to sign in to the PartX Rider portal and go online.</small> : null}<button type="submit" className="rx-primary" disabled={busy || !selectedRider || (needsDistance && !distanceQuote)}>{busy ? "Assigning…" : "Assign rider"}<Icon name="arrow"/></button>
+        {selectedRider && needsDistance ? <>{road.route ? <p>{riderKilometers(road.route.distanceMeters)} km outward{policy.mode === "per_km" && policy.returnIncluded ? ` + ${riderKilometers(road.route.returnDistanceMeters ?? 0)} km return` : ""} · Road route estimate</p> : <p role="status">{road.loading ? "Calculating road distances…" : road.error || "Road distance is unavailable."} <button type="button" className="rx-link" onClick={road.retry}>Retry route</button></p>}{distanceQuote ? <div className="rx-assignment-quote"><b>Rider earns {riderMoney(distanceQuote.amountPaise)}</b><span>{riderKilometers(distanceQuote.billableMeters)} km total × {riderMoney(policy.mode === "per_km" ? policy.ratePaisePerKm : 0)}/km · Paid by {policy.payer === "partx" ? "PartX" : "your store"}</span><small>The backend checks the route again when assigning. The rider sees the final quote before accepting. This does not add a charge to the customer’s order.</small></div> : null}<small><a href="https://openrouteservice.org/" target="_blank" rel="noreferrer">© openrouteservice.org by HeiGIT</a> · Map data © OpenStreetMap contributors</small></> : null}
+        {occupied.length ? <small>{occupied.map((rider) => rider.name).join(", ")} {occupied.length === 1 ? "is" : "are"} online but finishing an active delivery. An unfinished delivery must be completed or closed before a new pickup.</small> : null}{!available.length ? <small>Ask your rider to sign in to the PartX Rider portal and go online.</small> : null}<button type="submit" className="rx-primary" disabled={busy || !selectedRider || (needsDistance && (!distanceQuote || !road.route))}>{busy ? "Assigning…" : "Assign rider"}<Icon name="arrow"/></button>
       </form> : delivery?.state === "DELIVERED" ? <p>Delivered {deliveryDate(delivery.deliveredAt)}{delivery.codCollected ? ` · ₹${delivery.codAmount.toLocaleString("en-IN")} cash collected by rider. Settlement to store is pending reconciliation.` : ""}</p> : null}
     {action === "emergency" && emergencyAvailable && <form className="rx-reason-form" onSubmit={(event) => {
       event.preventDefault();

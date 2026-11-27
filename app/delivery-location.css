@@ -30,6 +30,13 @@
 .px-account-location { margin:14px 0; font-size:12px; }
 .px-hero-facts .px-location-button { background:transparent; }
 .location-picker { display:grid; gap:8px; }.location-picker label { display:grid; gap:6px; }.location-picker textarea { width:100%; min-height:80px; padding:12px; color:var(--px-ink); background:var(--px-card); border:1px solid var(--px-line); font:inherit; font-size:16px; }.location-picker > button { justify-self:start; font-size:12px; }
+.px-postal-autofill { display:grid; gap:8px; padding:12px; margin-bottom:12px; border:1px solid var(--px-line); background:var(--px-surface); border-radius:12px; color:var(--px-ink); }
+.px-postal-autofill label { display:grid; gap:6px; font-size:12px; font-weight:700; }
+.px-postal-autofill input,.px-postal-autofill select { width:100%; min-width:0; min-height:44px; padding:10px 12px; font:inherit; font-size:16px; color:var(--px-ink); background:var(--px-card); border:1px solid var(--px-line); border-radius:8px; }
+.px-postal-autofill small,.px-postal-autofill p { margin:0; font-size:11px; line-height:1.6; color:var(--px-muted); }
+.px-postal-autofill a { color:inherit; text-decoration:underline; }
+.px-postal-autofill > button { justify-self:start; min-height:40px; padding:8px 12px; font-size:12px; }
+.px-postal-autofill p button { color:var(--px-red); background:transparent; border:0; cursor:pointer; text-decoration:underline; min-height:40px; }
 @media(max-width:600px) {
   .px-delivery-overlay { padding:10px; align-items:end; padding-bottom:max(10px,env(safe-area-inset-bottom)); }
   .px-delivery-dialog { max-height:min(78dvh,660px); border-radius:18px; }

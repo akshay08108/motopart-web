@@ -11,3 +11,7 @@ node_modules/
 outputs/
 *.apk
 *.aab
+
+# Never upload local routing keys or CLI session credentials.
+.env*
+.dev.vars*

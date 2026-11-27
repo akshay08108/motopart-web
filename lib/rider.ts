@@ -8,7 +8,7 @@ import { firebaseApp, firebaseAuth, firestore } from "./firebase";
 export type DeliveryState = "ASSIGNED" | "ACCEPTED" | "PICKED_UP" | "DELIVERED" | "DECLINED" | "CANCELLED" | "RETURNED";
 export type DeliveryPoint = { address: string; latitude?: number; longitude?: number };
 export type RiderEarningsPolicy = { mode: "per_km"; ratePaisePerKm: number; returnIncluded: boolean; payer: "store" | "partx" } | { mode?: "per_delivery"; amountPaise: number; payer: "store" | "partx" };
-export type RiderEarning = { amountPaise: number; currency: "INR"; payer: "store" | "partx"; status: "PENDING_DELIVERY" | "EARNED" | "PAID"; earnedAt?: number; paidAt?: number; pricing?: { mode: "per_km"; ratePaisePerKm: number; oneWayMeters: number; billableMeters: number; returnIncluded: boolean; source: "seller_entered" } };
+export type RiderEarning = { amountPaise: number; currency: "INR"; payer: "store" | "partx"; status: "PENDING_DELIVERY" | "EARNED" | "PAID"; earnedAt?: number; paidAt?: number; pricing?: { mode: "per_km"; ratePaisePerKm: number; oneWayMeters: number; billableMeters: number; returnIncluded: boolean; source: "seller_entered" | "openrouteservice"; returnMeters?: number } };
 export type RiderProfile = { id: string; name: string; phone: string; active: boolean; activationPending?: boolean; online: boolean; activeDeliveryId?: string; lastSeenAt?: number; earningsPolicy?: RiderEarningsPolicy };
 export type RiderDelivery = {
   id: string; orderId: string; trackingId?: string; pickupId?: string;
@@ -102,7 +102,7 @@ export function useAfterSales(orderId: string, userId?: string) {
   return result?.key === key ? result : { requests: [], error: undefined };
 }
 
-export async function deliveryCall<T = { ok: boolean }>(name: "dispatchPartXDelivery" | "updatePartXDelivery" | "getPartXDeliveryCode" | "requestPartXAfterSale", data: Record<string, unknown>): Promise<T> {
+export async function deliveryCall<T = { ok: boolean }>(name: "dispatchPartXDelivery" | "updatePartXDelivery" | "getPartXDeliveryCode" | "requestPartXAfterSale" | "quotePartXRoute", data: Record<string, unknown>): Promise<T> {
   const localFunctions = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_FIREBASE_EMULATORS === "1" && !process.env.NEXT_PUBLIC_PARTX_DELIVERY_API_URL;
   if (!localFunctions) {
     const user = firebaseAuth.currentUser;
