@@ -72,6 +72,8 @@ test("route quotes enforce seller ownership and reverse the route for returns", 
   const result = await quote("seller", { orderId: "order", requestId: "0" });
   assert.equal(result.a, to); assert.equal(result.b, from); assert.equal(result.back, true);
   await assert.rejects(quote("other", { orderId: "order" }), (error) => error.code === "permission-denied");
+  const longQuote = createRouteQuote(db, async () => ({distanceMeters:1405071}));
+  await assert.rejects(longQuote("seller", {orderId:"order"}), (error) => error.code === "failed-precondition" && error.message.includes("1,405 km") && error.message.includes("store pickup pin"));
 });
 test("assignment recomputes road distances and ignores forged client kilometres and payout", async () => {
   const db = database({ "users/seller": { roles: ["seller"] }, "users/rider": { roles: ["rider"] }, "stores/store": { ownerId: "seller", location: from, name: "Parts" },
@@ -81,4 +83,13 @@ test("assignment recomputes road distances and ignores forged client kilometres 
   await core.dispatch("seller", { action: "assign", orderId: "order", riderId: "rider", oneWayDistanceKm: 999, amountPaise: 1 });
   const earning = db.docs.get("deliveries/ride").earnings;
   assert.equal(earning.amountPaise, 5500); assert.equal(earning.pricing.billableMeters, 11000); assert.equal(earning.pricing.source, "openrouteservice");
+});
+
+test("a valid 1,405 km route is a service-range issue, not invalid provider data", async () => {
+  const route = await createRoadRouter("key", async () => summary(1405070.8, 60795.3))(from, to);
+  assert.equal(route.distanceMeters, 1405071);
+  const quote = quoteDelivery("delivery", {...store, deliveryRadiusKm:0}, to, true, route.distanceMeters / 1000);
+  assert.equal(quote.fee,null);assert.equal(quote.reason,"range");
+  assert.match(quote.message,/1,405 km/);assert.match(quote.message,/store pickup pin/);
+  assert.doesNotMatch(quote.message,/invalid distance/);
 });

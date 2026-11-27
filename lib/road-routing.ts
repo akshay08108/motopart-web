@@ -39,7 +39,7 @@ export function createRoadRouter(key: string | undefined, fetcher: typeof fetch 
       const route = body?.routes?.[0];
       const distance = route?.summary?.distance;
       const duration = route?.summary?.duration;
-      if (typeof distance !== "number" || !Number.isFinite(distance) || distance < 0 || distance > 1_000_000
+      if (typeof distance !== "number" || !Number.isFinite(distance) || distance < 0 || !Number.isSafeInteger(Math.round(distance))
         || typeof duration !== "number" || !Number.isFinite(duration) || duration < 0) {
         throw new RoutingError("The routing provider returned an invalid distance. Please retry.");
       }

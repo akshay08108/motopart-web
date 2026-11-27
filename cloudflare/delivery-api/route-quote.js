@@ -2,6 +2,13 @@ import { DeliveryError } from "../../functions/rider-core.js";
 const validId = (value) => typeof value === "string" && /^[A-Za-z0-9_-]{1,160}$/.test(value);
 export function createRouteQuote(database, route) {
   const read = async (path) => (await database.doc(path).get()).data();
+  async function checkedRoute(from, to, includeReturn = false) {
+    const result = await route(from, to, includeReturn);
+    if (result.distanceMeters > 1_000_000 || result.returnDistanceMeters > 1_000_000) {
+      throw new DeliveryError("failed-precondition", `The road route is ${Math.round(result.distanceMeters / 1000).toLocaleString("en-IN")} km. Check the store pickup pin and delivery address. PartX rider delivery supports routes up to 1,000 km; self pickup is still available.`);
+    }
+    return result;
+  }
   return async (uid, input) => {
     const profile = await read(`users/${uid}`);
     const role = profile?.activeRole ?? (profile?.roles?.length === 1 ? profile.roles[0] : null);
@@ -14,12 +21,12 @@ export function createRouteQuote(database, route) {
       const request = input.requestId == null ? null : await read(`orders/${input.orderId}/afterSales/${input.requestId}`);
       if (input.requestId != null && !request) throw new DeliveryError("not-found", "Return or replacement not found.");
       const customer = request ? request.customerLocation : order.deliveryLocation;
-      return request?.kind === "return" ? route(customer, store.location, true) : route(store.location, customer, true);
+      return request?.kind === "return" ? checkedRoute(customer, store.location, true) : checkedRoute(store.location, customer, true);
     }
     if (role !== "customer" || !profile.roles?.includes("customer")) throw new DeliveryError("permission-denied", "Sign in as a customer for a delivery quote.");
     if (!validId(input.storeId) || !["delivery", "garage"].includes(input.fulfilment)) throw new DeliveryError("invalid-argument", "Choose a store and delivery type.");
     const store = await read(`stores/${input.storeId}`);
     if (!store || !["approved", "pending"].includes(store.status)) throw new DeliveryError("not-found", "This store is unavailable.");
-    return route(store.location, input.destination);
+    return checkedRoute(store.location, input.destination);
   };
 }

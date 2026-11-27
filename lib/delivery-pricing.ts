@@ -58,6 +58,9 @@ export function quoteDelivery(mode: FulfilmentMode, store: PartnerStore | undefi
   if (roadDistanceKm !== undefined && hasMapPin(store.location) && hasMapPin(address) && (distance === null || !Number.isFinite(distance) || distance < 0)) {
     return { fee: null, distance: null, reason: "route", message: "A road route is needed to calculate delivery. Retry routing or choose self pickup." };
   }
+  if (distance !== null && distance > 1000) {
+    return { fee: null, distance, reason: "range", message: `The road route is ${Math.round(distance).toLocaleString("en-IN")} km. PartX rider delivery supports up to 1,000 km. Check the store pickup pin and delivery address, or choose self pickup.` };
+  }
   if (distance !== null && store.deliveryRadiusKm > 0 && distance > store.deliveryRadiusKm) {
     return { fee: null, distance, reason: "range", message: `This address is outside the store’s ${store.deliveryRadiusKm} km delivery range.` };
   }
