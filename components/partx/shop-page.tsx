@@ -129,7 +129,12 @@ function ShopResults() {
           <h2 id="catalog-results" className={styles.heading}>{activeType?.name ?? activeCategory?.name ?? "All parts"}</h2>
           {activeCategory && activeCategory.children.length > 0 && <nav className={styles.types} aria-label="Part types">
             <Link href={catalogHref(category)} aria-current={!subcategory ? "page" : undefined}>All {activeCategory.name.toLowerCase()}</Link>
-            {activeCategory.children.map((type) => <Link key={type.id} href={catalogHref(category, type.id)} aria-current={subcategory === type.id ? "page" : undefined}>{type.name}</Link>)}
+            {activeCategory.children.map((type) => (
+              <Link key={type.id} className={styles.typeLink} href={catalogHref(category, type.id)} aria-current={subcategory === type.id ? "page" : undefined}>
+                <Image className={styles.typePhoto} src={type.image} alt="" width={96} height={96} unoptimized />
+                <span>{type.name}</span>
+              </Link>
+            ))}
           </nav>}
           <p className={styles.count} role="status">{products.length} {products.length === 1 ? "part" : "parts"}</p>
           {products.length > 0

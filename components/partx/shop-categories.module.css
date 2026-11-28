@@ -114,8 +114,10 @@
 .types a {
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
-  padding: 6px 12px;
+  gap: 8px;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 5px 12px;
   color: var(--px-ink);
   background: var(--px-card);
   border: 1px solid var(--px-line);
@@ -123,6 +125,18 @@
   font-size: 13px;
   font-weight: 650;
   text-decoration: none;
+}
+
+.types .typeLink { padding-inline-start: 5px; }
+
+.typePhoto {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #fafafa;
+  object-fit: contain;
+  padding: 2px;
 }
 
 .empty { padding: clamp(18px, 4vw, 40px); min-height: 240px; }
@@ -148,5 +162,5 @@
 @media (max-width: 520px) {
   .results .productGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .types { gap: 6px; }
-  .types a { min-height: 44px; padding-inline: 10px; }
+  .types a { padding-inline-end: 10px; }
 }

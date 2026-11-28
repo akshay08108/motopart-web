@@ -1,6 +1,7 @@
 type PartType = {
   readonly id: string;
   readonly name: string;
+  readonly image: string;
   readonly match: RegExp;
 };
 
@@ -31,81 +32,81 @@ export const categoryPhotos = {
 export const partCategories: readonly Category[] = [
   {
     id: "brakes", name: "Brakes", image: categoryPhotos.brakes, children: [
-      { id: "pads", name: "Brake pads & shoes", match: /\bbrake (pads?|shoes?)\b/ },
-      { id: "discs", name: "Discs & drums", match: /\bbrake (discs?|rotors?|drums?)\b|\bdrum brakes?\b/ },
-      { id: "brake-hydraulics", name: "Calipers & hydraulics", match: /\b(brake calipers?|brake hoses?|brake master cylinders?)\b/ },
-      { id: "abs", name: "ABS components", match: /\babs (sensors?|pumps?|rings?|modules?)\b/ },
+      { id: "pads", name: "Brake pads & shoes", image: "/categories/subcategories/pads.webp", match: /\bbrake (pads?|shoes?)\b/ },
+      { id: "discs", name: "Discs & drums", image: categoryPhotos.brakes, match: /\bbrake (discs?|rotors?|drums?)\b|\bdrum brakes?\b/ },
+      { id: "brake-hydraulics", name: "Calipers & hydraulics", image: "/categories/subcategories/brake-hydraulics.webp", match: /\b(brake calipers?|brake hoses?|brake master cylinders?)\b/ },
+      { id: "abs", name: "ABS components", image: "/categories/subcategories/abs.webp", match: /\babs (sensors?|pumps?|rings?|modules?)\b/ },
     ],
   },
   {
     id: "filters", name: "Filters", image: categoryPhotos.filters, children: [
-      { id: "cabin-filters", name: "Cabin filters", match: /\b(cabin( air)?|pollen|ac) filters?\b/ },
-      { id: "air-filters", name: "Air filters", match: /\bair filters?\b/ },
-      { id: "oil-filters", name: "Oil filters", match: /\boil filters?\b/ },
-      { id: "fuel-filters", name: "Fuel filters", match: /\bfuel filters?\b/ },
-      { id: "transmission-filters", name: "Transmission filters", match: /\b(gearbox|transmission) filters?\b/ },
+      { id: "cabin-filters", name: "Cabin filters", image: "/categories/subcategories/cabin-filters.webp", match: /\b(cabin( air)?|pollen|ac) filters?\b/ },
+      { id: "air-filters", name: "Air filters", image: categoryPhotos.filters, match: /\bair filters?\b/ },
+      { id: "oil-filters", name: "Oil filters", image: categoryPhotos.oilFilters, match: /\boil filters?\b/ },
+      { id: "fuel-filters", name: "Fuel filters", image: "/categories/subcategories/fuel-filters.webp", match: /\bfuel filters?\b/ },
+      { id: "transmission-filters", name: "Transmission filters", image: "/categories/subcategories/transmission-filters.webp", match: /\b(gearbox|transmission) filters?\b/ },
     ],
   },
   {
     id: "engine", name: "Engine & ignition", image: categoryPhotos.engine, children: [
-      { id: "belts", name: "Belts & timing", match: /\b(timing (belts?|chains?|kits?)|(drive|serpentine|fan|v) belts?|belt tensioners?)\b/ },
-      { id: "ignition", name: "Spark plugs & ignition", match: /\b(spark plugs?|glow plugs?|ignition coils?|ignition leads?)\b/ },
-      { id: "fuel-system", name: "Fuel system", match: /\b(fuel pumps?|fuel injectors?|injector nozzles?|throttle bod(y|ies))\b/ },
-      { id: "engine-internals", name: "Engine internals & seals", match: /\b(pistons?|crankshafts?|camshafts?|head gaskets?|valve cover gaskets?|engine mounts?)\b/ },
+      { id: "belts", name: "Belts & timing", image: "/categories/subcategories/belts.webp", match: /\b(timing (belts?|chains?|kits?)|(drive|serpentine|fan|v) belts?|belt tensioners?)\b/ },
+      { id: "ignition", name: "Spark plugs & ignition", image: categoryPhotos.ignition, match: /\b(spark plugs?|glow plugs?|ignition coils?|ignition leads?)\b/ },
+      { id: "fuel-system", name: "Fuel system", image: "/categories/subcategories/fuel-system.webp", match: /\b(fuel pumps?|fuel injectors?|injector nozzles?|throttle bod(y|ies))\b/ },
+      { id: "engine-internals", name: "Engine internals & seals", image: "/categories/subcategories/engine-internals.webp", match: /\b(pistons?|crankshafts?|camshafts?|head gaskets?|valve cover gaskets?|engine mounts?)\b/ },
     ],
   },
   {
     id: "suspension", name: "Steering & suspension", image: categoryPhotos.suspension, children: [
-      { id: "shocks", name: "Shock absorbers & struts", match: /\b(shock absorbers?|struts?|dampers?)\b/ },
-      { id: "suspension-links", name: "Springs, arms & joints", match: /\b(coil springs?|control arms?|ball joints?|stabili[sz]ers?( links?)?|suspension bush(es|ings?))\b/ },
-      { id: "steering", name: "Steering components", match: /\b(tie rod ends?|steering racks?|power steering pumps?)\b/ },
-      { id: "bearings", name: "Wheel bearings & hubs", match: /\bwheel (bearings?|hubs?)\b/ },
+      { id: "shocks", name: "Shock absorbers & struts", image: categoryPhotos.suspension, match: /\b(shock absorbers?|struts?|dampers?)\b/ },
+      { id: "suspension-links", name: "Springs, arms & joints", image: "/categories/subcategories/suspension-links.webp", match: /\b(coil springs?|control arms?|ball joints?|stabili[sz]ers?( links?)?|suspension bush(es|ings?))\b/ },
+      { id: "steering", name: "Steering components", image: "/categories/subcategories/steering.webp", match: /\b(tie rod ends?|steering racks?|power steering pumps?)\b/ },
+      { id: "bearings", name: "Wheel bearings & hubs", image: "/categories/subcategories/bearings.webp", match: /\bwheel (bearings?|hubs?)\b/ },
     ],
   },
   {
     id: "electrical", name: "Electrical & lighting", image: categoryPhotos.electrical, children: [
-      { id: "batteries", name: "Batteries", match: /\b(batter(y|ies)|accumulators?)\b/ },
-      { id: "lighting", name: "Lights & bulbs", match: /\b(headlights?|headlamps?|tail lights?|fog (lights?|lamps?)|bulbs?|indicators?)\b/ },
-      { id: "charging", name: "Starters & alternators", match: /\b(starter motors?|alternators?)\b/ },
-      { id: "electrical-sensors", name: "Sensors, switches & fuses", match: /\b(sensors?|switches?|fuses?|relays?|wiring harness(es)?)\b/ },
+      { id: "batteries", name: "Batteries", image: categoryPhotos.batteries, match: /\b(batter(y|ies)|accumulators?)\b/ },
+      { id: "lighting", name: "Lights & bulbs", image: categoryPhotos.electrical, match: /\b(headlights?|headlamps?|tail lights?|fog (lights?|lamps?)|bulbs?|indicators?)\b/ },
+      { id: "charging", name: "Starters & alternators", image: "/categories/subcategories/charging.webp", match: /\b(starter motors?|alternators?)\b/ },
+      { id: "electrical-sensors", name: "Sensors, switches & fuses", image: "/categories/subcategories/electrical-sensors.webp", match: /\b(sensors?|switches?|fuses?|relays?|wiring harness(es)?)\b/ },
     ],
   },
   {
     id: "fluids", name: "Oils & fluids", image: categoryPhotos.fluids, children: [
-      { id: "engine-oil", name: "Engine oil", match: /\b(engine ?oils?|motor oils?|lubricating oil)\b|\b\d{1,2}w ?\d{2}\b/ },
-      { id: "coolant", name: "Coolant & antifreeze", match: /\b(coolants?|antifreeze)\b(?! (hoses?|sensors?|pumps?|reservoirs?|tanks?|caps?))/ },
-      { id: "brake-fluid", name: "Brake fluid", match: /\bbrake fluid\b(?! (reservoirs?|tanks?|caps?))/ },
-      { id: "transmission-fluid", name: "Transmission fluid & gear oil", match: /\b(transmission fluid|gear ?(oil|fluid)|atf|cvt fluid)\b/ },
-      { id: "power-steering-fluid", name: "Power steering fluid", match: /\b(power )?steering (fluid|oil)\b/ },
-      { id: "def", name: "Diesel exhaust fluid (DEF)", match: /\b(diesel exhaust fluid|def|ad ?blue)\b(?! (pumps?|injectors?|sensors?|tanks?))/ },
+      { id: "engine-oil", name: "Engine oil", image: "/categories/subcategories/engine-oil.webp", match: /\b(engine ?oils?|motor oils?|lubricating oil)\b|\b\d{1,2}w ?\d{2}\b/ },
+      { id: "coolant", name: "Coolant & antifreeze", image: "/categories/subcategories/coolant.webp", match: /\b(coolants?|antifreeze)\b(?! (hoses?|sensors?|pumps?|reservoirs?|tanks?|caps?))/ },
+      { id: "brake-fluid", name: "Brake fluid", image: "/categories/subcategories/brake-fluid.webp", match: /\bbrake fluid\b(?! (reservoirs?|tanks?|caps?))/ },
+      { id: "transmission-fluid", name: "Transmission fluid & gear oil", image: "/categories/subcategories/transmission-fluid.webp", match: /\b(transmission fluid|gear ?(oil|fluid)|atf|cvt fluid)\b/ },
+      { id: "power-steering-fluid", name: "Power steering fluid", image: "/categories/subcategories/power-steering-fluid.webp", match: /\b(power )?steering (fluid|oil)\b/ },
+      { id: "def", name: "Diesel exhaust fluid (DEF)", image: "/categories/subcategories/def.webp", match: /\b(diesel exhaust fluid|def|ad ?blue)\b(?! (pumps?|injectors?|sensors?|tanks?))/ },
     ],
   },
   {
     id: "cooling", name: "Cooling & air conditioning", image: categoryPhotos.cooling, children: [
-      { id: "radiators", name: "Radiators, fans & hoses", match: /\b(radiators?|coolant hoses?|cooling fans?|radiator fans?)\b/ },
-      { id: "water-pumps", name: "Water pumps & thermostats", match: /\b(water pumps?|coolant pumps?|thermostats?)\b/ },
-      { id: "air-conditioning", name: "A/C compressors & condensers", match: /\b(ac compressors?|a c compressors?|air conditioning compressors?|condensers?|evaporators?)\b/ },
+      { id: "radiators", name: "Radiators, fans & hoses", image: categoryPhotos.cooling, match: /\b(radiators?|coolant hoses?|cooling fans?|radiator fans?)\b/ },
+      { id: "water-pumps", name: "Water pumps & thermostats", image: "/categories/subcategories/water-pumps.webp", match: /\b(water pumps?|coolant pumps?|thermostats?)\b/ },
+      { id: "air-conditioning", name: "A/C compressors & condensers", image: "/categories/subcategories/air-conditioning.webp", match: /\b(ac compressors?|a c compressors?|air conditioning compressors?|condensers?|evaporators?)\b/ },
     ],
   },
   {
     id: "transmission", name: "Clutch & transmission", image: categoryPhotos.transmission, children: [
-      { id: "clutch", name: "Clutch kits & components", match: /\b(clutch|flywheels?)\b/ },
-      { id: "gearbox", name: "Gearbox components", match: /\b(gearbox(es)?|transmission mounts?|shift cables?|synchros?)\b/ },
-      { id: "drivetrain", name: "Drive shafts & CV joints", match: /\b(drive ?shafts?|cv joints?|cv boots?|differentials?)\b/ },
+      { id: "clutch", name: "Clutch kits & components", image: categoryPhotos.transmission, match: /\b(clutch|flywheels?)\b/ },
+      { id: "gearbox", name: "Gearbox components", image: "/categories/subcategories/gearbox.webp", match: /\b(gearbox(es)?|transmission mounts?|shift cables?|synchros?)\b/ },
+      { id: "drivetrain", name: "Drive shafts & CV joints", image: "/categories/subcategories/drivetrain.webp", match: /\b(drive ?shafts?|cv joints?|cv boots?|differentials?)\b/ },
     ],
   },
   {
     id: "body", name: "Body & visibility", image: categoryPhotos.body, children: [
-      { id: "wipers", name: "Wipers & washers", match: /\b(wipers?|windscreen washers?|washer pumps?|washer nozzles?)\b/ },
-      { id: "panels", name: "Body panels & bumpers", match: /\b(bumpers?|fenders?|bonnets?|body panels?)\b/ },
-      { id: "mirrors", name: "Mirrors & glass", match: /\b(mirrors?|windscreens?|windshields?|window glass)\b/ },
+      { id: "wipers", name: "Wipers & washers", image: categoryPhotos.body, match: /\b(wipers?|windscreen washers?|washer pumps?|washer nozzles?)\b/ },
+      { id: "panels", name: "Body panels & bumpers", image: "/categories/subcategories/panels.webp", match: /\b(bumpers?|fenders?|bonnets?|body panels?)\b/ },
+      { id: "mirrors", name: "Mirrors & glass", image: "/categories/subcategories/mirrors.webp", match: /\b(mirrors?|windscreens?|windshields?|window glass)\b/ },
     ],
   },
   {
     id: "accessories", name: "Hardware & accessories", image: categoryPhotos.accessories, children: [
-      { id: "fasteners", name: "Bolts, nuts & clips", match: /\b(bolts?|fasteners?|screws?|nuts?|retaining clips?)\b/ },
-      { id: "interior", name: "Interior accessories", match: /\b(floor mats?|seat covers?|phone holders?)\b/ },
-      { id: "tools", name: "Tools & workshop supplies", match: /\b(tool kits?|spanners?|trolley jacks?|torque wrenches?)\b/ },
+      { id: "fasteners", name: "Bolts, nuts & clips", image: categoryPhotos.accessories, match: /\b(bolts?|fasteners?|screws?|nuts?|retaining clips?)\b/ },
+      { id: "interior", name: "Interior accessories", image: "/categories/subcategories/interior.webp", match: /\b(floor mats?|seat covers?|phone holders?)\b/ },
+      { id: "tools", name: "Tools & workshop supplies", image: "/categories/subcategories/tools.webp", match: /\b(tool kits?|spanners?|trolley jacks?|torque wrenches?)\b/ },
     ],
   },
   { id: "other", name: "Other parts", image: categoryPhotos.other, children: [] },
