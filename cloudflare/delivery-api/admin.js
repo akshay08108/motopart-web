@@ -4,6 +4,8 @@ import { SERVER_TIMESTAMP } from "./firestore-rest.js";
 const pageSize = 25;
 const stalledAfter = 45 * 60_000;
 const roles = ["customer", "seller", "rider"];
+const reviewCollection = "adminPaymentReviews";
+const submissionFields = ["paymentSubmittedAt", "upiTransactionReference", "paymentReference"];
 const openTicketStatuses = ["Open", "open", "In Progress", "In progress", "in-progress"];
 const fields = {
   people: ["name", "email", "roles", "activeRole", "sellerStatus", "createdAt"],
@@ -104,7 +106,6 @@ function attentionFilters(now, cutoff = now) {
     stalled: ["deliveries", all(inValues("state", ACTIVE_DELIVERY_STATES), filter("updatedAt", "LESS_THAN_OR_EQUAL", time(cutoff - stalledAfter))), "updatedAt"],
     activations: ["riders", filter("activationPending", "EQUAL", { booleanValue: true })],
     tickets: ["tickets", inValues("status", openTicketStatuses)],
-    verification: ["orders", filter("paymentStatus", "EQUAL", string("PAYMENT_SUBMITTED"))],
   };
 }
 
@@ -157,6 +158,10 @@ export async function handleAdminEndpoint({ name, authorization, auth, env, data
       if (!safeId(input.id)) return invalid();
       return closeTicket(database(), input.id);
     }
+    if (input.action === "closePaymentReview") {
+      if (!safeId(input.id) || typeof input.submissionKey !== "string" || !/^[a-f0-9]{64}$/.test(input.submissionKey)) return invalid();
+      return closePaymentReview(database(), input.id, input.submissionKey);
+    }
     return readAdmin(input, env, database);
   }
   if (!safeId(identity.uid) || identity.uid === env.PARTX_ADMIN_UID) throw new DeliveryError("permission-denied", "A PartX profile is required.");
@@ -183,6 +188,90 @@ async function closeTicket(db, id) {
   return { status: "Resolved" };
 }
 
+async function paymentSubmissionKey(data) {
+  const value = JSON.stringify([timestamp(data.paymentSubmittedAt), text(data.upiTransactionReference) || text(data.paymentReference)]);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function closePaymentReview(db, id, expectedKey) {
+  const orderRef = db.doc(`orders/${id}`);
+  const reviewRef = db.doc(`${reviewCollection}/${id}`);
+  await db.runTransaction(async (tx) => {
+    const orderData = (await tx.get(orderRef)).data();
+    if (!orderData) throw new DeliveryError("not-found", "This order could not be found.");
+    if (orderData.paymentStatus !== "PAYMENT_SUBMITTED") {
+      throw new DeliveryError("failed-precondition", "This payment is no longer awaiting seller verification. Refresh the order.");
+    }
+    const submissionKey = await paymentSubmissionKey(orderData);
+    if (submissionKey !== expectedKey) {
+      throw new DeliveryError("failed-precondition", "The customer submitted a new payment reference. Refresh the order before closing it.");
+    }
+    if ((await tx.get(reviewRef)).data()?.submissionKey === submissionKey) return;
+    tx.set(reviewRef, { submissionKey, closedAt: SERVER_TIMESTAMP });
+  });
+  return { status: "Resolved" };
+}
+
+async function* openPaymentReviewPages(db, after, fieldPaths) {
+  const limit = 100;
+  while (true) {
+    const rows = await db.queryDocuments({
+      ...query("orders", filter("paymentStatus", "EQUAL", string("PAYMENT_SUBMITTED"))),
+      select: { fields: [...new Set([...fieldPaths, ...submissionFields])].map(field) },
+      limit, orderBy: [order("__name__")],
+      ...(after ? { startAt: { values: [{ referenceValue: after }], before: false } } : {}),
+    });
+    const closed = await db.getMany(rows.map(({ id }) => `${reviewCollection}/${id}`), ["submissionKey"]);
+    const open = await Promise.all(rows.map(async (row) => {
+      const saved = closed.get(`${reviewCollection}/${row.id}`);
+      return !saved || saved.submissionKey !== await paymentSubmissionKey(row.data);
+    }));
+    yield rows.filter((_, index) => open[index]);
+    if (rows.length < limit) return;
+    after = rows.at(-1).name;
+  }
+}
+
+async function countOpenPaymentReviews(db) {
+  let count = 0;
+  for await (const rows of openPaymentReviewPages(db, null, [])) count += rows.length;
+  return count;
+}
+
+async function listOpenPaymentReviews(db, cursor, now) {
+  const visible = [];
+  const after = cursor ? db.doc(`orders/${cursor.id}`).name : null;
+  for await (const rows of openPaymentReviewPages(db, after, fields.orders)) {
+    visible.push(...rows);
+    if (visible.length > pageSize) break;
+  }
+  return {
+    kind: "orders", rows: visible.slice(0, pageSize).map(({ id, data }) => project("orders", id, data, now)),
+    next: visible.length > pageSize ? { id: visible[pageSize - 1].id, value: "", cutoff: now } : null,
+  };
+}
+
+function contactPerson(primary = {}, fallback = {}) {
+  const phone = [primary.phone, primary.mobile, fallback.phone, fallback.mobile].map((value) => text(value)?.replace(/[ ().-]/g, ""))
+    .find((value) => value && /^\+?[0-9]{7,15}$/.test(value)) ?? null;
+  const email = [primary.email, fallback.email].map((value) => text(value)?.trim())
+    .find((value) => value && /^[\w.%+-]+@[a-z0-9.-]+\.[a-z]{2,63}$/i.test(value)) ?? null;
+  return { name: text(primary.name) || text(fallback.name), phone, email };
+}
+
+async function orderContacts(db, data) {
+  const store = safeId(data.storeId) ? (await db.doc(`stores/${data.storeId}`).get()).data() : undefined;
+  const sellerId = store?.ownerId || data.sellerId;
+  const customerPath = safeId(data.customerId) ? `users/${data.customerId}` : null;
+  const sellerPath = safeId(sellerId) ? `users/${sellerId}` : null;
+  const profiles = await db.getMany([customerPath, sellerPath].filter(Boolean), ["name", "phone", "mobile", "email"]);
+  return {
+    customer: contactPerson(profiles.get(customerPath), data.customer ?? {}),
+    seller: contactPerson({ ...store, name: store?.name || data.storeName }, profiles.get(sellerPath)),
+  };
+}
+
 async function readAdmin(input, env, getDatabase) {
   const now = Date.now();
   if (input.view === "session") return { owner: true };
@@ -203,7 +292,7 @@ async function readAdmin(input, env, getDatabase) {
       ...Object.values(attention).map(([kind, where, sort]) => ({ ...query(kind, where), ...(sort ? { orderBy: [order(sort, "DESCENDING")] } : {}) })),
     ];
     const [customers, sellers, riders, stores, todayOrders, activeDeliveries, stalled, activations, tickets, verification] =
-      await Promise.all(queries.map((item) => db.countDocuments(item)));
+      await Promise.all([...queries.map((item) => db.countDocuments(item)), countOpenPaymentReviews(db)]);
     return { customers, sellers, riders, stores, todayOrders, activeDeliveries, attention: { stalled, activations, tickets, verification }, asOf: now };
   }
   if (input.view === "detail" && safeId(input.id) && Object.hasOwn(fields, input.kind) && input.kind !== "afterSales") {
@@ -238,17 +327,28 @@ async function readDetail(db, env, kind, id, now) {
     record.lastSignIn = latest?.[id] ?? null;
     record.activityAvailable = latest !== null;
   } else if (kind === "orders") {
-    const [deliveries, afterSales, directDelivery] = await Promise.all([
+    const [deliveries, afterSales, directDelivery, tickets, contacts, closedReview] = await Promise.all([
       findRelated(db, "deliveries", filter("orderId", "EQUAL", string(id)), now),
       findRelated(db, "afterSales", undefined, now, `orders/${id}`),
       safeId(data.riderDeliveryId) ? db.doc(`deliveries/${data.riderDeliveryId}`).get() : null,
+      findRelated(db, "tickets", filter("orderId", "EQUAL", string(id)), now),
+      orderContacts(db, data),
+      data.paymentStatus === "PAYMENT_SUBMITTED" ? db.doc(`${reviewCollection}/${id}`).get() : null,
     ]);
-    related = { deliveries, afterSales };
+    related = { deliveries, afterSales, ...(tickets.length ? { tickets } : {}) };
+    let paymentReview;
+    if (data.paymentStatus === "PAYMENT_SUBMITTED") {
+      const submissionKey = await paymentSubmissionKey(data);
+      const review = closedReview?.data();
+      paymentReview = { submissionKey, closedAt: review?.submissionKey === submissionKey ? timestamp(review.closedAt) : null };
+    }
     record.payment = paymentStatus(data, directDelivery?.data()?.codCollected === true);
-    return { kind, record, related, items: orderItems(data) };
+    return { kind, record, related, items: orderItems(data), contacts, paymentReview };
   } else if (kind === "tickets") {
     record.canClose = openTicketStatuses.includes(data.status);
     if (data.resolvedAt) record.resolvedAt = timestamp(data.resolvedAt);
+    const linkedOrder = safeId(data.orderId) ? (await db.doc(`orders/${data.orderId}`).get()).data() : undefined;
+    return { kind, record, related, contacts: await orderContacts(db, linkedOrder ?? data) };
   } else if (kind === "riders") {
     const [deliveries, latest] = await Promise.all([
       findRelated(db, "deliveries", filter("riderId", "EQUAL", string(id)), now),
@@ -269,6 +369,7 @@ async function readList(db, env, input, now) {
   if (cursor && (!safeId(cursor.id) || typeof cursor.value !== "string" || cursor.value.length > 512)) return invalid();
   const search = typeof input.search === "string" ? input.search.trim() : "";
   if (search.length > 200) return invalid();
+  if (kind === "attention" && input.queue === "verification") return listOpenPaymentReviews(db, cursor, now);
   const attention = attentionFilters(now, cursor && Number.isSafeInteger(cursor.cutoff) ? Math.min(cursor.cutoff, now) : now);
   if (kind === "attention" && Object.hasOwn(attention, input.queue)) {
     [kind, where, orderedField = "__name__"] = attention[input.queue];

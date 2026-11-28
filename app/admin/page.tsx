@@ -19,7 +19,12 @@ type SignIn = { uid: string; name: string; role: string; signedInAt: number };
 type Activity = { signIns: SignIn[]; presence: { uid: string; name: string; role: string; seenAt: number }[]; counts: { role: string; total: number }[]; asOf: number; next: SignIn | null };
 type Listing = { kind: Kind; rows: DataRow[]; next: Cursor | null; activityAvailable?: boolean };
 type OrderItem = { productName: string; partNumber: string | null; quantity: number | null; unitPrice: number | null };
-type Detail = { kind: Kind; record: DataRow; related: Partial<Record<Kind, DataRow[]>>; items?: OrderItem[] };
+type Contact = { name: string | null; phone: string | null; email: string | null };
+type Detail = {
+  kind: Kind; record: DataRow; related: Partial<Record<Kind, DataRow[]>>; items?: OrderItem[];
+  contacts?: { customer: Contact; seller: Contact };
+  paymentReview?: { submissionKey: string; closedAt: number | null };
+};
 type FetchAdmin = <T>(data: object, signal?: AbortSignal) => Promise<T>;
 
 const tabs: { id: Page; label: string; icon: string }[] = [
@@ -84,8 +89,8 @@ function Dashboard({ user }: { user: User }) {
   const [page, setPage] = useState<Page>("overview");
   const [queue, setQueue] = useState<Queue>("stalled");
   const [signOutError, setSignOutError] = useState("");
-  const [closedTicket, setClosedTicket] = useState("");
-  const [ticketQueueVersion, setTicketQueueVersion] = useState(0);
+  const [resolutionNotice, setResolutionNotice] = useState("");
+  const [queueVersion, setQueueVersion] = useState(0);
   const [selected, setSelected] = useState<{ kind: Kind; id: string }>();
   const [role, setRole] = useState("");
   const [active, setActive] = useState(false);
@@ -100,7 +105,7 @@ function Dashboard({ user }: { user: User }) {
 
   function navigate(destination: Page, options: { queue?: Queue; role?: string; active?: boolean; today?: boolean } = {}) {
     setSelected(undefined);
-    setClosedTicket("");
+    setResolutionNotice("");
     setPage(destination);
     setRole(options.role ?? "");
     setActive(options.active ?? false);
@@ -121,17 +126,17 @@ function Dashboard({ user }: { user: User }) {
         <button className={styles.secondary} onClick={() => void signOutAdmin().catch(() => setSignOutError("Could not sign out. Try again."))}>Sign out</button>
       </header>
       {signOutError && <p role="alert" className={styles.error}>{signOutError}</p>}
-      {closedTicket && <p role="status" className={styles.success}>Ticket {closedTicket} marked as resolved.</p>}
+      {resolutionNotice && <p role="status" className={styles.success}>{resolutionNotice}</p>}
       {page === "overview" && <OverviewPanel fetchAdmin={fetchAdmin} navigate={navigate}/>}
       {page === "activity" && <ActivityPanel fetchAdmin={fetchAdmin} open={(id) => setSelected({ kind: "people", id })}/>}
       {page === "attention" && <div className={styles.filters} aria-label="Attention queues">
-        {queues.map((item) => <button type="button" key={item.id} aria-pressed={queue === item.id} onClick={() => { setSelected(undefined); setClosedTicket(""); setQueue(item.id); }}>{item.label}</button>)}
+        {queues.map((item) => <button type="button" key={item.id} aria-pressed={queue === item.id} onClick={() => { setSelected(undefined); setResolutionNotice(""); setQueue(item.id); }}>{item.label}</button>)}
       </div>}
-      {page !== "activity" && page !== "overview" && <Records key={`${page}:${role}:${active}:${today}:${page === "attention" ? queue : ""}:${page === "attention" && queue === "tickets" ? ticketQueueVersion : 0}`} page={page} queue={queue} initialRole={role} initialActive={active} initialToday={today} fetchAdmin={fetchAdmin} open={(kind, id) => setSelected({ kind, id })}/>}
-      {selected && <RecordDetail key={`${selected.kind}:${selected.id}`} {...selected} fetchAdmin={fetchAdmin} close={() => setSelected(undefined)} open={(kind, id) => setSelected({ kind, id })} onTicketClosed={(id) => {
+      {page !== "activity" && page !== "overview" && <Records key={`${page}:${role}:${active}:${today}:${page === "attention" ? queue : ""}:${page === "attention" ? queueVersion : 0}`} page={page} queue={queue} initialRole={role} initialActive={active} initialToday={today} fetchAdmin={fetchAdmin} open={(kind, id) => setSelected({ kind, id })}/>}
+      {selected && <RecordDetail key={`${selected.kind}:${selected.id}`} {...selected} fetchAdmin={fetchAdmin} close={() => setSelected(undefined)} open={(kind, id) => setSelected({ kind, id })} onResolved={(message) => {
         setSelected(undefined);
-        setClosedTicket(id);
-        setTicketQueueVersion((version) => version + 1);
+        setResolutionNotice(message);
+        setQueueVersion((version) => version + 1);
       }}/>}
     </main>
   </div>;
@@ -304,8 +309,28 @@ function OrderItems({ items }: { items: OrderItem[] }) {
 
 const links: Record<string, Kind> = { orderId: "orders", customerId: "people", sellerId: "people", ownerId: "people", storeId: "stores", riderId: "riders", riderDeliveryId: "deliveries", activeDeliveryId: "deliveries", deliveryId: "deliveries" };
 
-function RecordDetail({ kind, id, fetchAdmin, close, open, onTicketClosed }: {
-  kind: Kind; id: string; fetchAdmin: FetchAdmin; close: () => void; open: (kind: Kind, id: string) => void; onTicketClosed: (id: string) => void;
+function IssueContacts({ contacts, reference }: { contacts: NonNullable<Detail["contacts"]>; reference: string }) {
+  return <section className={styles.issueContacts} aria-labelledby="admin-issue-contacts">
+    <h3 id="admin-issue-contacts">Contact about this issue</h3>
+    <div className={styles.contactGrid}>
+      {(["customer", "seller"] as const).map((role) => {
+        const { name, phone, email } = contacts[role];
+        const label = role === "customer" ? "Customer" : "Seller";
+        const subject = encodeURIComponent(`PartX follow-up for ${reference}`);
+        return <div className={styles.contactCard} key={role}>
+          <strong>{label}</strong>
+          {name && <span>{name}</span>}
+          {phone && <a href={`tel:${phone}`} aria-label={`Call ${role} at ${phone}`}>Call {role} · {phone}</a>}
+          {email && <a href={`mailto:${encodeURIComponent(email).replace("%40", "@")}?subject=${subject}`} aria-label={`Email ${role} at ${email}`}>Email {role} · {email}</a>}
+          {!phone && !email && <span>No contact details saved.</span>}
+        </div>;
+      })}
+    </div>
+  </section>;
+}
+
+function RecordDetail({ kind, id, fetchAdmin, close, open, onResolved }: {
+  kind: Kind; id: string; fetchAdmin: FetchAdmin; close: () => void; open: (kind: Kind, id: string) => void; onResolved: (message: string) => void;
 }) {
   const { data, error, reload } = useAdminData<Detail>(fetchAdmin, { view: "detail", kind, id });
   const [dialog, setDialog] = useState<HTMLDialogElement | null>(null);
@@ -315,16 +340,20 @@ function RecordDetail({ kind, id, fetchAdmin, close, open, onTicketClosed }: {
   useEffect(() => {
     if (dialog && !dialog.open) dialog.showModal();
   }, [dialog]);
-  async function resolveTicket(event: FormEvent<HTMLFormElement>) {
+  const review = data?.paymentReview;
+  const paymentFollowUp = kind === "orders" && review?.closedAt === null;
+  const closeAction = paymentFollowUp ? "closePaymentReview" : kind === "tickets" && data?.record.canClose === true ? "closeTicket" : null;
+
+  async function resolve(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (closing) return;
+    if (closing || !confirming || !closeAction) return;
     setClosing(true);
     setCloseError("");
     try {
-      await fetchAdmin({ action: "closeTicket", id });
-      onTicketClosed(id);
+      await fetchAdmin({ action: closeAction, id, ...(paymentFollowUp ? { submissionKey: review.submissionKey } : {}) });
+      onResolved(paymentFollowUp ? `Payment follow-up closed for order ${id}.` : `Ticket ${id} marked as resolved.`);
     } catch (reason) {
-      setCloseError(reason instanceof PartXAdminError ? reason.message : "Could not close the ticket. Try again.");
+      setCloseError(reason instanceof PartXAdminError ? reason.message : "Could not save the closure. Try again.");
       setClosing(false);
     }
   }
@@ -333,18 +362,21 @@ function RecordDetail({ kind, id, fetchAdmin, close, open, onTicketClosed }: {
     <header><div><p className={styles.eyebrow}>{names[kind]}</p><h2 id="admin-record-title">{String(data?.record.name ?? data?.record.trackingId ?? id)}</h2></div><button type="button" className={styles.secondary} onClick={close} disabled={closing} autoFocus>{kind === "tickets" ? "Close details" : "Close"}</button></header>
     <Feedback error={error} loading={!data} reload={reload}/>
     {data && <>
+      {data.contacts && <IssueContacts contacts={data.contacts} reference={String(data.record.orderId ?? id)}/>}
+      {typeof review?.closedAt === "number" && <p className={styles.success}>Payment follow-up closed on {formatTime(review.closedAt)}. Seller verification is still pending.</p>}
+      {closeAction && <form className={styles.ticketActions} onSubmit={(event) => void resolve(event)}>
+        {confirming ? <>
+          <p>{paymentFollowUp ? "Remove this payment follow-up from Needs attention? The seller can still verify the payment." : "Mark this ticket as resolved and remove it from the open queue?"}</p>
+          <button type="button" className={styles.secondary} disabled={closing} onClick={() => { setConfirming(false); setCloseError(""); }}>Cancel</button>
+          <button type="submit" className={styles.primary} disabled={closing}>{closing ? "Closing…" : "Confirm close"}</button>
+        </> : <button type="button" className={styles.primary} onClick={() => setConfirming(true)}>{paymentFollowUp ? "Close payment review" : "Close ticket"}</button>}
+        {closeError && <div className={styles.error} role="alert">{closeError} <button type="button" onClick={() => { setConfirming(false); setCloseError(""); reload(); }}>Refresh details</button></div>}
+      </form>}
       {kind === "orders" && <OrderItems items={data.items ?? []}/>}
       {data.record.activityAvailable === false && <p className={styles.panelNote}>Sign-in history is temporarily unavailable.</p>}
       <dl className={kind === "orders" ? styles.orderMetadata : undefined}>{Object.entries(data.record).filter(([key]) => labels[key]).map(([key, value]) => <div key={key}><dt>{labels[key]}</dt><dd>{links[key] && typeof value === "string" && value ? <button type="button" onClick={() => open(links[key], value)}>{value}</button> : valueText(key, value)}</dd></div>)}</dl>
       {Object.entries(data.related).map(([relatedKind, rows]) => <section key={relatedKind}><h3>{names[relatedKind as Kind]}</h3><RecordsTable kind={relatedKind as Kind} rows={rows} open={open}/></section>)}
-      {kind === "tickets" && data.record.canClose === true && <form className={styles.ticketActions} onSubmit={(event) => void resolveTicket(event)}>
-        {confirming ? <>
-          <p>Mark this ticket as resolved and remove it from the open queue?</p>
-          <button type="button" className={styles.secondary} disabled={closing} onClick={() => { setConfirming(false); setCloseError(""); }}>Cancel</button>
-          <button type="submit" className={styles.primary} disabled={closing}>{closing ? "Closing ticket…" : "Confirm close"}</button>
-        </> : <button type="button" className={styles.primary} onClick={() => setConfirming(true)}>Close ticket</button>}
-        {closeError && <div className={styles.error} role="alert">{closeError}</div>}
-      </form>}
+
     </>}
   </dialog>;
 }

@@ -73,7 +73,11 @@
 .error { margin: .6rem 1rem; padding: .6rem .8rem; background: #ffedf0; border: 1px solid #edbcc7; border-radius: 8px; color: #94102a; }
 .error button { color: inherit; background: transparent; border: 0; text-decoration: underline; }
 .success { padding: .65rem .85rem; margin: 0 0 1rem; border: 1px solid #a1d3bd; border-radius: 8px; background: #eaf7ef; color: #175c3a; }
-.ticketActions { display: flex; gap: .6rem; flex-wrap: wrap; justify-content: flex-end; align-items: center; border-top: 1px solid var(--admin-border); margin-top: 1rem; padding-top: 1rem; }
+.issueContacts { margin-bottom: .8rem; }
+.contactGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: .6rem; }
+.contactCard { display: grid; gap: .3rem; padding: .7rem .8rem; border: 1px solid var(--admin-border); border-radius: 8px; font-size: .85rem; overflow-wrap: anywhere; }
+.contactCard a { color: var(--admin-accent); text-decoration: underline; width: fit-content; }
+.ticketActions { display: flex; gap: .6rem; flex-wrap: wrap; justify-content: flex-end; align-items: center; border-top: 1px solid var(--admin-border); margin: .8rem 0 1rem; padding-top: .75rem; }
 .ticketActions p { flex: 1 1 220px; margin: 0; font-size: .88rem; color: var(--admin-muted); }
 .ticketActions .error { flex-basis: 100%; margin: 0; }
 .detail { color: var(--admin-ink); background: var(--admin-surface); border: 1px solid var(--admin-border); border-radius: 14px; width: min(860px, calc(100% - 24px)); max-height: 86dvh; padding: 1rem; margin: auto; overflow: auto; }

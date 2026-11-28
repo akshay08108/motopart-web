@@ -115,6 +115,16 @@ export function createFirestoreRest({ projectId, accessToken, fetcher = fetch, b
     }
     throw new FirestoreRestError("ABORTED", 409);
   }
+  async function getMany(paths, fieldPaths) {
+    if (!paths.length) return new Map();
+    const rows = await request(`${root}:batchGet`, {
+      documents: paths.map((path) => document(path).name),
+      mask: { fieldPaths },
+    });
+    return new Map(rows.filter(({ found }) => found).map(({ found }) => [
+      found.name.slice(root.length + 1), decodeFields(found.fields ?? {}),
+    ]));
+  }
   async function queryDocuments(structuredQuery, parent = "") {
     const rows = await request(`${root}${parent ? `/${document(parent).path}` : ""}:runQuery`, { structuredQuery });
     return rows.filter((row) => row.document).map(({ document: result }) => ({
@@ -146,5 +156,5 @@ export function createFirestoreRest({ projectId, accessToken, fetcher = fetch, b
     } });
     return rows.filter((row) => row.document).map((row) => decodeFields(row.document.fields ?? {}));
   }
-  return { doc: document, queryDocuments, countDocuments, runTransaction, notificationDevices, ordersForCustomer, removeDevice: (name) => request(name, undefined, "DELETE") };
+  return { doc: document, getMany, queryDocuments, countDocuments, runTransaction, notificationDevices, ordersForCustomer, removeDevice: (name) => request(name, undefined, "DELETE") };
 }

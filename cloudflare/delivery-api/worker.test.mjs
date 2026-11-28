@@ -73,7 +73,7 @@ before(async () => {
 });
 beforeEach(async () => {
   await Promise.all(pending.splice(0));
-  for (const name of ["users", "riders", "stores", "orders", "products", "razorpayOrders", "deliveries", "deliverySecrets", "notificationDevices", "tickets"]) await db.recursiveDelete(db.collection(name));
+  for (const name of ["users", "riders", "stores", "orders", "products", "razorpayOrders", "deliveries", "deliverySecrets", "notificationDevices", "tickets", "adminPaymentReviews"]) await db.recursiveDelete(db.collection(name));
   gatewayOrder = gatewayPayment = gatewayTransfer = null; gatewayCreates = 0;
   databaseRequests = 0; notifications = []; abortNextCommit = false; routeBroken = false; worker = createWorker({ fetcher: testFetch });
   const order = { customerId: "customer", sellerId: "seller", storeId: "store", customer: { name: "Customer", phone: "+919999999999" }, status: "Packed", stage: "Preparing", orderStatus: "PLACED", paymentStatus: "PAYMENT_DUE", paymentMethod: "cod", fulfilment: "delivery", totalAmount: 199, total: 199, deliveryLocation: point, items: [{ productName: "Filter", partNumber: "F1", quantity: 2 }, { productName: "Oil", partNumber: "O1", quantity: 1 }] };
@@ -614,4 +614,82 @@ test("the verified owner can close an open ticket and remove it from the attenti
   assert.equal((await admin(detail)).body.data.record.resolvedAt, saved.resolvedAt.toMillis());
   assert.equal((await admin({ ...close, id: "legacy-open" })).status, 200);
   assert.deepEqual((await admin(list)).body.data.rows, []);
+});
+
+test("payment follow-up closure is private, keeps payment pending and reopens for a new submission", async () => {
+  const config = { ...env, PARTX_ADMIN_UID: owner };
+  const payment = db.doc("orders/payment-review");
+  const marker = db.doc("adminPaymentReviews/payment-review");
+  const submittedAt = Timestamp.now();
+  await Promise.all([
+    payment.set({ paymentStatus: "PAYMENT_SUBMITTED", orderStatus: "PAYMENT_VERIFICATION_PENDING", paymentMethod: "upi", paymentSubmittedAt: submittedAt, upiTransactionReference: "OLD-PRIVATE-REFERENCE", customerId: "customer", storeId: "store", sellerId: "ignored-seller", customer: { name: "Saved customer", email: "saved@example.test", phone: "5551112222" } }),
+    db.doc("users/customer").update({ name: "Current customer", mobile: "+91 (99999) 12345", email: "bad@example.test?bcc=unsafe" }),
+    db.doc("users/seller").update({ name: "Store owner", mobile: "+919876543210", email: "seller+support@example.test" }),
+    db.doc("stores/store").update({ phone: "80000-12345" }),
+    db.doc("tickets/payment-ticket").set({ orderId: payment.id, status: "Open", issue: "Payment issue" }),
+  ]);
+  const admin = (data, uid = owner, claims = verified) => call("partxAdmin", uid, data, claims, config);
+  const detailInput = { view: "detail", kind: "orders", id: payment.id };
+  const listInput = { view: "list", kind: "attention", queue: "verification" };
+  const overviewInput = { view: "overview" };
+  const original = (await admin(detailInput)).body.data;
+  assert.deepEqual(original.contacts, {
+    customer: { name: "Current customer", email: "saved@example.test", phone: "+919999912345" },
+    seller: { name: "Test store", email: "seller+support@example.test", phone: "8000012345" },
+  });
+  assert.deepEqual((await admin({ view: "detail", kind: "tickets", id: "payment-ticket" })).body.data.contacts, original.contacts);
+  assert.equal(original.related.tickets[0].id, "payment-ticket");
+  assert.equal(original.paymentReview.closedAt, null);
+  assert.ok(!JSON.stringify(original).includes("OLD-PRIVATE-REFERENCE"));
+  const action = { action: "closePaymentReview", id: payment.id, submissionKey: original.paymentReview.submissionKey };
+  assert.equal((await admin(action, "seller")).status, 403);
+  assert.equal((await admin(action, owner, {})).status, 403);
+  const initial = await admin(listInput);
+  assert.equal(initial.body.data.rows[0].id, payment.id);
+  assert.equal(initial.body.data.rows[0].contacts, undefined);
+  assert.equal((await admin(overviewInput)).body.data.attention.verification, 1);
+
+  abortNextCommit = true;
+  assert.equal((await admin(action)).status, 200);
+  const saved = (await marker.get()).data();
+  assert.ok(saved.closedAt.toMillis() >= submittedAt.toMillis());
+  assert.equal((await admin(action)).status, 200);
+  assert.equal((await marker.get()).data().closedAt.toMillis(), saved.closedAt.toMillis());
+  assert.deepEqual((await admin(listInput)).body.data.rows, []);
+  assert.equal((await admin(overviewInput)).body.data.attention.verification, 0);
+  assert.equal((await payment.get()).data().paymentStatus, "PAYMENT_SUBMITTED");
+  assert.equal((await payment.get()).data().orderStatus, "PAYMENT_VERIFICATION_PENDING");
+  assert.equal((await db.doc("tickets/payment-ticket").get()).data().status, "Open");
+
+  await payment.update({ paymentSubmittedAt: Timestamp.fromMillis(submittedAt.toMillis() + 5_000), upiTransactionReference: "NEW-PRIVATE-REFERENCE" });
+  assert.equal((await admin(action)).status, 409);
+  assert.equal((await admin(listInput)).body.data.rows[0].id, payment.id);
+  assert.equal((await admin(overviewInput)).body.data.attention.verification, 1);
+  const current = (await admin(detailInput)).body.data.paymentReview;
+  assert.equal(current.closedAt, null);
+  assert.notEqual(current.submissionKey, action.submissionKey);
+  await payment.update({ paymentStatus: "PAID" });
+  assert.equal((await admin({ ...action, submissionKey: current.submissionKey })).status, 409);
+  assert.equal((await admin(detailInput)).body.data.paymentReview, undefined);
+});
+
+test("payment review pagination skips closed entries across Firestore batches", async () => {
+  const config = { ...env, PARTX_ADMIN_UID: owner };
+  const check = (data) => call("partxAdmin", owner, data, verified, config);
+  await db.doc("orders/review-000").set({ paymentStatus: "PAYMENT_SUBMITTED" });
+  const detail = (await check({ view: "detail", kind: "orders", id: "review-000" })).body.data;
+  const batch = db.batch();
+  for (let index = 0; index < 127; index++) {
+    const id = `review-${String(index).padStart(3, "0")}`;
+    batch.set(db.doc(`orders/${id}`), { paymentStatus: "PAYMENT_SUBMITTED" });
+    if (index < 100) batch.set(db.doc(`adminPaymentReviews/${id}`), { submissionKey: detail.paymentReview.submissionKey, closedAt: Timestamp.now() });
+  }
+  await batch.commit();
+  const request = { view: "list", kind: "attention", queue: "verification" };
+  const first = (await check(request)).body.data;
+  assert.equal(first.rows.length, 25);
+  assert.equal(first.rows[0].id, "review-100");
+  const second = (await check({ ...request, cursor: first.next })).body.data;
+  assert.deepEqual(second.rows.map(({ id }) => id), ["review-125", "review-126"]);
+  assert.equal(second.next, null);
 });
