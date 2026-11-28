@@ -1,7 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { categoryHref, categoryPhotos } from "@/lib/part-categories";
 import { vehicleName } from "@/lib/vehicle-display";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
@@ -13,16 +15,16 @@ import { matchesVehicle } from "@/lib/vehicle-fitment";
 import styles from "./home-page.module.css";
 
 const categories = [
-  { name: "Brakes", icon: "brakes", description: "Pads, discs & calipers", href: "/shop?category=Brakes" },
-  { name: "Filters", icon: "filter", description: "Air, oil & cabin filters", href: "/shop?category=Filters" },
-  { name: "Batteries", icon: "battery", description: "Starting & charging", href: "/shop?category=Batteries" },
-  { name: "Electrical & lighting", icon: "headlight", description: "Headlamps, bulbs & electrics", href: "/shop?category=Electrical" },
-  { name: "Suspension", icon: "suspension", description: "Struts, shocks & springs", href: "/shop?category=Suspension" },
-  { name: "Engine", icon: "engine", description: "Engine & service parts", href: "/shop?category=Engine" },
-  { name: "Ignition", icon: "spark-plug", description: "Spark plugs, coils & leads", href: "/shop?q=spark%20plug" },
-  { name: "Wipers", icon: "wipers", description: "Blades, arms & washers", href: "/shop?q=wiper" },
-  { name: "Fluids", icon: "fluids", description: "Coolant, power steering fluid & DEF", href: "/shop?category=Fluids" },
-  { name: "Oil filters", icon: "oil-filter", description: "Spin-on & cartridge filters", href: "/shop?q=oil%20filter" },
+  { name: "Brakes", image: categoryPhotos.brakes, description: "Pads, discs & calipers", href: categoryHref("brakes") },
+  { name: "Filters", image: categoryPhotos.filters, description: "Air, oil & cabin filters", href: categoryHref("filters") },
+  { name: "Batteries", image: categoryPhotos.batteries, description: "Starting & charging", href: categoryHref("electrical", "batteries") },
+  { name: "Electrical & lighting", image: categoryPhotos.electrical, description: "Headlamps, bulbs & electrics", href: categoryHref("electrical") },
+  { name: "Suspension", image: categoryPhotos.suspension, description: "Struts, shocks & springs", href: categoryHref("suspension") },
+  { name: "Engine", image: categoryPhotos.engine, description: "Engine & service parts", href: categoryHref("engine") },
+  { name: "Ignition", image: categoryPhotos.ignition, description: "Spark plugs, coils & leads", href: categoryHref("engine", "ignition") },
+  { name: "Wipers", image: categoryPhotos.body, description: "Blades, arms & washers", href: categoryHref("body", "wipers") },
+  { name: "Fluids", image: categoryPhotos.fluids, description: "Coolant, power steering fluid & DEF", href: categoryHref("fluids") },
+  { name: "Oil filters", image: categoryPhotos.oilFilters, description: "Spin-on & cartridge filters", href: categoryHref("filters", "oil-filters") },
 ] as const;
 
 export function HomePage() {
@@ -107,11 +109,11 @@ export function HomePage() {
     <section className={`px-container ${styles.section}`} aria-labelledby="storefront-categories">
       <div className={styles.sectionHeading}>
         <h2 id="storefront-categories">Shop by category</h2>
-        <Link href="/shop">All parts <Icon name="arrow"/></Link>
+        <Link href="/shop">All categories <Icon name="arrow"/></Link>
       </div>
       <div className={styles.categories}>
         {categories.map((category) => <Link href={category.href} className={styles.category} key={category.name}>
-          <span className={styles.categoryIcon}><Icon name={category.icon}/></span>
+          <Image className={styles.categoryPhoto} src={category.image} alt="" width={160} height={160} unoptimized/>
           <div className={styles.categoryText}>
             <strong>{category.name}</strong>
             <small>{category.description}</small>

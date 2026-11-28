@@ -947,6 +947,7 @@ function toCatalogProduct(product: SellerProduct, storeName: string, vehicles: V
     rating,
     reviews: ratingCount,
     category: product.category,
+    subcategory: product.subcategory,
     imageIndex: stableImageIndex(product.id),
     imageUrl: product.imageUrl,
     barcode: product.barcode,

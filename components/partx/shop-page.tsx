@@ -1,10 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import type { PartnerStore } from "@/lib/types";
+import { categorizePart, categorySelection, partCategories } from "@/lib/part-categories";
 import { vehicleName } from "@/lib/vehicle-display";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
@@ -13,8 +15,7 @@ import { PartSearch } from "./part-search";
 import { searchParts } from "@/lib/catalog-search";
 import { matchesVehicle } from "@/lib/vehicle-fitment";
 import fitmentStyles from "./shop-fitment.module.css";
-
-const preferredCategories = ["Brakes", "Filters", "Batteries", "Engine", "Electrical", "Suspension", "Fluids", "Accessories", "Other"];
+import styles from "./shop-categories.module.css";
 
 export function ShopPage() {
   const params = useSearchParams();
@@ -23,27 +24,48 @@ export function ShopPage() {
 
 function ShopResults() {
   const params = useSearchParams();
-  const initialCategory = params.get("category") ?? "All";
-  const [view, setView] = useState<"parts" | "stores">(params.get("view") === "stores" ? "stores" : "parts");
+  const { category, subcategory } = categorySelection(params.get("category"), params.get("subcategory"));
+  const activeCategory = partCategories.find((group) => group.id === category);
+  const activeType = activeCategory?.children.find((type) => type.id === subcategory);
+  const [view, setView] = useState<"parts" | "stores">(!params.get("store") && params.get("view") === "stores" ? "stores" : "parts");
   const [query, setQuery] = useState(params.get("q") ?? "");
-  const [sort, setSort] = useState("recommended");
+  const [sort, setSort] = useState(params.get("sort") ?? "recommended");
   const [storeSort, setStoreSort] = useState("rated");
   const [fitmentOnly, setFitmentOnly] = useState(params.get("fitment") === "selected");
   const { vehicles, activeVehicleId, catalog, stores } = usePartX();
   const storeId = params.get("store");
   const selectedStore = stores.find((store) => store.id === storeId);
   const storeProductIds = useMemo(() => new Set(selectedStore?.listings.map((listing) => listing.productId)), [selectedStore]);
-  const categories = useMemo(() => ["All", ...preferredCategories, ...[...new Set(catalog.map((product) => product.category))].filter((item) => !preferredCategories.includes(item))], [catalog]);
-  const [category, setCategory] = useState(initialCategory);
-  const activeCategory = categories.includes(category) ? category : "All";
   const vehicle = vehicles.find((item) => item.id === activeVehicleId) ?? vehicles[0];
+  const classified = useMemo(() => (
+    searchParts(storeId ? catalog.filter((product) => storeProductIds.has(product.id)) : catalog, query)
+      .filter((product) => !fitmentOnly || matchesVehicle(product, vehicle))
+      .map((product) => ({ product, ...categorizePart(product) }))
+  ), [catalog, query, storeId, storeProductIds, fitmentOnly, vehicle]);
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const { category: group } of classified) counts.set(group, (counts.get(group) ?? 0) + 1);
+    return counts;
+  }, [classified]);
   const products = useMemo(() => {
-    const list = searchParts(storeId ? catalog.filter((product) => storeProductIds.has(product.id)) : catalog, query).filter((product) => (!fitmentOnly || matchesVehicle(product, vehicle)) && (activeCategory === "All" || product.category === activeCategory || (activeCategory === "Fluids" && /coolant|antifreeze|steering fluid|brake fluid|transmission fluid|diesel exhaust fluid|\bdef\b|adblue/i.test(`${product.name} ${product.category}`))));
+    const list = classified
+      .filter((entry) => (!category || entry.category === category) && (!subcategory || entry.subcategory === subcategory))
+      .map(({ product }) => product);
     if (sort === "low") list.sort((a, b) => a.price - b.price);
     if (sort === "high") list.sort((a, b) => b.price - a.price);
     if (sort === "rating") list.sort((a, b) => b.rating - a.rating);
     return list;
-  }, [catalog, query, activeCategory, sort, storeId, storeProductIds, fitmentOnly, vehicle]);
+  }, [classified, category, subcategory, sort]);
+  function catalogHref(group?: string, type?: string, clearFilters = false) {
+    const next = new URLSearchParams();
+    if (storeId) next.set("store", storeId);
+    if (!clearFilters && query.trim()) next.set("q", query.trim());
+    if (!clearFilters && fitmentOnly) next.set("fitment", "selected");
+    if (sort !== "recommended") next.set("sort", sort);
+    if (group) next.set("category", group);
+    if (type) next.set("subcategory", type);
+    return next.size ? `/shop?${next}` : "/shop";
+  }
   const visibleStores = useMemo(() => {
     const normalizedQuery = normalizeSearch(query);
     const list = stores.filter((store) => {
@@ -57,15 +79,27 @@ function ShopResults() {
     return list;
   }, [query, storeSort, stores]);
 
+  const categoryLinks = <nav aria-label="Part categories" className={styles.categoryList}>
+    <Link href={catalogHref()} aria-current={!category ? "page" : undefined}>
+      <span>All parts</span><small>{classified.length}</small>
+    </Link>
+    {partCategories.map((group) => (
+      <Link key={group.id} className={styles.withPhoto} href={catalogHref(group.id)} aria-current={group.id === category ? (subcategory ? "location" : "page") : undefined}>
+        <Image className={styles.categoryPhoto} src={group.image} alt="" width={160} height={160} unoptimized/>
+        <span>{group.name}</span><small>{categoryCounts.get(group.id) ?? 0}</small>
+      </Link>
+    ))}
+  </nav>;
+
 
   return <div className="px-page px-container">
     <div className="px-page-title"><span>PARTX MARKETPLACE</span><h1>{storeId ? selectedStore?.name ?? "Store catalog" : view === "parts" ? "Shop parts" : "Shop by store"}</h1><p>{storeId ? selectedStore?.location.address : view === "parts" ? vehicle ? `Shopping for your ${vehicleName(vehicle)}.` : "Find parts and compare PartX stores." : "Browse PartX stores and shop directly from their live catalog."}</p></div>
     {storeId ? <Link href="/shop?view=stores" className="px-back-link"><Icon name="back"/>All stores</Link> : <div className="px-shop-view-switch" role="tablist" aria-label="Shop view">
-      <button role="tab" aria-selected={view === "parts"} className={view === "parts" ? "active" : ""} onClick={() => { setView("parts"); setQuery(""); }}><Icon name="box"/>Shop parts</button>
-      <button role="tab" aria-selected={view === "stores"} className={view === "stores" ? "active" : ""} onClick={() => { setView("stores"); setQuery(""); }}><Icon name="store"/>Shop by store</button>
+      <button role="tab" aria-selected={view === "parts"} className={view === "parts" ? "active" : ""} onClick={() => { setView("parts"); setQuery(""); }}>Shop parts</button>
+      <button role="tab" aria-selected={view === "stores"} className={view === "stores" ? "active" : ""} onClick={() => { setView("stores"); setQuery(""); }}>Shop by store</button>
     </div>}
     <div className="px-shop-tools">
-      {view === "parts" ? <PartSearch value={query} onChange={setQuery} onSearch={(term) => { setQuery(term); setCategory("All"); }} className="px-catalog-search" label="Search catalog" placeholder="Search name, store, brand, OEM or part number"/> : <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search store, location, category or part" aria-label="Search stores"/>}
+      {view === "parts" ? <PartSearch value={query} onChange={setQuery} onSearch={setQuery} className="px-catalog-search" label="Search catalog" placeholder="Search name, store, brand, OEM or part number"/> : <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search store, location, category or part" aria-label="Search stores"/>}
       {view === "parts" ? <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort parts"><option value="recommended">Recommended</option><option value="low">Price: low to high</option><option value="high">Price: high to low</option><option value="rating">Top rated</option></select> : <select value={storeSort} onChange={(event) => setStoreSort(event.target.value)} aria-label="Sort stores"><option value="rated">Top rated</option><option value="products">Most products</option><option value="nearest">Nearest first</option></select>}
     </div>
     {view === "parts" ? <>
@@ -74,9 +108,40 @@ function ShopResults() {
         <span>{fitmentOnly ? "Catalogue links only. Confirm year, engine and variant." : "Showing all parts. Use your vehicle to narrow the results."}</span>
         {vehicle && <Link href="/garage">Change vehicle</Link>}
       </div>
-      <div className="px-filter-row">{categories.map((item) => <button className={activeCategory === item ? "active" : ""} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div>
-      <div className="px-results-line"><b>{products.length} parts</b><span>Live PartX catalog · Firebase seller stores</span></div>
-      {products.length ? <div className="px-product-grid px-shop-grid">{products.map((product) => <ProductCard product={product} key={product.id}/>)}</div> : <div className="px-empty"><h2>{fitmentOnly && !vehicle ? "Select your vehicle first" : fitmentOnly ? "No vehicle matches found" : "No matching parts"}</h2><p>{fitmentOnly ? "We haven’t confirmed matches for this selection. Browse all parts and check fitment with the seller." : "Try a different part number, brand, store, or category."}</p>{fitmentOnly && !vehicle && <Link className="px-btn px-btn-red" href="/garage?add=vehicle">Select vehicle</Link>}<button className="px-btn px-btn-dark" onClick={() => { setQuery(""); setCategory("All"); setFitmentOnly(false); }}>{fitmentOnly ? "Browse all parts" : "Clear filters"}</button></div>}
+      <div className={styles.layout}>
+        <aside className={styles.sidebar}>
+          <h2 className={styles.sidebarTitle}>Categories</h2>
+          <div className={styles.desktopCategories}>{categoryLinks}</div>
+          <details className={styles.mobileCategories}>
+            <summary className={activeCategory ? `${styles.mobileToggle} ${styles.withPhoto}` : styles.mobileToggle}>
+              {activeCategory && <Image className={styles.categoryPhoto} src={activeCategory.image} alt="" width={160} height={160} unoptimized/>}
+              <span>{activeCategory?.name ?? "Browse categories"}</span><Icon name="chevron"/>
+            </summary>
+            {categoryLinks}
+          </details>
+        </aside>
+        <section className={styles.results} aria-labelledby="catalog-results">
+          <nav aria-label="Category path" className={styles.path}>
+            {activeCategory ? <Link href={catalogHref()}>All parts</Link> : <span aria-current="page">All parts</span>}
+            {activeCategory && <><Icon name="chevron"/>{activeType ? <Link href={catalogHref(category)}>{activeCategory.name}</Link> : <span aria-current="page">{activeCategory.name}</span>}</>}
+            {activeType && <><Icon name="chevron"/><span aria-current="page">{activeType.name}</span></>}
+          </nav>
+          <h2 id="catalog-results" className={styles.heading}>{activeType?.name ?? activeCategory?.name ?? "All parts"}</h2>
+          {activeCategory && activeCategory.children.length > 0 && <nav className={styles.types} aria-label="Part types">
+            <Link href={catalogHref(category)} aria-current={!subcategory ? "page" : undefined}>All {activeCategory.name.toLowerCase()}</Link>
+            {activeCategory.children.map((type) => <Link key={type.id} href={catalogHref(category, type.id)} aria-current={subcategory === type.id ? "page" : undefined}>{type.name}</Link>)}
+          </nav>}
+          <p className={styles.count} role="status">{products.length} {products.length === 1 ? "part" : "parts"}</p>
+          {products.length > 0
+            ? <div className={`px-product-grid ${styles.productGrid}`}>{products.map((product) => <ProductCard product={product} key={product.id}/>)}</div>
+            : <div className={`px-empty ${styles.empty}`}>
+                <h3>{fitmentOnly && !vehicle ? "Select your vehicle first" : fitmentOnly ? "No vehicle matches found" : query ? "No matching parts" : "No parts listed here yet"}</h3>
+                <p>{fitmentOnly ? "We haven’t confirmed matches for this selection. Browse all parts and check fitment with the seller." : "Try another category, part number or brand."}</p>
+                {fitmentOnly && !vehicle && <Link className="px-btn px-btn-red" href="/garage?add=vehicle">Select vehicle</Link>}
+                <Link className="px-btn px-btn-dark" href={catalogHref(undefined, undefined, true)} onClick={() => { setQuery(""); setFitmentOnly(false); }}>{fitmentOnly ? "Browse all parts" : "Clear filters"}</Link>
+              </div>}
+        </section>
+      </div>
     </> : <>
       <div className="px-results-line"><b>{visibleStores.length} stores</b><span>New seller stores appear here automatically from Firebase</span></div>
       {visibleStores.length ? <div className="px-store-directory">{visibleStores.map((store) => <StoreCard store={store} key={store.id}/>)}</div> : <div className="px-empty"><Icon name="store"/><h2>No matching stores</h2><p>Try a different store name, location, product, or category.</p><button className="px-btn px-btn-dark" onClick={() => setQuery("")}>Clear search</button></div>}

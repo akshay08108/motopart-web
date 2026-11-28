@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { categorySelection, partCategories } from "@/lib/part-categories";
 import type { NewSellerProduct, SellerOrder, SellerOrderItem, SellerOrderStatus, SellerProduct, StorePaymentSettings } from "@/lib/types";
 import { getDemoCatalog } from "@/lib/demo-data";
 import { usePartX } from "./app-provider";
@@ -326,7 +327,6 @@ async function readProductSpreadsheet(file: File, existingProducts: SellerProduc
   const products: NewSellerProduct[] = [];
   const knownSkus = new Set(existingProducts.map((product) => product.sku.trim().toLowerCase()));
   const importedSkus = new Set<string>();
-  const categories = new Set(["Filters", "Brakes", "Batteries", "Engine", "Electrical", "Suspension", "Fluids", "Accessories", "Other"]);
   const conditions = new Set(["New", "Refurbished", "Used"]);
   rows.slice(headerIndex + 1).forEach((row, offset) => {
     const excelRow = headerIndex + offset + 2;
@@ -334,15 +334,16 @@ async function readProductSpreadsheet(file: File, existingProducts: SellerProduc
     const text = (index: number) => String(row[index] ?? "").trim();
     const sku = text(4).toUpperCase();
     if (sku.startsWith("SAMPLE-")) return;
+    const barcode = text(5);
     const product: NewSellerProduct = {
       name: text(0), brand: text(1), category: text(2), partNumber: text(3).toUpperCase(), sku,
-      barcode: text(5) || undefined, condition: text(6) as NewSellerProduct["condition"], mrp: Number(row[7]), sellingPrice: Number(row[8]),
+      ...(barcode ? { barcode } : {}), condition: text(6) as NewSellerProduct["condition"], mrp: Number(row[7]), sellingPrice: Number(row[8]),
       gstRate: Number(row[9]), stock: Number(row[10]), warranty: text(11), compatibility: text(12), description: text(13),
     };
     const missing = expectedHeaders.filter((_, index) => ![5, 9].includes(index) && (row[index] === null || String(row[index]).trim() === ""));
     const rowErrors: string[] = [];
     if (missing.length) rowErrors.push(`missing ${missing.join(", ")}`);
-    if (!categories.has(product.category)) rowErrors.push("invalid category");
+    if (!categorySelection(product.category).category) rowErrors.push("invalid category");
     if (!conditions.has(product.condition)) rowErrors.push("invalid condition");
     if (![0, 5, 12, 18, 28].includes(product.gstRate)) rowErrors.push("invalid GST rate");
     if (!Number.isFinite(product.mrp) || product.mrp < 0) rowErrors.push("invalid MRP");
@@ -372,18 +373,24 @@ function SpreadsheetImportDialog({ spreadsheet, close, submit }: { spreadsheet: 
 function AddProductDialog({ existingProducts, close, submit }: { existingProducts: SellerProduct[]; close: () => void; submit: (product: NewSellerProduct, image?: File) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const selectedCategory = partCategories.find((group) => group.id === categoryId);
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setError("");
     const data = new FormData(event.currentTarget);
+    if (!selectedCategory) { setError("Choose a category."); return; }
+    const { subcategory } = categorySelection(categoryId, String(data.get("subcategory") ?? ""));
+    const barcode = String(data.get("barcode") ?? "").trim();
     const product: NewSellerProduct = {
       returnable: data.get("returnable") === "on",
       replaceable: data.get("replaceable") === "on",
       name: String(data.get("name") ?? "").trim(),
       brand: String(data.get("brand") ?? "").trim(),
-      category: String(data.get("category") ?? "").trim(),
+      category: selectedCategory.name,
+      ...(subcategory ? { subcategory } : {}),
       partNumber: String(data.get("partNumber") ?? "").trim().toUpperCase(),
       sku: String(data.get("sku") ?? "").trim().toUpperCase(),
-      barcode: String(data.get("barcode") ?? "").trim() || undefined,
+      ...(barcode ? { barcode } : {}),
       condition: String(data.get("condition")) as NewSellerProduct["condition"],
       mrp: Number(data.get("mrp")),
       sellingPrice: Number(data.get("sellingPrice")),
@@ -399,7 +406,17 @@ function AddProductDialog({ existingProducts, close, submit }: { existingProduct
     const image = data.get("image");
     try { await submit(product, image instanceof File && image.size ? image : undefined); } catch (reason) { setError(reason instanceof Error ? reason.message : "Product could not be saved. Check Firebase access and try again."); setSaving(false); }
   };
-  return <div className="sx-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><div className="sx-product-dialog" role="dialog" aria-modal="true" aria-labelledby="add-product-title"><header><div><span>SELLER INVENTORY</span><h2 id="add-product-title">Add a product</h2><p>Publish a part with its image, price, stock and fitment details.</p></div><button type="button" onClick={close} aria-label="Close add product form"><Icon name="close"/></button></header><form onSubmit={save}><fieldset className="sx-product-policy"><legend>48-hour policy after delivery</legend><label><input name="returnable" type="checkbox"/>Allow returns</label><label><input name="replaceable" type="checkbox"/>Allow replacements</label></fieldset><label className="sx-product-image-field">Product image <span>JPG, PNG or WebP · maximum 5 MB</span><input name="image" type="file" accept="image/jpeg,image/png,image/webp"/></label><div className="sx-product-form-grid"><label>Product name<input name="name" required placeholder="e.g. BMW Air Filter"/></label><label>Brand<input name="brand" required placeholder="e.g. Bosch"/></label><label>Category<select name="category" required defaultValue=""><option value="" disabled>Select category</option><option>Filters</option><option>Brakes</option><option>Batteries</option><option>Engine</option><option>Electrical</option><option>Suspension</option><option>Fluids</option><option>Accessories</option><option>Other</option></select></label><label>Condition<select name="condition" defaultValue="New"><option>New</option><option>Refurbished</option><option>Used</option></select></label><label>Manufacturer part number<input name="partNumber" required placeholder="e.g. F026400492"/></label><label>Your SKU<input name="sku" required placeholder="e.g. ARR-BMW-AF-001"/></label><label>Barcode / EAN / UPC (optional)<input name="barcode" inputMode="numeric" placeholder="Scan or enter the code"/></label><label>MRP (₹)<input name="mrp" type="number" min="0" required/></label><label>Selling price (₹)<input name="sellingPrice" type="number" min="0" required/></label><label>GST rate<select name="gstRate" defaultValue="18"><option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option><option value="28">28%</option></select></label><label>Available stock<input name="stock" type="number" min="0" required/></label><label>Warranty<input name="warranty" required placeholder="e.g. 6 months"/></label><label>Vehicle compatibility<input name="compatibility" required placeholder="e.g. BMW X1 2020–2024 Diesel"/></label></div><label className="sx-product-description">Description<textarea name="description" required placeholder="Part specifications, fitment notes and box contents"/></label>{error ? <p className="sx-form-error" role="alert">{error}</p> : null}<footer><button type="button" className="sx-secondary" onClick={close}>Cancel</button><button type="submit" className="sx-primary" disabled={saving}>{saving?"Publishing…":"Publish product"}</button></footer></form></div></div>;
+  return <div className="sx-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><div className="sx-product-dialog" role="dialog" aria-modal="true" aria-labelledby="add-product-title"><header><div><span>SELLER INVENTORY</span><h2 id="add-product-title">Add a product</h2><p>Publish a part with its image, price, stock and fitment details.</p></div><button type="button" onClick={close} aria-label="Close add product form"><Icon name="close"/></button></header><form onSubmit={save}><fieldset className="sx-product-policy"><legend>48-hour policy after delivery</legend><label><input name="returnable" type="checkbox"/>Allow returns</label><label><input name="replaceable" type="checkbox"/>Allow replacements</label></fieldset><label className="sx-product-image-field">Product image <span>JPG, PNG or WebP · maximum 5 MB</span><input name="image" type="file" accept="image/jpeg,image/png,image/webp"/></label><div className="sx-product-form-grid"><label>Product name<input name="name" required placeholder="e.g. BMW Air Filter"/></label><label>Brand<input name="brand" required placeholder="e.g. Bosch"/></label><label>Category<select name="category" required value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+          <option value="" disabled>Select category</option>
+          {partCategories.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+        </select></label>
+        {selectedCategory && selectedCategory.children.length > 0 && <label>Part type (optional)
+          <select name="subcategory" key={categoryId} defaultValue="">
+            <option value="">Select part type</option>
+            {selectedCategory.children.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+          </select>
+        </label>}
+        <label>Condition<select name="condition" defaultValue="New"><option>New</option><option>Refurbished</option><option>Used</option></select></label><label>Manufacturer part number<input name="partNumber" required placeholder="e.g. F026400492"/></label><label>Your SKU<input name="sku" required placeholder="e.g. ARR-BMW-AF-001"/></label><label>Barcode / EAN / UPC (optional)<input name="barcode" inputMode="numeric" placeholder="Scan or enter the code"/></label><label>MRP (₹)<input name="mrp" type="number" min="0" required/></label><label>Selling price (₹)<input name="sellingPrice" type="number" min="0" required/></label><label>GST rate<select name="gstRate" defaultValue="18"><option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option><option value="28">28%</option></select></label><label>Available stock<input name="stock" type="number" min="0" required/></label><label>Warranty<input name="warranty" required placeholder="e.g. 6 months"/></label><label>Vehicle compatibility<input name="compatibility" required placeholder="e.g. BMW X1 2020–2024 Diesel"/></label></div><label className="sx-product-description">Description<textarea name="description" required placeholder="Part specifications, fitment notes and box contents"/></label>{error ? <p className="sx-form-error" role="alert">{error}</p> : null}<footer><button type="button" className="sx-secondary" onClick={close}>Cancel</button><button type="submit" className="sx-primary" disabled={saving}>{saving?"Publishing…":"Publish product"}</button></footer></form></div></div>;
 }
 
 function SellerTitle({ title,subtitle }: { title:string;subtitle:string }) { return <div className="sx-page-title"><h1>{title}</h1><p>{subtitle}</p></div>; }

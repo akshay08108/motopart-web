@@ -352,25 +352,16 @@
   box-shadow: 0 5px 18px rgba(12, 14, 18, .09);
 }
 
-.categoryIcon {
+.categoryPhoto {
   position: relative;
   z-index: 1;
-  display: grid;
-  width: 54px;
-  aspect-ratio: 1;
-  flex-shrink: 0;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--px-red) 13%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--px-red) 7%, var(--px-card));
-  color: var(--px-red);
-}
-
-.categoryIcon svg { width: 31px; height: 31px; }
-
-@media (hover: hover) and (prefers-reduced-motion: no-preference) {
-  .categoryIcon svg { transition: transform 220ms ease; }
-  .category:hover .categoryIcon svg { transform: translateY(-2px) rotate(-5deg); }
+  width: 62px;
+  height: 62px;
+  flex: none;
+  object-fit: contain;
+  border: 1px solid var(--px-line);
+  border-radius: 10px;
+  background: #fafafa;
 }
 
 .categoryText {
@@ -528,8 +519,7 @@
     padding: 5px;
   }
 
-  .categoryIcon { width: 44px; border-radius: 10px; }
-  .categoryIcon svg { width: 27px; height: 27px; }
+  .categoryPhoto { width: 52px; height: 52px; border-radius: 8px; }
 
   .categoryText strong {
     font-size: 12px;

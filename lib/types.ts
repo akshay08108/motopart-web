@@ -26,6 +26,7 @@ export type Product = {
   rating: number;
   reviews: number;
   category: string;
+  subcategory?: string;
   imageIndex: number;
   imageUrl?: string;
   barcode?: string;
@@ -45,6 +46,7 @@ export type SellerProduct = {
   name: string;
   brand: string;
   category: string;
+  subcategory?: string;
   partNumber: string;
   sku: string;
   barcode?: string;
