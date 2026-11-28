@@ -541,6 +541,24 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  .categoryPhoto {
+    transition: transform .22s ease-out;
+  }
+
+  .category:focus-visible .categoryPhoto {
+    transform: translateY(-2px) rotate(-5deg) scale(1.04);
+  }
+
+  @media (hover: hover) {
+    .category:hover .categoryPhoto {
+      transform: translateY(-2px) rotate(-5deg) scale(1.04);
+    }
+  }
+
+  .category:active .categoryPhoto {
+    transform: scale(.94);
+  }
+
   .heroGear {
     animation: heroGearTurn 36s linear infinite;
   }
