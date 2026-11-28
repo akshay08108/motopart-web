@@ -2,7 +2,8 @@ export class DeliveryError extends Error {
   constructor(code, message) { super(message); this.code = code; this.name = "DeliveryError"; }
 }
 
-const activeStates = ["ASSIGNED", "ACCEPTED", "PICKED_UP"];
+export const ACTIVE_DELIVERY_STATES = Object.freeze(["ASSIGNED", "ACCEPTED", "PICKED_UP"]);
+export const RIDER_HEARTBEAT_MAX_AGE_MS = 120_000;
 const fail = (code, message) => { throw new DeliveryError(code, message); };
 const text = (value, max = 160) => typeof value === "string" ? value.trim().slice(0, max) : "";
 const millis = (value) => value?.toMillis?.() ?? 0;
@@ -112,11 +113,11 @@ export function createRiderCore(database, runtime) {
         if (requestRef && (!request || request.state !== "REQUESTED")) fail("failed-precondition", "This request is no longer awaiting assignment.");
         if (!request && !["delivery", "garage"].includes(order.fulfilment)) fail("failed-precondition", "Self-pickup orders do not need riders.");
         if (!request && (order.orderStatus !== "PLACED" || order.status !== "Packed" || !["PAID", "PAYMENT_DUE"].includes(order.paymentStatus))) fail("failed-precondition", "Pack the confirmed order before assigning a rider.");
-        if (!rider?.active || !riderUser.data()?.roles?.includes("rider") || !rider.online || Date.now() - millis(rider.lastSeenAt) > 120_000) fail("failed-precondition", "This rider is offline or unavailable. Ask them to open the rider portal.");
+        if (!rider?.active || !riderUser.data()?.roles?.includes("rider") || !rider.online || Date.now() - millis(rider.lastSeenAt) > RIDER_HEARTBEAT_MAX_AGE_MS) fail("failed-precondition", "This rider is offline or unavailable. Ask them to open the rider portal.");
         if (rider.activeDeliveryId) fail("already-exists", "This rider already has an active delivery.");
         if (!request && order.riderDeliveryId) {
           const existing = (await tx.get(database.doc(`deliveries/${documentId(order.riderDeliveryId)}`))).data();
-          if (existing && (activeStates.includes(existing.state) || existing.state === "DELIVERED")) fail("already-exists", "This order already has a rider. Cancel the assignment before choosing another rider.");
+          if (existing && (ACTIVE_DELIVERY_STATES.includes(existing.state) || existing.state === "DELIVERED")) fail("already-exists", "This order already has a rider. Cancel the assignment before choosing another rider.");
         }
         const storeLocation = location(store.location, store.address);
         const customerLocation = request ? location(request.customerLocation) : location(order.deliveryLocation);
@@ -208,7 +209,7 @@ export function createRiderCore(database, runtime) {
       if (!delivery || delivery.riderId !== uid || !rider?.active) fail("permission-denied", "This delivery is not assigned to your active rider account.");
       if (action === "complete" && delivery.state === "DELIVERED") return { ok: true };
       if (action === "exchange" && delivery.exchangeAt) return { ok: true };
-      if (rider.activeDeliveryId !== deliveryId || !activeStates.includes(delivery.state)) fail("failed-precondition", "This delivery is no longer active.");
+      if (rider.activeDeliveryId !== deliveryId || !ACTIVE_DELIVERY_STATES.includes(delivery.state)) fail("failed-precondition", "This delivery is no longer active.");
       const orderRef = database.doc(`orders/${delivery.orderId}`);
       const order = (await tx.get(orderRef)).data();
       const requestRef = delivery.requestId == null ? null : database.doc(`orders/${delivery.orderId}/afterSales/${delivery.requestId}`);

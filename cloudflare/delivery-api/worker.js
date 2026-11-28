@@ -5,9 +5,11 @@ import { createRazorpay, paymentEndpoints } from "./razorpay.js";
 import { createRoadRouter, RoutingError } from "../../lib/road-routing.ts";
 import { createRouteQuote } from "./route-quote.js";
 import { createTracking, trackingEndpoints } from "./tracking.js";
+import { adminEndpoints, createAdminProfileCache, handleAdminEndpoint } from "./admin.js";
+export { PartXAdminActivity } from "./admin-activity.js";
 
 const operations = { dispatchPartXDelivery: "dispatch", updatePartXDelivery: "riderAction", getPartXDeliveryCode: "customerCode", requestPartXAfterSale: "requestAfterSale" };
-const statuses = { "invalid-argument": 400, unauthenticated: 401, "permission-denied": 403, "not-found": 404, "failed-precondition": 409, "already-exists": 409, "resource-exhausted": 429, unavailable: 503 };
+const statuses = { "invalid-argument": 400, unauthenticated: 401, "permission-denied": 403, "admin-unverified-email": 403, "not-found": 404, "failed-precondition": 409, "already-exists": 409, "resource-exhausted": 429, unavailable: 503 };
 const json = (value, status, cors = {}) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", ...cors } });
 const runtime = {
   randomUUID: () => crypto.randomUUID(), serverTimestamp: () => SERVER_TIMESTAMP,
@@ -58,6 +60,7 @@ function notificationFor(name, input, delivery) {
 
 export function createWorker({ fetcher = fetch } = {}) {
   const auth = createGoogleAuth(fetcher);
+  const loadProfile = createAdminProfileCache();
   const routeLimits = new Map();
   let routingKey, router;
   const getRouter = (env) => {
@@ -111,6 +114,20 @@ export function createWorker({ fetcher = fetch } = {}) {
       if (request.method === "GET" && ["", "health"].includes(name)) {
         try { readServiceAccount(env); return json({ service: "PartX delivery API", version: "cloudflare-v1", configuration: "present" }, 200, cors); }
         catch { return json({ service: "PartX delivery API", version: "cloudflare-v1", configuration: "required" }, 503, cors); }
+      }
+      if (adminEndpoints.has(name)) {
+        if (request.method !== "POST") return json({ error: { code: "invalid-argument", message: "Use POST for admin and activity requests." } }, 405, { ...cors, Allow: "POST, OPTIONS" });
+        try {
+          const authorization = request.headers.get("Authorization");
+          if (!authorization?.startsWith("Bearer ")) throw new DeliveryError("unauthenticated", "Sign in to continue.");
+          const database = () => createFirestoreRest({ projectId: env.FIREBASE_PROJECT_ID, accessToken: () => auth.accessToken(env), fetcher });
+          const data = await handleAdminEndpoint({ name, authorization, auth, env, database, loadProfile, readInput: () => readInput(request) });
+          return json({ data }, 200, cors);
+        } catch (error) {
+          if (error instanceof DeliveryError) return json({ error: { code: error.code, message: error.message } }, statuses[error.code] ?? 500, cors);
+          console.error("PartX admin or activity request failed", typeof error.code === "string" ? error.code : "INTERNAL");
+          return json({ error: { code: "unavailable", message: "This PartX admin service is temporarily unavailable." } }, 503, cors);
+        }
       }
       const payment = paymentEndpoints.has(name);
       if (!Object.hasOwn(operations, name) && !payment && name !== "quotePartXRoute" && !trackingEndpoints.has(name)) return json({ error: { code: "not-found", message: "Delivery endpoint not found." } }, 404, cors);

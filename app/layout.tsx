@@ -15,11 +15,7 @@ import "./seller-payments.css";
 import "./typography.css";
 import "./icon-system.css";
 import type { Metadata, Viewport } from "next";
-import { AppShell } from "@/components/partx/app-shell";
-import { PartXProvider } from "@/components/partx/app-provider";
-import { SellerProvider } from "@/components/partx/seller-provider";
-import { CapacitorBridge } from "@/components/partx/capacitor-bridge";
-import { OpeningAnimation } from "@/components/partx/opening-animation";
+import { PartXSite } from "@/components/partx/site";
 
 export const metadata: Metadata = {
   title: { default: "PartX · The right part. The first time.", template: "%s · PartX" },
@@ -40,7 +36,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth">
-      <body><OpeningAnimation><PartXProvider><SellerProvider><CapacitorBridge/><AppShell>{children}</AppShell></SellerProvider></PartXProvider></OpeningAnimation></body>
+      <body><PartXSite>{children}</PartXSite></body>
     </html>
   );
 }

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 import { before, beforeEach, after, test } from "node:test";
 import { createRequire } from "node:module";
-import { createWorker } from "./worker.js";
+import { createWorker, PartXAdminActivity } from "./worker.js";
 import { createFirestoreRest } from "./firestore-rest.js";
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) throw new Error("Worker tests require the local Firestore emulator.");
@@ -72,7 +73,7 @@ before(async () => {
 });
 beforeEach(async () => {
   await Promise.all(pending.splice(0));
-  for (const name of ["users", "riders", "stores", "orders", "products", "razorpayOrders", "deliveries", "deliverySecrets", "notificationDevices"]) await db.recursiveDelete(db.collection(name));
+  for (const name of ["users", "riders", "stores", "orders", "products", "razorpayOrders", "deliveries", "deliverySecrets", "notificationDevices", "tickets"]) await db.recursiveDelete(db.collection(name));
   gatewayOrder = gatewayPayment = gatewayTransfer = null; gatewayCreates = 0;
   databaseRequests = 0; notifications = []; abortNextCommit = false; routeBroken = false; worker = createWorker({ fetcher: testFetch });
   const order = { customerId: "customer", sellerId: "seller", storeId: "store", customer: { name: "Customer", phone: "+919999999999" }, status: "Packed", stage: "Preparing", orderStatus: "PLACED", paymentStatus: "PAYMENT_DUE", paymentMethod: "cod", fulfilment: "delivery", totalAmount: 199, total: 199, deliveryLocation: point, items: [{ productName: "Filter", partNumber: "F1", quantity: 2 }, { productName: "Oil", partNumber: "O1", quantity: 1 }] };
@@ -408,4 +409,138 @@ test("location publishing validates GPS, pickup, rider status and self-registrat
   assert.equal((await call("publishPartXRiderLocation","rider",fix,{email_verified:true})).status,200);
   await db.doc("riders/rider").update({activeDeliveryId:"different-ride"});
   assert.equal((await call("publishPartXRiderLocation","rider",fix,{email_verified:true})).status,403);
+});
+
+const owner = "partx-owner";
+const verified = { email_verified: true };
+
+test("only the configured and verified Firebase identity can read admin data", async () => {
+  const config = { ...env, PARTX_ADMIN_UID: owner };
+  const read = (uid, claims, settings = config) => call("partxAdmin", uid, { view: "session" }, claims, settings);
+  assert.equal((await read(null, {})).status, 401);
+  for (const uid of ["customer", "seller", "rider"]) assert.equal((await read(uid, { ...verified, admin: true })).status, 403);
+  assert.equal((await read(owner, {})).body.error.code, "admin-unverified-email");
+  assert.equal((await read(owner, verified, env)).status, 403);
+  assert.equal((await read(owner, { ...verified, aud: "another-project" })).status, 401);
+  assert.deepEqual(await read(owner, verified), { status: 200, body: { data: { owner: true } } });
+  assert.equal(databaseRequests, 0);
+});
+
+test("overview, cursor pages, IDs, related records and payment status use projected Firestore data", async () => {
+  const config = { ...env, PARTX_ADMIN_UID: owner };
+  const read = async (data) => {
+    const result = await call("partxAdmin", owner, data, verified, config);
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    return result.body.data;
+  };
+  const now = Timestamp.now();
+  await Promise.all([
+    db.doc("users/customer").update({ name: "Akshay Sample", email: "sample@example.com", createdAt: now, internalSecret: "DO-NOT-SHOW" }),
+    db.doc("tickets/ticket").set({ status: "Open", orderId: "order" }),
+    db.doc("orders/order").update({ createdAt: now, trackingId: "PX-TEST-TRACKING", sellerUpiIdSnapshot: "DO-NOT-SHOW", paymentReference: "DO-NOT-SHOW", riderDeliveryId: "finished", codCollectedAt: now }),
+    db.doc("orders/order/afterSales/replacement").set({ kind: "replacement", state: "REQUESTED", item: { productName: "Sample part", partNumber: "P123", quantity: 1 } }),
+    db.doc("orders/other-order").update({ createdAt: now, paymentMethod: "razorpay", paymentStatus: "PAID", paymentMode: "test" }),
+    db.doc("orders/waiting").set({ paymentMethod: "upi", paymentStatus: "PAYMENT_SUBMITTED" }),
+    db.doc("orders/seller-verified").set({ paymentMethod: "upi", paymentStatus: "PAID", paymentVerifiedAt: now }),
+    db.doc("deliveries/finished").set({ state: "DELIVERED", orderId: "order", riderId: "rider", codCollected: true, encryptedProof: "DO-NOT-SHOW" }),
+    db.doc("deliveries/stalled").set({ state: "ACCEPTED", orderId: "waiting", updatedAt: Timestamp.fromMillis(Date.now() - 60 * 60_000) }),
+    db.doc("riders/pending").set({ activationPending: true, name: "Test Rider Pending" }),
+    db.doc("riders/stale").set({ active: true, online: true, lastSeenAt: Timestamp.fromMillis(Date.now() - 125_000) }),
+    db.doc("riders/busy").set({ active: true, online: true, activeDeliveryId: "current", lastSeenAt: now }),
+  ]);
+  const overview = await read({ view: "overview" });
+  assert.equal(overview.customers, 2);
+  assert.equal(overview.sellers, 1);
+  assert.equal(overview.riders, 2);
+  assert.equal(overview.todayOrders, 2);
+  assert.equal(overview.activeDeliveries, 1);
+  assert.deepEqual(overview.attention, { stalled: 1, activations: 1, tickets: 1, verification: 1 });
+  assert.deepEqual((await read({ view: "list", kind: "attention", queue: "stalled" })).rows.map(({ id }) => id), ["stalled"]);
+  assert.deepEqual((await read({ view: "list", kind: "people", search: "Akshay", searchBy: "name" })).rows.map(({ id }) => id), ["customer"]);
+  assert.deepEqual((await read({ view: "list", kind: "people", search: "SAMPLE@example.com", searchBy: "email" })).rows.map(({ id }) => id), ["customer"]);
+  assert.equal((await read({ view: "list", kind: "riders" })).rows.find(({ id }) => id === "rider").status, "Available");
+  assert.equal((await read({ view: "list", kind: "riders" })).rows.find(({ id }) => id === "stale").status, "Offline");
+  assert.equal((await read({ view: "list", kind: "riders" })).rows.find(({ id }) => id === "busy").status, "On a delivery");
+  assert.equal((await read({ view: "list", kind: "riders" })).rows.find(({ id }) => id === "pending").status, "Pending activation");
+  const orderSearch = await read({ view: "list", kind: "orders", search: "px-test-tracking", searchBy: "trackingId" });
+  assert.equal(orderSearch.rows[0].payment, "COD collected");
+  const order = await read({ view: "detail", kind: "orders", id: "order" });
+  assert.equal(order.record.payment, "COD collected");
+  assert.equal(order.related.afterSales[0].kind, "replacement");
+  assert.equal(order.related.deliveries[0].riderId, "rider");
+  assert.equal(JSON.stringify(order).includes("DO-NOT-SHOW"), false);
+  assert.equal(JSON.stringify(await read({ view: "detail", kind: "people", id: "customer" })).includes("DO-NOT-SHOW"), false);
+  assert.equal((await read({ view: "detail", kind: "orders", id: "other-order" })).record.payment, "Razorpay test · Confirmed");
+  assert.equal((await read({ view: "detail", kind: "orders", id: "waiting" })).record.payment, "UPI awaiting seller verification");
+  assert.equal((await read({ view: "detail", kind: "orders", id: "seller-verified" })).record.payment, "UPI confirmed by seller");
+
+  await Promise.all(Array.from({ length: 27 }, (_, i) => db.doc(`stores/store-${i}`).set({ name: `Sample Store ${String(i).padStart(2, "0")}` })));
+  for (const input of [{}, { search: "Sample", searchBy: "name" }]) {
+    const first = await read({ view: "list", kind: "stores", ...input });
+    assert.equal(first.rows.length, 25);
+    assert.ok(first.next);
+    const second = await read({ view: "list", kind: "stores", cursor: first.next, ...input });
+    assert.equal(new Set([...first.rows, ...second.rows].map(({ id }) => id)).size, input.search ? 27 : 28);
+    assert.equal(second.next, null);
+  }
+});
+
+function createActivityFixture() {
+  const sqlite = new DatabaseSync(":memory:");
+  let alarmTime = null;
+  const storage = {
+    sql: {},
+    getAlarm: async () => alarmTime,
+    setAlarm: async (when) => { alarmTime = when; },
+    transactionSync: (callback) => {
+      sqlite.exec("BEGIN");
+      try { callback(); sqlite.exec("COMMIT"); }
+      catch (error) { sqlite.exec("ROLLBACK"); throw error; }
+    },
+  };
+  storage.sql.exec = (query, ...args) => {
+    const statement = sqlite.prepare(query);
+    if (!query.trim().startsWith("SELECT")) { statement.run(...args); return; }
+    return { toArray: () => statement.all(...args) };
+  };
+  const instance = new PartXAdminActivity({ storage, blockConcurrencyWhile: (callback) => callback() });
+  return { instance, binding: {
+    idFromName: (name) => name,
+    get: () => ({ fetch: (url, options) => instance.fetch(new Request(url, options)) }),
+  }, close: () => sqlite.close() };
+}
+
+test("activity is verified, deduplicated across devices, and cleaned up after the retention window", async (t) => {
+  const activity = createActivityFixture();
+  t.after(activity.close);
+  const config = { ...env, PARTX_ADMIN_UID: owner, PARTX_ADMIN_ACTIVITY: activity.binding };
+  const now = Date.now();
+  const signedInAt = Math.floor(now / 1000);
+  await db.doc("users/customer").update({ activeRole: "customer", name: "Test Customer" });
+  await db.doc("users/rider").update({ activeRole: "rider", name: "Test Rider" });
+  assert.equal((await call("recordPartXSignIn", null, {}, {}, config)).status, 401);
+  assert.equal((await call("checkInPartXPresence", "no-partx-profile", {}, {}, config)).status, 403);
+  for (const offset of [0, 1]) {
+    const tokenClaims = { auth_time: signedInAt, iat: signedInAt - offset };
+    assert.equal((await call("recordPartXSignIn", "customer", { uid: "seller" }, tokenClaims, config)).status, 200);
+    assert.equal((await call("checkInPartXPresence", "customer", { role: "seller" }, tokenClaims, config)).status, 200);
+  }
+  assert.equal((await call("recordPartXSignIn", "rider", {}, { auth_time: signedInAt - 600 }, config)).status, 200);
+  assert.equal((await call("checkInPartXPresence", "rider", {}, {}, config)).status, 200);
+  assert.equal((await call("partxAdmin", "customer", { view: "activity" }, verified, config)).status, 403);
+  const read = () => call("partxAdmin", owner, { view: "activity" }, verified, config);
+  const first = (await read()).body.data;
+  assert.deepEqual(first.signIns, [{ uid: "customer", name: "Test Customer", role: "customer", signedInAt: signedInAt * 1000 }]);
+  assert.deepEqual(first.counts, [{ role: "customer", total: 1 }]);
+  const originalClock = Date.now;
+  try {
+    Date.now = () => now + 150_100;
+    assert.equal((await read()).body.data.presence.length, 0);
+    Date.now = () => now + 31 * 86_400_000;
+    await activity.instance.alarm();
+    const archive = await activity.instance.fetch(new Request("https://activity.internal/read", { method: "POST", body: "{}" }));
+    assert.equal((await archive.json()).signIns.length, 0);
+    const latest = await activity.instance.fetch(new Request("https://activity.internal/latest", { method: "POST", body: '{"uids":["customer"]}' }));
+    assert.deepEqual(await latest.json(), { customer: signedInAt * 1000 });
+  } finally { Date.now = originalClock; }
 });

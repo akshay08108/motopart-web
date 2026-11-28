@@ -14,6 +14,7 @@ import { browserNotificationPermission, registerPushNotifications, unregisterPus
 import { formatDeliveryTime } from "@/lib/delivery-time";
 import { freeDeliverySlots, hasMapPin, occupiesDeliveryOffer, quoteDelivery } from "@/lib/delivery-pricing";
 import { deliveryCall } from "@/lib/rider";
+import { recordPartXSignIn, usePartXPresence } from "@/lib/partx-presence";
 import type { RoadRoute } from "@/lib/road-routing";
 
 import { removePurchasedItems } from "@/lib/cart-checkout";
@@ -127,6 +128,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   const [customerDevice, setCustomerDevice] = useState(false);
   const [verifiedUid, setVerifiedUid] = useState<string | null>(null);
   const [user, setUser] = useState<CustomerUser | null>(null);
+  usePartXPresence(user?.id, user?.activeRole);
   const emailVerified = Boolean(verifiedUid && verifiedUid === user?.id);
   const [hydrated, setHydrated] = useState(false);
   const [firebaseHydrated, setFirebaseHydrated] = useState(false);
@@ -742,6 +744,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         const activeProfile = { ...profile, activeRole: role };
         setUser(activeProfile);
         writeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY, JSON.stringify(activeProfile));
+        recordPartXSignIn(credential.user);
         return "ok";
       } catch (reason) {
         if (signedInUid && firebaseAuth.currentUser?.uid === signedInUid) await firebaseSignOut(firebaseAuth).catch(() => undefined);

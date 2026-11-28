@@ -9,5 +9,9 @@
     "FIREBASE_PROJECT_ID": "partx-production",
     "ALLOWED_ORIGINS": "https://motopart-web.vercel.app,https://localhost"
   },
+  "durable_objects": {
+    "bindings": [{ "name": "PARTX_ADMIN_ACTIVITY", "class_name": "PartXAdminActivity" }]
+  },
+  "migrations": [{ "tag": "partx-admin-activity-v1", "new_sqlite_classes": ["PartXAdminActivity"] }],
   "observability": { "enabled": true }
 }

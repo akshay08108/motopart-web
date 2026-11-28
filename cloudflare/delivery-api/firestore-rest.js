@@ -17,6 +17,9 @@ export function decodeValue(value) {
   if ("integerValue" in value) return Number(value.integerValue);
   if ("doubleValue" in value) return value.doubleValue;
   if ("timestampValue" in value) return new RestTimestamp(Date.parse(value.timestampValue));
+  if ("geoPointValue" in value) return value.geoPointValue;
+  if ("referenceValue" in value) return value.referenceValue;
+  if ("bytesValue" in value) return value.bytesValue;
   if ("arrayValue" in value) return (value.arrayValue.values ?? []).map(decodeValue);
   if ("mapValue" in value) return decodeFields(value.mapValue.fields ?? {});
   throw new Error("Unsupported database value");
@@ -112,6 +115,21 @@ export function createFirestoreRest({ projectId, accessToken, fetcher = fetch, b
     }
     throw new FirestoreRestError("ABORTED", 409);
   }
+  async function queryDocuments(structuredQuery, parent = "") {
+    const rows = await request(`${root}${parent ? `/${document(parent).path}` : ""}:runQuery`, { structuredQuery });
+    return rows.filter((row) => row.document).map(({ document: result }) => ({
+      id: result.name.split("/").at(-1),
+      name: result.name,
+      data: decodeFields(result.fields ?? {}),
+      rawFields: result.fields ?? {},
+    }));
+  }
+  async function countDocuments(structuredQuery) {
+    const rows = await request(`${root}:runAggregationQuery`, {
+      structuredAggregationQuery: { structuredQuery, aggregations: [{ alias: "total", count: {} }] },
+    });
+    return Number(rows.find((row) => row.result)?.result.aggregateFields.total.integerValue ?? 0);
+  }
   async function notificationDevices(userId) {
     const rows = await request(`${root}:runQuery`, { structuredQuery: {
       from: [{ collectionId: "notificationDevices" }],
@@ -128,5 +146,5 @@ export function createFirestoreRest({ projectId, accessToken, fetcher = fetch, b
     } });
     return rows.filter((row) => row.document).map((row) => decodeFields(row.document.fields ?? {}));
   }
-  return { doc: document, runTransaction, notificationDevices, ordersForCustomer, removeDevice: (name) => request(name, undefined, "DELETE") };
+  return { doc: document, queryDocuments, countDocuments, runTransaction, notificationDevices, ordersForCustomer, removeDevice: (name) => request(name, undefined, "DELETE") };
 }

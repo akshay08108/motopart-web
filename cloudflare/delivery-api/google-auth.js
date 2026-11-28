@@ -21,7 +21,7 @@ export function createGoogleAuth(fetcher = fetch) {
   let accessCache = { credential: "", value: "", expiresAt: 0 };
   let signingKey;
   let signingKeySource;
-  async function verifyFirebaseToken(token, projectId, verifiedEmailRequired = false) {
+  async function verifyFirebaseIdentity(token, projectId, verifiedEmailRequired = false) {
     try {
       if (typeof token !== "string" || token.length > 8192) throw new Error();
       const parts = token.split(".");
@@ -44,7 +44,7 @@ export function createGoogleAuth(fetcher = fetch) {
       const now = Math.floor(Date.now() / 1000);
       if (payload.aud !== projectId || payload.iss !== `https://securetoken.google.com/${projectId}` || typeof payload.sub !== "string" || !payload.sub || payload.sub.length > 128 || typeof payload.exp !== "number" || payload.exp <= now || typeof payload.iat !== "number" || payload.iat > now + 30 || typeof payload.auth_time !== "number" || payload.auth_time > now + 30) throw new Error();
       if (verifiedEmailRequired && payload.email_verified !== true) throw new DeliveryError("permission-denied", "Verify your email before continuing.");
-      return payload.sub;
+      return { uid: payload.sub, signedInAt: payload.auth_time * 1000, emailVerified: payload.email_verified === true };
     } catch (error) {
       if (error instanceof DeliveryError) throw error;
       throw new DeliveryError("unauthenticated", "Your sign-in session is invalid or expired. Sign in again.");
@@ -72,5 +72,9 @@ export function createGoogleAuth(fetcher = fetch) {
     accessCache = { credential: env.FIREBASE_SERVICE_ACCOUNT, value: result.access_token, expiresAt: Date.now() + Math.min(result.expires_in ?? 3600, 3600) * 1000 };
     return accessCache.value;
   }
-  return { verifyFirebaseToken, accessToken };
+  return {
+    verifyFirebaseIdentity,
+    verifyFirebaseToken: async (...args) => (await verifyFirebaseIdentity(...args)).uid,
+    accessToken,
+  };
 }
