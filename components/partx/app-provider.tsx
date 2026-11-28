@@ -14,7 +14,7 @@ import { browserNotificationPermission, registerPushNotifications, unregisterPus
 import { formatDeliveryTime } from "@/lib/delivery-time";
 import { freeDeliverySlots, hasMapPin, occupiesDeliveryOffer, quoteDelivery } from "@/lib/delivery-pricing";
 import { deliveryCall } from "@/lib/rider";
-import { recordPartXSignIn, usePartXPresence } from "@/lib/partx-presence";
+import { recordPartXGuestSession, recordPartXSignIn, usePartXPresence } from "@/lib/partx-presence";
 import type { RoadRoute } from "@/lib/road-routing";
 
 import { removePurchasedItems } from "@/lib/cart-checkout";
@@ -170,7 +170,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
 
   const continueAsGuest = useCallback(() => {
     if (firebaseAuth.currentUser) return false;
-    startGuest();
+    recordPartXGuestSession(startGuest());
     return true;
   }, [startGuest]);
   const changeCart = useCallback((change: (items: CartLine[]) => CartLine[], checkoutId?: string) => {

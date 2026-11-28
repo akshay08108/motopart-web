@@ -199,8 +199,26 @@ function OverviewPanel({ fetchAdmin, navigate }: { fetchAdmin: FetchAdmin; navig
   </>;
 }
 
-function ActivityPanel({ fetchAdmin, open }: { fetchAdmin: FetchAdmin; open: (id: string) => void }) {
-  const { data, error, reload } = useAdminData<Activity>(fetchAdmin, { view: "activity" }, 10_000);
+const activityFilters = [
+  { id: "all", label: "All activity" },
+  { id: "accounts", label: "Account sign-ins" },
+  { id: "guests", label: "Guest sessions" },
+] as const;
+type ActivityFilter = typeof activityFilters[number]["id"];
+type ActivityProps = { fetchAdmin: FetchAdmin; open: (id: string) => void };
+
+function ActivityPanel({ fetchAdmin, open }: ActivityProps) {
+  const [activity, setActivity] = useState<ActivityFilter>("all");
+  return <>
+    <div className={styles.filters} role="group" aria-label="Activity filter">
+      {activityFilters.map(({ id, label }) => <button type="button" key={id} aria-pressed={activity === id} onClick={() => setActivity(id)}>{label}</button>)}
+    </div>
+    <ActivityFeed key={activity} activity={activity} fetchAdmin={fetchAdmin} open={open}/>
+  </>;
+}
+
+function ActivityFeed({ activity, fetchAdmin, open }: ActivityProps & { activity: ActivityFilter }) {
+  const { data, error, reload } = useAdminData<Activity>(fetchAdmin, { view: "activity", activity }, 10_000);
   const [history, setHistory] = useState<{ rows: SignIn[]; next: SignIn | null }>({ rows: [], next: null });
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [historyError, setHistoryError] = useState("");
@@ -213,22 +231,25 @@ function ActivityPanel({ fetchAdmin, open }: { fetchAdmin: FetchAdmin; open: (id
     setLoadingOlder(true);
     setHistoryError("");
     try {
-      const result = await fetchAdmin<Activity>({ view: "activity", before });
+      const result = await fetchAdmin<Activity>({ view: "activity", activity, before });
       setHistory({ rows: [...history.rows, ...result.signIns], next: result.next });
     } catch (error) {
-      setHistoryError(error instanceof Error ? error.message : "Could not load older sign-ins.");
+      setHistoryError(error instanceof Error ? error.message : "Could not load older activity.");
     } finally { setLoadingOlder(false); }
   }
   return <>
     <div className={styles.update}><span>{data ? `Updated ${formatTime(data.asOf)} IST · refreshes every 10 seconds` : "Refreshes every 10 seconds"}</span><button type="button" className={styles.secondary} onClick={reload}>Refresh</button></div>
     <Feedback error={error} loading={!data} reload={reload}/>
     <div className={styles.split}>
-      <Panel title="Recent sign-ins">
-        <p className={styles.panelNote}>30-day history from updated PartX apps.</p>
-        {!signIns.length && data && <p className={styles.empty}>No sign-ins recorded yet.</p>}
-        <ul className={styles.activity}>{signIns.map(({ uid, name, role, signedInAt }) => <li key={`${uid}:${signedInAt}`}><button onClick={() => open(uid)}>{name}</button><span>{role} · {formatTime(signedInAt)}</span></li>)}</ul>
+      <Panel title={activity === "guests" ? "Guest sessions" : activity === "accounts" ? "Recent sign-ins" : "Recent activity"}>
+        <p className={styles.panelNote}>{activity === "guests" ? "Anonymous sessions started through Continue as guest. History covers the past 30 days." : "30-day history from updated PartX apps."}</p>
+        {!signIns.length && data && <p className={styles.empty}>{activity === "guests" ? "No guest sessions recorded yet." : "No activity recorded yet."}</p>}
+        <ul className={styles.activity}>{signIns.map(({ uid, name, role, signedInAt }) => <li key={`${uid}:${signedInAt}`}>
+          {role === "guest" ? <strong>{name}</strong> : <button onClick={() => open(uid)}>{name}</button>}
+          <span>{role === "guest" ? "Guest" : role} · {formatTime(signedInAt)}</span>
+        </li>)}</ul>
         {historyError && <p className={styles.error} role="alert">{historyError}</p>}
-        {before && <div className={styles.footer}><button className={styles.secondary} disabled={loadingOlder} onClick={() => void older()}>{loadingOlder ? "Loading…" : "Older sign-ins"}</button></div>}
+        {before && <div className={styles.footer}><button className={styles.secondary} disabled={loadingOlder} onClick={() => void older()}>{loadingOlder ? "Loading…" : "Older activity"}</button></div>}
       </Panel>
       <Panel title="Recently active">
         <div className={styles.presenceCounts}>{clients.map((role) => <div key={role}><b>{data ? data.counts.find((row) => row.role === role)?.total ?? 0 : "—"}</b><span>{role === "customer" ? "Customers" : "Sellers"}</span></div>)}</div>

@@ -6,11 +6,25 @@ export class PartXAdminError extends Error {
 
 type Endpoint = "partxAdmin" | "recordPartXSignIn" | "checkInPartXPresence";
 
-export async function requestPartXAdmin<T>(user: User, endpoint: Endpoint, data: object = {}, signal?: AbortSignal): Promise<T> {
+function partXActivityBase() {
   const base = (process.env.NEXT_PUBLIC_PARTX_DELIVERY_API_URL || "https://partx-delivery-api.akshaysinghkam.workers.dev").replace(/\/$/, "");
   const url = new URL(base);
   const local = process.env.NODE_ENV === "development" && ["localhost", "127.0.0.1"].includes(url.hostname);
   if (url.protocol !== "https:" && !local) throw new Error("PartX needs a secure connection.");
+  return base;
+}
+
+export async function requestPartXGuestSession(sessionId: string) {
+  const response = await fetch(`${partXActivityBase()}/recordPartXGuestSession`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data: { sessionId } }), cache: "no-store", keepalive: true,
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new PartXAdminError("Guest activity is unavailable.", response.status);
+}
+
+export async function requestPartXAdmin<T>(user: User, endpoint: Endpoint, data: object = {}, signal?: AbortSignal): Promise<T> {
+  const base = partXActivityBase();
   for (const refresh of [false, true]) {
     const token = await user.getIdToken(refresh);
     const timeout = AbortSignal.timeout(15_000);

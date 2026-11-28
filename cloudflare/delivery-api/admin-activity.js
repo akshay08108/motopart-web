@@ -11,6 +11,8 @@ export class PartXAdminActivity {
       PRIMARY KEY (uid, signed_in_at)
     )`);
     this.sql.exec("CREATE INDEX IF NOT EXISTS sign_ins_time ON sign_ins(signed_in_at DESC, uid)");
+    this.sql.exec("CREATE UNIQUE INDEX IF NOT EXISTS guest_session_once ON sign_ins(uid) WHERE role = 'guest'");
+    this.sql.exec("CREATE INDEX IF NOT EXISTS sign_ins_role_time ON sign_ins(role, signed_in_at DESC, uid)");
     this.sql.exec(`CREATE TABLE IF NOT EXISTS activity_accounts (
       uid TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL,
       signed_in_at INTEGER, seen_at INTEGER
@@ -35,16 +37,22 @@ export class PartXAdminActivity {
     const action = new URL(request.url).pathname;
     if (action === "/read") {
       const now = Date.now();
-      const { before } = await request.json();
+      const { before, activity } = await request.json();
+      const roleFilter = activity === "guests" ? "AND role = 'guest'" : activity === "accounts" ? "AND role != 'guest'" : "";
       const signIns = this.sql.exec(`SELECT uid, name, role, signed_in_at AS signedInAt FROM sign_ins
         WHERE signed_in_at >= ? AND (signed_in_at < ? OR (signed_in_at = ? AND uid > ?))
-        ORDER BY signed_in_at DESC, uid LIMIT 26`,
+        ${roleFilter} ORDER BY signed_in_at DESC, uid LIMIT 26`,
         now - historyWindow, before?.signedInAt ?? now + 31_000, before?.signedInAt ?? now + 31_000, before?.uid ?? "").toArray();
       const presence = this.sql.exec(`SELECT uid, name, role, seen_at AS seenAt FROM activity_accounts
         WHERE seen_at >= ? ORDER BY seen_at DESC LIMIT 50`, now - presenceWindow).toArray();
       const counts = this.sql.exec(`SELECT role, COUNT(*) AS total FROM activity_accounts
         WHERE seen_at >= ? GROUP BY role`, now - presenceWindow).toArray();
       return Response.json({ signIns: signIns.slice(0, 25), next: signIns.length > 25 ? signIns[24] : null, presence, counts, asOf: now });
+    }
+    if (action === "/guest") {
+      const { uid } = await request.json();
+      this.sql.exec("INSERT OR IGNORE INTO sign_ins VALUES (?, ?, 'Guest session', 'guest')", uid, Date.now());
+      return Response.json({ ok: true });
     }
     if (action === "/latest") {
       const { uids } = await request.json();

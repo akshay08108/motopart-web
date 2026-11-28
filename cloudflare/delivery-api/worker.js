@@ -5,7 +5,7 @@ import { createRazorpay, paymentEndpoints } from "./razorpay.js";
 import { createRoadRouter, RoutingError } from "../../lib/road-routing.ts";
 import { createRouteQuote } from "./route-quote.js";
 import { createTracking, trackingEndpoints } from "./tracking.js";
-import { adminEndpoints, createAdminProfileCache, handleAdminEndpoint } from "./admin.js";
+import { adminEndpoints, createAdminProfileCache, handleAdminEndpoint, recordGuestActivity } from "./admin.js";
 export { PartXAdminActivity } from "./admin-activity.js";
 
 const operations = { dispatchPartXDelivery: "dispatch", updatePartXDelivery: "riderAction", getPartXDeliveryCode: "customerCode", requestPartXAfterSale: "requestAfterSale" };
@@ -37,10 +37,10 @@ async function readBody(request, limit) {
     return bytes;
   } finally { reader.releaseLock(); }
 }
-async function readInput(request) {
+async function readInput(request, limit = 8192) {
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) throw new DeliveryError("invalid-argument", "Use a JSON request.");
   try {
-    const parsed = JSON.parse(new TextDecoder().decode(await readBody(request, 8192)));
+    const parsed = JSON.parse(new TextDecoder().decode(await readBody(request, limit)));
     if (!parsed || typeof parsed.data !== "object" || !parsed.data || Array.isArray(parsed.data)) throw new Error();
     return parsed.data;
   } catch (error) {
@@ -114,6 +114,22 @@ export function createWorker({ fetcher = fetch } = {}) {
       if (request.method === "GET" && ["", "health"].includes(name)) {
         try { readServiceAccount(env); return json({ service: "PartX delivery API", version: "cloudflare-v1", configuration: "present" }, 200, cors); }
         catch { return json({ service: "PartX delivery API", version: "cloudflare-v1", configuration: "required" }, 503, cors); }
+      }
+      if (name === "recordPartXGuestSession") {
+        if (request.method !== "POST") return json({ error: { code: "invalid-argument", message: "Use POST for guest activity." } }, 405, { ...cors, Allow: "POST, OPTIONS" });
+        if (!origin) return json({ error: { code: "permission-denied", message: "This origin is not allowed." } }, 403);
+        try {
+          if (!env.PARTX_GUEST_RATE_LIMIT) throw new DeliveryError("unavailable", "Guest activity is temporarily unavailable.");
+          const key = request.headers.get("CF-Connecting-IP") || origin;
+          if (!(await env.PARTX_GUEST_RATE_LIMIT.limit({ key })).success) {
+            throw new DeliveryError("resource-exhausted", "Too many guest requests.");
+          }
+          const { sessionId } = await readInput(request, 256);
+          return json({ data: await recordGuestActivity(env, sessionId) }, 200, cors);
+        } catch (error) {
+          if (error instanceof DeliveryError) return json({ error: { code: error.code, message: error.message } }, statuses[error.code] ?? 500, cors);
+          return json({ error: { code: "unavailable", message: "Guest activity is temporarily unavailable." } }, 503, cors);
+        }
       }
       if (adminEndpoints.has(name)) {
         if (request.method !== "POST") return json({ error: { code: "invalid-argument", message: "Use POST for admin and activity requests." } }, 405, { ...cors, Allow: "POST, OPTIONS" });

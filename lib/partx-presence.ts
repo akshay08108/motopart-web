@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import type { User } from "firebase/auth";
 import type { UserRole } from "./types";
 import { firebaseAuth } from "./firebase";
-import { PartXAdminError, requestPartXAdmin } from "./partx-admin-api";
+import { PartXAdminError, requestPartXAdmin, requestPartXGuestSession } from "./partx-admin-api";
 
 const activityEnabled = process.env.NODE_ENV === "production" || Boolean(process.env.NEXT_PUBLIC_PARTX_DELIVERY_API_URL);
 
@@ -17,6 +17,14 @@ export function recordPartXSignIn(user: User) {
     window.setTimeout(() => {
       if (firebaseAuth.currentUser?.uid === user.uid) void requestPartXAdmin(user, "recordPartXSignIn").catch(() => undefined);
     }, 1_500);
+  });
+}
+
+export function recordPartXGuestSession(sessionId: string) {
+  if (!activityEnabled) return;
+  void requestPartXGuestSession(sessionId).catch((error) => {
+    if (error instanceof PartXAdminError && error.status < 500) return;
+    window.setTimeout(() => void requestPartXGuestSession(sessionId).catch(() => undefined), 1_500);
   });
 }
 

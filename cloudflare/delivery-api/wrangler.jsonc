@@ -12,6 +12,9 @@
   "durable_objects": {
     "bindings": [{ "name": "PARTX_ADMIN_ACTIVITY", "class_name": "PartXAdminActivity" }]
   },
+  "ratelimits": [
+    { "name": "PARTX_GUEST_RATE_LIMIT", "namespace_id": "137514", "simple": { "limit": 30, "period": 60 } }
+  ],
   "migrations": [{ "tag": "partx-admin-activity-v1", "new_sqlite_classes": ["PartXAdminActivity"] }],
   "observability": { "enabled": true }
 }

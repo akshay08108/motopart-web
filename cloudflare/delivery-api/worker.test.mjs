@@ -546,6 +546,68 @@ test("activity is verified, deduplicated across devices, and cleaned up after th
   } finally { Date.now = originalClock; }
 });
 
+test("guest session reports are anonymous, deduplicated, rate-limited, and visible only in the owner feed", async (t) => {
+  const activity = createActivityFixture();
+  t.after(activity.close);
+  let rateAllowed = true;
+  const config = {
+    ...env, PARTX_ADMIN_UID: owner, PARTX_ADMIN_ACTIVITY: activity.binding,
+    PARTX_GUEST_RATE_LIMIT: { limit: async () => ({ success: rateAllowed }) },
+  };
+  const sessionId = crypto.randomUUID();
+  const guestRequest = (data) => call("recordPartXGuestSession", null, data, {}, config);
+  const read = (filter, before) => call("partxAdmin", owner, { view: "activity", activity: filter, before }, verified, config);
+  const now = Date.now();
+  const originalClock = Date.now;
+  try {
+    Date.now = () => now;
+    assert.equal((await guestRequest({ sessionId: "account-name" })).status, 400);
+    const noOrigin = await worker.fetch(new Request("https://delivery.test/recordPartXGuestSession", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: { sessionId } }),
+    }), config);
+    assert.equal(noOrigin.status, 403);
+    const otherOrigin = await worker.fetch(new Request("https://delivery.test/recordPartXGuestSession", {
+      method: "POST", headers: { "Content-Type": "application/json", Origin: "https://somewhere.test" }, body: JSON.stringify({ data: { sessionId } }),
+    }), config);
+    assert.equal(otherOrigin.status, 403);
+    rateAllowed = false;
+    assert.equal((await guestRequest({ sessionId })).status, 429);
+    rateAllowed = true;
+    const report = await guestRequest({ sessionId, name: "Untrusted name", role: "seller", signedInAt: 1 });
+    assert.equal(report.status, 200);
+    assert.deepEqual(report.body, { data: { ok: true } });
+
+    Date.now = () => now + 500;
+    assert.equal((await guestRequest({ sessionId })).status, 200);
+    assert.equal(databaseRequests, 0);
+    assert.equal((await call("partxAdmin", null, { view: "activity", activity: "guests" }, {}, config)).status, 401);
+    assert.equal((await call("partxAdmin", "customer", { view: "activity", activity: "guests" }, verified, config)).status, 403);
+    assert.equal((await read("other")).status, 400);
+
+    await db.doc("users/customer").update({ activeRole: "customer" });
+    assert.equal((await call("recordPartXSignIn", "customer", {}, {}, config)).status, 200);
+    assert.deepEqual((await read("all")).body.data.signIns.map(({ role }) => role).sort(), ["customer", "guest"]);
+    assert.equal((await read("accounts")).body.data.signIns.length, 1);
+    const guests = (await read("guests")).body.data;
+    assert.deepEqual(guests.signIns, [{ uid: `guest:${sessionId}`, name: "Guest session", role: "guest", signedInAt: now }]);
+    assert.deepEqual(guests.presence, []);
+
+    for (let index = 0; index < 26; index++) {
+      assert.equal((await guestRequest({ sessionId: crypto.randomUUID() })).status, 200);
+    }
+    const first = (await read("guests")).body.data;
+    const second = (await read("guests", first.next)).body.data;
+    assert.equal(first.signIns.length, 25);
+    assert.equal(second.signIns.length, 2);
+    assert.equal(second.next, null);
+    assert.equal(new Set([...first.signIns, ...second.signIns].map(({ uid }) => uid)).size, 27);
+
+    Date.now = () => now + 31 * 86_400_000;
+    await activity.instance.alarm();
+    assert.deepEqual((await read("guests")).body.data.signIns, []);
+  } finally { Date.now = originalClock; }
+});
+
 test("admin order details expose saved pickup line items and support legacy orders", async () => {
   const config = { ...env, PARTX_ADMIN_UID: owner };
   await Promise.all([

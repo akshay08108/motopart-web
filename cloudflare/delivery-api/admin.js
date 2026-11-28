@@ -124,6 +124,13 @@ async function readActivity(env, path, input) {
   return response.json();
 }
 
+export async function recordGuestActivity(env, sessionId) {
+  if (typeof sessionId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(sessionId)) {
+    throw new DeliveryError("invalid-argument", "A valid guest session is required.");
+  }
+  return readActivity(env, "/guest", { uid: `guest:${sessionId}` });
+}
+
 export function createAdminProfileCache() {
   const profiles = new Map();
   return async function loadProfile(env, database, uid) {
@@ -278,7 +285,9 @@ async function readAdmin(input, env, getDatabase) {
   if (input.view === "activity") {
     const before = input.before;
     if (before && (!safeId(before.uid) || !Number.isSafeInteger(before.signedInAt))) return invalid();
-    return readActivity(env, "/read", { before });
+    const activity = input.activity ?? "all";
+    if (!["all", "accounts", "guests"].includes(activity)) return invalid();
+    return readActivity(env, "/read", { before, activity });
   }
   const db = getDatabase();
   if (input.view === "overview") {
