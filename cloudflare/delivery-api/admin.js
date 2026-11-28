@@ -1,15 +1,17 @@
 import { ACTIVE_DELIVERY_STATES, DeliveryError, RIDER_HEARTBEAT_MAX_AGE_MS } from "../../functions/rider-core.js";
+import { SERVER_TIMESTAMP } from "./firestore-rest.js";
 
 const pageSize = 25;
 const stalledAfter = 45 * 60_000;
 const roles = ["customer", "seller", "rider"];
+const openTicketStatuses = ["Open", "open", "In Progress", "In progress", "in-progress"];
 const fields = {
   people: ["name", "email", "roles", "activeRole", "sellerStatus", "createdAt"],
   stores: ["name", "ownerId", "status", "createdAt"],
   riders: ["name", "active", "activationPending", "online", "lastSeenAt", "activeDeliveryId", "createdAt"],
   orders: ["trackingId", "customerId", "sellerId", "storeId", "storeName", "status", "stage", "orderStatus", "paymentMethod", "paymentMode", "paymentStatus", "paymentVerifiedAt", "codCollectedAt", "fulfilment", "riderDeliveryId", "total", "totalAmount", "createdAt", "deliveredAt"],
   deliveries: ["orderId", "storeId", "storeName", "riderId", "riderName", "trackingId", "state", "kind", "issue.reason", "assignedAt", "updatedAt", "deliveredAt", "codCollected", "requestId"],
-  tickets: ["orderId", "storeId", "status", "issueType", "createdAt"],
+  tickets: ["orderId", "storeId", "status", "issueType", "issue", "createdAt"],
   afterSales: ["kind", "state", "deliveryId", "item.productName", "item.partNumber", "item.quantity", "createdAt"],
 };
 const collectionNames = { people: "users" };
@@ -88,7 +90,7 @@ function project(kind, id, data, now) {
       kind: text(data.kind) ?? "delivery", issue: text(data.issue?.reason), createdAt: timestamp(data.assignedAt), updatedAt: timestamp(data.updatedAt),
       deliveredAt: timestamp(data.deliveredAt),
     };
-    case "tickets": return { id, orderId: text(data.orderId), storeId: text(data.storeId), status: text(data.status), issueType: text(data.issueType), createdAt };
+    case "tickets": return { id, orderId: text(data.orderId), storeId: text(data.storeId), status: text(data.status), issueType: text(data.issueType) || text(data.issue), createdAt };
     case "afterSales": return {
       id, kind: text(data.kind), status: text(data.state), deliveryId: text(data.deliveryId), productName: text(data.item?.productName),
       partNumber: text(data.item?.partNumber), quantity: Number.isSafeInteger(data.item?.quantity) ? data.item.quantity : null, createdAt,
@@ -101,7 +103,7 @@ function attentionFilters(now, cutoff = now) {
   return {
     stalled: ["deliveries", all(inValues("state", ACTIVE_DELIVERY_STATES), filter("updatedAt", "LESS_THAN_OR_EQUAL", time(cutoff - stalledAfter))), "updatedAt"],
     activations: ["riders", filter("activationPending", "EQUAL", { booleanValue: true })],
-    tickets: ["tickets", inValues("status", ["Open", "open", "In Progress", "In progress", "in-progress"])],
+    tickets: ["tickets", inValues("status", openTicketStatuses)],
     verification: ["orders", filter("paymentStatus", "EQUAL", string("PAYMENT_SUBMITTED"))],
   };
 }
@@ -150,7 +152,12 @@ export async function handleAdminEndpoint({ name, authorization, auth, env, data
   if (ownerOnly) {
     if (!env.PARTX_ADMIN_UID || identity.uid !== env.PARTX_ADMIN_UID) throw new DeliveryError("permission-denied", "This account does not have PartX owner access.");
     if (!identity.emailVerified) throw new DeliveryError("admin-unverified-email", "Verify your email before continuing.");
-    return readAdmin(await readInput(), env, database);
+    const input = await readInput();
+    if (input.action === "closeTicket") {
+      if (!safeId(input.id)) return invalid();
+      return closeTicket(database(), input.id);
+    }
+    return readAdmin(input, env, database);
   }
   if (!safeId(identity.uid) || identity.uid === env.PARTX_ADMIN_UID) throw new DeliveryError("permission-denied", "A PartX profile is required.");
   const signIn = name === "recordPartXSignIn";
@@ -160,6 +167,20 @@ export async function handleAdminEndpoint({ name, authorization, auth, env, data
   if (!roles.includes(role) || !Array.isArray(profile.roles) || !profile.roles.includes(role)) throw new DeliveryError("permission-denied", "A PartX profile is required.");
   if (!signIn && role === "rider") return { ok: true };
   return readActivity(env, signIn ? "/sign-in" : "/presence", { uid: identity.uid, signedInAt: identity.signedInAt, name: text(profile.name, 120) || "PartX account", role });
+}
+
+async function closeTicket(db, id) {
+  const ref = db.doc(`tickets/${id}`);
+  await db.runTransaction(async (tx) => {
+    const ticket = (await tx.get(ref)).data();
+    if (!ticket) throw new DeliveryError("not-found", "This ticket could not be found.");
+    if (text(ticket.status)?.toLowerCase() === "resolved") return;
+    if (!openTicketStatuses.includes(ticket.status)) {
+      throw new DeliveryError("failed-precondition", "Only open support tickets can be closed.");
+    }
+    tx.update(ref, { status: "Resolved", resolvedAt: SERVER_TIMESTAMP, updatedAt: SERVER_TIMESTAMP });
+  });
+  return { status: "Resolved" };
 }
 
 async function readAdmin(input, env, getDatabase) {
@@ -225,6 +246,9 @@ async function readDetail(db, env, kind, id, now) {
     related = { deliveries, afterSales };
     record.payment = paymentStatus(data, directDelivery?.data()?.codCollected === true);
     return { kind, record, related, items: orderItems(data) };
+  } else if (kind === "tickets") {
+    record.canClose = openTicketStatuses.includes(data.status);
+    if (data.resolvedAt) record.resolvedAt = timestamp(data.resolvedAt);
   } else if (kind === "riders") {
     const [deliveries, latest] = await Promise.all([
       findRelated(db, "deliveries", filter("riderId", "EQUAL", string(id)), now),

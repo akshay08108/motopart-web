@@ -576,3 +576,42 @@ test("admin order details expose saved pickup line items and support legacy orde
   assert.equal(list.status, 200);
   assert.equal(list.body.data.rows[0].items, undefined);
 });
+
+test("the verified owner can close an open ticket and remove it from the attention queue", async () => {
+  const config = { ...env, PARTX_ADMIN_UID: owner };
+  const ticket = db.doc("tickets/admin-close");
+  const createdAt = Timestamp.fromMillis(Date.now() - 60_000);
+  await Promise.all([
+    ticket.set({ status: "Open", issue: "Wrong part", storeId: "store", orderId: "order", customerId: "customer", internalNote: "Existing note", createdAt }),
+    db.doc("tickets/legacy-open").set({ status: "In progress" }),
+    db.doc("tickets/other-state").set({ status: "Archived" }),
+  ]);
+  const admin = (data, uid = owner, claims = verified) => call("partxAdmin", uid, data, claims, config);
+  const close = { action: "closeTicket", id: ticket.id };
+  const detail = { view: "detail", kind: "tickets", id: ticket.id };
+  const list = { view: "list", kind: "attention", queue: "tickets" };
+  assert.equal((await admin(close, null)).status, 401);
+  assert.equal((await admin(close, "seller")).status, 403);
+  assert.equal((await admin(close, owner, {})).status, 403);
+  assert.equal((await admin({ ...close, id: ".." })).status, 400);
+  assert.equal((await admin({ ...close, id: "missing-ticket" })).status, 404);
+  assert.equal((await admin({ ...close, id: "other-state" })).status, 409);
+  assert.equal((await admin(detail)).body.data.record.issueType, "Wrong part");
+  assert.equal((await admin(detail)).body.data.record.canClose, true);
+  assert.ok((await admin(list)).body.data.rows.some(({ id }) => id === ticket.id));
+  abortNextCommit = true;
+  assert.deepEqual(await admin(close), { status: 200, body: { data: { status: "Resolved" } } });
+  const saved = (await ticket.get()).data();
+  assert.equal(saved.status, "Resolved");
+  assert.equal(saved.internalNote, "Existing note");
+  assert.equal(saved.customerId, "customer");
+  assert.equal(saved.createdAt.toMillis(), createdAt.toMillis());
+  assert.ok(saved.resolvedAt.toMillis() > createdAt.toMillis());
+  assert.equal(saved.resolvedAt.toMillis(), saved.updatedAt.toMillis());
+  assert.equal((await admin(close)).status, 200);
+  assert.equal((await ticket.get()).data().resolvedAt.toMillis(), saved.resolvedAt.toMillis());
+  assert.equal((await admin(detail)).body.data.record.canClose, false);
+  assert.equal((await admin(detail)).body.data.record.resolvedAt, saved.resolvedAt.toMillis());
+  assert.equal((await admin({ ...close, id: "legacy-open" })).status, 200);
+  assert.deepEqual((await admin(list)).body.data.rows, []);
+});
