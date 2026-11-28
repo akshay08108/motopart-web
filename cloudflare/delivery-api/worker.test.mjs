@@ -466,6 +466,7 @@ test("overview, cursor pages, IDs, related records and payment status use projec
   assert.equal(orderSearch.rows[0].payment, "COD collected");
   const order = await read({ view: "detail", kind: "orders", id: "order" });
   assert.equal(order.record.payment, "COD collected");
+  assert.deepEqual(order.items.map((item) => item.productName), ["Filter", "Oil"]);
   assert.equal(order.related.afterSales[0].kind, "replacement");
   assert.equal(order.related.deliveries[0].riderId, "rider");
   assert.equal(JSON.stringify(order).includes("DO-NOT-SHOW"), false);
@@ -543,4 +544,35 @@ test("activity is verified, deduplicated across devices, and cleaned up after th
     const latest = await activity.instance.fetch(new Request("https://activity.internal/latest", { method: "POST", body: '{"uids":["customer"]}' }));
     assert.deepEqual(await latest.json(), { customer: signedInAt * 1000 });
   } finally { Date.now = originalClock; }
+});
+
+test("admin order details expose saved pickup line items and support legacy orders", async () => {
+  const config = { ...env, PARTX_ADMIN_UID: owner };
+  await Promise.all([
+    db.doc("orders/pickup-items").set({
+      fulfilment: "pickup", productName: "Air filter + 1 more", total: 169,
+      items: [
+        { productName: "Air filter", partNumber: "AF-100", quantity: 2, unitPrice: 69.5, privateField: "DO-NOT-SHOW" },
+        { productName: "Bolt", partNumber: "BL-2", quantity: 3, unitPrice: 10 },
+      ],
+    }),
+    db.doc("orders/legacy-pickup").set({ fulfilment: "pickup", productName: "Oil filter", partNumber: "OF-1", quantity: "2", total: 320 }),
+    db.doc("orders/no-saved-items").set({ fulfilment: "pickup", total: 50 }),
+  ]);
+  const detail = async (id) => {
+    const result = await call("partxAdmin", owner, { view: "detail", kind: "orders", id }, verified, config);
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    return result.body.data;
+  };
+  const pickup = await detail("pickup-items");
+  assert.deepEqual(pickup.items, [
+    { productName: "Air filter", partNumber: "AF-100", quantity: 2, unitPrice: 69.5 },
+    { productName: "Bolt", partNumber: "BL-2", quantity: 3, unitPrice: 10 },
+  ]);
+  assert.deepEqual(pickup.related.deliveries, []);
+  assert.deepEqual((await detail("legacy-pickup")).items, [{ productName: "Oil filter", partNumber: "OF-1", quantity: 2, unitPrice: null }]);
+  assert.deepEqual((await detail("no-saved-items")).items, []);
+  const list = await call("partxAdmin", owner, { view: "list", kind: "orders", search: "pickup-items", searchBy: "id" }, verified, config);
+  assert.equal(list.status, 200);
+  assert.equal(list.body.data.rows[0].items, undefined);
 });

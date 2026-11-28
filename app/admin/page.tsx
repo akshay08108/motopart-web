@@ -18,7 +18,8 @@ type Overview = Record<"customers" | "sellers" | "stores" | "riders" | "todayOrd
 type SignIn = { uid: string; name: string; role: string; signedInAt: number };
 type Activity = { signIns: SignIn[]; presence: { uid: string; name: string; role: string; seenAt: number }[]; counts: { role: string; total: number }[]; asOf: number; next: SignIn | null };
 type Listing = { kind: Kind; rows: DataRow[]; next: Cursor | null; activityAvailable?: boolean };
-type Detail = { kind: Kind; record: DataRow; related: Partial<Record<Kind, DataRow[]>> };
+type OrderItem = { productName: string; partNumber: string | null; quantity: number | null; unitPrice: number | null };
+type Detail = { kind: Kind; record: DataRow; related: Partial<Record<Kind, DataRow[]>>; items?: OrderItem[] };
 type FetchAdmin = <T>(data: object, signal?: AbortSignal) => Promise<T>;
 
 const tabs: { id: Page; label: string; icon: string }[] = [
@@ -278,6 +279,21 @@ function RecordsTable({ kind, rows, open }: { kind: Kind; rows: DataRow[]; open:
     <tbody>{rows.map((row) => <tr key={row.id}>{columns[kind].map((key) => <td key={key}>{valueText(key, row[key])}</td>)}{kind !== "afterSales" && <td><button type="button" onClick={() => open(kind, row.id)} aria-label={`View ${row.name ?? row.trackingId ?? row.id}`}>View</button></td>}</tr>)}</tbody></table></div>;
 }
 
+function OrderItems({ items }: { items: OrderItem[] }) {
+  return <section aria-labelledby="admin-order-items">
+    <h3 id="admin-order-items">Order items</h3>
+    {items.length === 0 ? <p className={styles.empty}>No item details were saved for this order.</p> :
+      <div className={styles.tableScroll}><table className={styles.table} aria-labelledby="admin-order-items">
+        <thead><tr><th scope="col">Part</th><th scope="col">Part number</th><th scope="col">Qty</th><th scope="col">Unit price</th><th scope="col">Line subtotal</th></tr></thead>
+        <tbody>{items.map(({ productName, partNumber, quantity, unitPrice }, index) => <tr key={index}>
+          <th scope="row">{productName}</th><td>{partNumber ?? "—"}</td><td>{quantity ?? "—"}</td>
+          <td>{unitPrice === null ? "—" : formatMoney(unitPrice)}</td>
+          <td>{unitPrice === null || quantity === null ? "—" : formatMoney(unitPrice * quantity)}</td>
+        </tr>)}</tbody>
+      </table></div>}
+  </section>;
+}
+
 const links: Record<string, Kind> = { orderId: "orders", customerId: "people", sellerId: "people", ownerId: "people", storeId: "stores", riderId: "riders", riderDeliveryId: "deliveries", activeDeliveryId: "deliveries", deliveryId: "deliveries" };
 
 function RecordDetail({ kind, id, fetchAdmin, close, open }: { kind: Kind; id: string; fetchAdmin: FetchAdmin; close: () => void; open: (kind: Kind, id: string) => void }) {
@@ -290,8 +306,9 @@ function RecordDetail({ kind, id, fetchAdmin, close, open }: { kind: Kind; id: s
     <header><div><p className={styles.eyebrow}>{names[kind]}</p><h2 id="admin-record-title">{String(data?.record.name ?? data?.record.trackingId ?? id)}</h2></div><button type="button" className={styles.secondary} onClick={close} autoFocus>Close</button></header>
     <Feedback error={error} loading={!data} reload={reload}/>
     {data && <>
+      {kind === "orders" && <OrderItems items={data.items ?? []}/>}
       {data.record.activityAvailable === false && <p className={styles.panelNote}>Sign-in history is temporarily unavailable.</p>}
-      <dl>{Object.entries(data.record).filter(([key]) => labels[key]).map(([key, value]) => <div key={key}><dt>{labels[key]}</dt><dd>{links[key] && typeof value === "string" && value ? <button type="button" onClick={() => open(links[key], value)}>{value}</button> : valueText(key, value)}</dd></div>)}</dl>
+      <dl className={kind === "orders" ? styles.orderMetadata : undefined}>{Object.entries(data.record).filter(([key]) => labels[key]).map(([key, value]) => <div key={key}><dt>{labels[key]}</dt><dd>{links[key] && typeof value === "string" && value ? <button type="button" onClick={() => open(links[key], value)}>{value}</button> : valueText(key, value)}</dd></div>)}</dl>
       {Object.entries(data.related).map(([relatedKind, rows]) => <section key={relatedKind}><h3>{names[relatedKind as Kind]}</h3><RecordsTable kind={relatedKind as Kind} rows={rows} open={open}/></section>)}
     </>}
   </dialog>;

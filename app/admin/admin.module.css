@@ -77,6 +77,8 @@
 .detail h2 { overflow-wrap: anywhere; }
 .detail dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: .6rem; margin: 0; }
 .detail dl div { padding: .55rem .7rem; border: 1px solid var(--admin-border); border-radius: 8px; }
+.detail .orderMetadata { margin-top: 1rem; }
+.detail th[scope="row"] { color: var(--admin-ink); background: var(--admin-surface); white-space: normal; }
 .detail dt { color: var(--admin-muted); font-size: .78rem; margin-bottom: .2rem; }
 .detail dd { margin: 0; font-size: .85rem; overflow-wrap: anywhere; }
 .login { display: grid; place-items: center; min-height: 100dvh; padding: 1rem; }

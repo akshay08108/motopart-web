@@ -51,6 +51,25 @@ function paymentStatus(data, codCollected = false) {
   return paid ? "Paid · legacy record" : "Payment pending";
 }
 
+function orderItems(data) {
+  function item(line) {
+    if (!line || typeof line !== "object") return [];
+    const productName = text(line.productName)?.trim() || text(line.name)?.trim();
+    const partNumber = text(line.partNumber)?.trim() || null;
+    const productId = text(line.productId)?.trim();
+    if (!productName && !partNumber && !productId) return [];
+    const quantity = typeof line.quantity === "string" ? Number(line.quantity) : line.quantity;
+    return [{
+      productName: productName || "Order item",
+      partNumber,
+      quantity: Number.isSafeInteger(quantity) && quantity > 0 ? quantity : null,
+      unitPrice: Number.isFinite(line.unitPrice) && line.unitPrice >= 0 ? line.unitPrice : null,
+    }];
+  }
+  const items = Array.isArray(data.items) ? data.items.flatMap(item) : [];
+  return items.length ? items : item(data);
+}
+
 function project(kind, id, data, now) {
   const createdAt = timestamp(data.createdAt);
   switch (kind) {
@@ -205,6 +224,7 @@ async function readDetail(db, env, kind, id, now) {
     ]);
     related = { deliveries, afterSales };
     record.payment = paymentStatus(data, directDelivery?.data()?.codCollected === true);
+    return { kind, record, related, items: orderItems(data) };
   } else if (kind === "riders") {
     const [deliveries, latest] = await Promise.all([
       findRelated(db, "deliveries", filter("riderId", "EQUAL", string(id)), now),
