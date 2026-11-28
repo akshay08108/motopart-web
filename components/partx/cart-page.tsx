@@ -20,7 +20,7 @@ const relatedCategories: Record<string, string[]> = {
 };
 
 export function CartPage() {
-  const { cart, cartReady, cartError, retryCart, cartTotal, setQuantity, removeFromCart, catalog, vehicles, activeVehicleId } = usePartX();
+  const { cart, cartReady, cartError, retryCart, cartTotal, setQuantity, removeFromCart, catalog, vehicles, activeVehicleId, isGuest } = usePartX();
   const vehicle = vehicles.find((item) => item.id === activeVehicleId);
   const vehicleIds = [activeVehicleId, vehicle?.vehicleModelId].filter(Boolean) as string[];
   const inCart = new Set(cart.map(({ product }) => product.id));
@@ -55,7 +55,7 @@ export function CartPage() {
           <div className="px-cart-item-info"><Link href={productHref(product.id)}><h2>{product.name}</h2></Link><p>{product.partNumber}</p><p className="px-cart-seller"><Icon name="store"/><b>{storeName ?? product.seller}</b></p><div className="px-qty" aria-label={`Quantity for ${product.name}`}><button aria-label={`Decrease quantity of ${product.name}`} disabled={quantity <= 1} onClick={() => setQuantity(product.id, quantity - 1)}>−</button><b aria-live="polite">{quantity}</b><button aria-label={`Increase quantity of ${product.name}`} disabled={quantity >= product.stock} onClick={() => setQuantity(product.id, quantity + 1)}>+</button></div></div>
           <div className="px-line-price"><strong>₹{((unitPrice ?? product.price) * quantity).toLocaleString("en-IN")}</strong><button onClick={() => removeFromCart(product.id)} aria-label={`Remove ${product.name}`}><Icon name="trash"/>Remove</button></div>
         </article>)}</div>
-        <aside className="px-summary"><h2>Order summary</h2><dl><div><dt>Delivery</dt><dd>Calculated at checkout</dd></div><div className="total"><dt>Subtotal</dt><dd aria-live="polite">₹{cartTotal.toLocaleString("en-IN")}</dd></div></dl><Link href="/checkout" className="px-btn px-btn-red">Proceed to checkout <Icon name="arrow"/></Link><small>Tax included. Delivery and payment options confirmed at checkout.</small></aside>
+        <aside className="px-summary"><h2>Order summary</h2><dl><div><dt>Delivery</dt><dd>Calculated at checkout</dd></div><div className="total"><dt>Subtotal</dt><dd aria-live="polite">₹{cartTotal.toLocaleString("en-IN")}</dd></div></dl><Link href="/checkout" className="px-btn px-btn-red">{isGuest ? "Sign in to check out" : "Proceed to checkout"} <Icon name="arrow"/></Link><small>{isGuest ? "Your guest cart is saved in this tab." : "Tax included. Delivery and payment options confirmed at checkout."}</small></aside>
       </div>}
     {cart.length > 0 && suggestions.length > 0 ? <section className="px-cart-suggestions" aria-labelledby="cart-suggestions-title"><div className="px-section-head"><div><h2 id="cart-suggestions-title">Parts you may also need</h2><p>Related categories and options for your {vehicle?.model ?? "selected vehicle"}. Check fitment before ordering.</p></div></div><div className="px-product-grid">{suggestions.map((product) => <ProductCard product={product} key={product.id}/>)}</div></section> : null}
   </div>;

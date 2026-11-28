@@ -20,6 +20,8 @@ import type { RoadRoute } from "@/lib/road-routing";
 import { removePurchasedItems } from "@/lib/cart-checkout";
 
 import { useAccountCart } from "./use-account-cart";
+import { useGuestCart } from "./use-guest-cart";
+import { guestCartLimit, mergeGuestCart } from "@/lib/customer-guest";
 import { removeAccountVehicle } from "@/lib/account-garage";
 const AUTH_PROFILE_CACHE_KEY = "partx-firebase-profile-v1";
 
@@ -92,6 +94,8 @@ type AppContextValue = {
   user: CustomerUser | null;
   authHydrated: boolean;
   customerDevice: boolean;
+  isGuest: boolean;
+  continueAsGuest: () => boolean;
   emailVerified: boolean;
   requestEmailVerification: () => Promise<void>;
   refreshEmailVerification: () => Promise<boolean>;
@@ -138,7 +142,37 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
   const ordersRef = useRef<PartXOrder[]>([]);
 
   const customerId = user?.roles.includes("customer") ? user.id : undefined;
-  const { cart, pendingCheckouts, ready: cartReady, error: cartError, retry: retryCart, save: saveCart, trackCheckout } = useAccountCart(customerId);
+  const { items: guestItems, restore: restoreGuest, start: startGuest, clear: clearGuest, save: saveGuestCart } = useGuestCart();
+  const isGuest = !user && guestItems !== null;
+  const {
+    cart: accountCart, pendingCheckouts, ready: accountCartReady, error: accountCartError,
+    retry: retryCart, save: saveAccountCart, trackCheckout,
+  } = useAccountCart(customerId);
+  const importingGuestCart = Boolean(user?.activeRole === "customer" && emailVerified && guestItems?.length);
+  const cart = isGuest ? guestItems : accountCart;
+  const cartReady = isGuest || (accountCartReady && !importingGuestCart);
+  const cartError = isGuest ? "" : accountCartError;
+  const saveCart = isGuest ? saveGuestCart : saveAccountCart;
+
+  useEffect(() => {
+    if (!customerId || user?.activeRole !== "customer" || !emailVerified || !guestItems) return;
+    if (!guestItems.length) {
+      queueMicrotask(clearGuest);
+      return;
+    }
+    if (!accountCartReady || accountCartError) return;
+    let active = true;
+    void saveAccountCart((items) => mergeGuestCart(items, guestItems)).then(() => {
+      if (active && firebaseAuth.currentUser?.uid === customerId) clearGuest();
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [accountCartError, accountCartReady, clearGuest, customerId, emailVerified, guestItems, saveAccountCart, user?.activeRole]);
+
+  const continueAsGuest = useCallback(() => {
+    if (firebaseAuth.currentUser) return false;
+    startGuest();
+    return true;
+  }, [startGuest]);
   const changeCart = useCallback((change: (items: CartLine[]) => CartLine[], checkoutId?: string) => {
     return saveCart(change, checkoutId).catch(() => {
       setCartNotice({ id: ++cartNoticeSequence.current, productName: "Your cart", message: "Cart could not sync. Please try again.", added: false, expiresAt: Date.now() + 5000 });
@@ -250,6 +284,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const hydrate = () => {
+      restoreGuest();
       setCustomerDevice(readBrowserStorage("local", "partx-device-role") === "customer");
       const savedTheme = readBrowserStorage("local", "partx-theme") ?? readBrowserStorage("local", "motopart-theme");
       if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
@@ -270,7 +305,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       setHydrated(true);
     };
     queueMicrotask(hydrate);
-  }, []);
+  }, [restoreGuest]);
 
   useEffect(() => {
     let stopProfile = () => {};
@@ -428,6 +463,10 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       const selectedProduct = selectedListing ? catalogById.get(selectedListing.productId) ?? product : product;
       const requestedQuantity = Number.isFinite(quantity) ? Math.max(1, Math.floor(quantity)) : 1;
       const existing = resolvedCart.find((line) => line.product.id === selectedProduct.id || line.product.partNumber === selectedProduct.partNumber);
+      if (isGuest && !existing && resolvedCart.length >= guestCartLimit) {
+        setCartNotice({ id: ++cartNoticeSequence.current, productName: selectedProduct.name, message: "Your cart can contain up to 100 different parts.", added: false, expiresAt: Date.now() + 5000 });
+        return;
+      }
       const sameStore = existing?.storeId === selection.storeId;
       const canAdd = selectedProduct.stock > 0 && (!sameStore || (existing?.quantity ?? 0) < selectedProduct.stock);
       setCartNotice({ id: ++cartNoticeSequence.current, productName: selectedProduct.name, message: canAdd ? (existing && !sameStore ? "Store updated in cart" : "Added to cart") : selectedProduct.stock <= 0 ? "Currently out of stock" : "Maximum available stock already in cart", added: canAdd, expiresAt: Date.now() + 3500 });
@@ -712,6 +751,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
     user,
     authHydrated: hydrated && firebaseHydrated,
     customerDevice,
+    isGuest, continueAsGuest,
     emailVerified,
     requestEmailVerification: async () => {
       const authUser = firebaseAuth.currentUser;
@@ -845,7 +885,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
       removeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY);
       await firebaseSignOut(firebaseAuth);
     },
-  }), [cartReady, cartError, retryCart, changeCart, trackCheckout, cartNotice, theme, saveGaragePreferences, resolvedCart, vehicles, activeVehicleId, location, garages, garageReady, needsVehicle, customerId, customerDevice, emailVerified, marketplaceStores, announcements, catalog, catalogById, storesById, orders, ordersReady, freeDeliveriesRemaining, liveOrderUpdate, user, hydrated, firebaseHydrated, notificationPermission, notificationError, notificationsEnabled]);
+  }), [cartReady, cartError, retryCart, changeCart, trackCheckout, cartNotice, theme, saveGaragePreferences, resolvedCart, vehicles, activeVehicleId, location, garages, garageReady, needsVehicle, customerId, customerDevice, isGuest, continueAsGuest, emailVerified, marketplaceStores, announcements, catalog, catalogById, storesById, orders, ordersReady, freeDeliveriesRemaining, liveOrderUpdate, user, hydrated, firebaseHydrated, notificationPermission, notificationError, notificationsEnabled]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

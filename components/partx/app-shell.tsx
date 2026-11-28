@@ -12,6 +12,7 @@ import { PartSearch } from "./part-search";
 import { sameDeliveryArea } from "@/lib/delivery-pricing";
 import { RiderShell } from "./rider-portal";
 import { appRole, roleHome, roleLogin } from "@/lib/app-role";
+import { canBrowseAsGuest, isGuestAccountPage } from "@/lib/customer-guest";
 
 const nav = [
   ["/", "Home", "home"], ["/shop", "Shop Parts", "grid"], ["/garage", "My Garage", "garage"], ["/orders", "Orders", "orders"], ["/offers", "Offers", "offer"],
@@ -20,7 +21,7 @@ const nav = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname().replace(/\/$/, "") || "/";
   const router = useRouter();
-  const { theme, toggleTheme, cartCount, cartNotice, announcements, stores, location, garageReady, needsVehicle, user, authHydrated, customerDevice, emailVerified } = usePartX();
+  const { theme, toggleTheme, cartCount, cartNotice, announcements, stores, location, garageReady, needsVehicle, user, authHydrated, customerDevice, emailVerified, isGuest } = usePartX();
   const [open, setOpen] = useState(false);
   const active = (href: string) => href === "/" ? pathname === "/" : pathname.startsWith(href);
   const sellerRoute = pathname === "/seller" || pathname === "/seller-order" || pathname.startsWith("/seller/");
@@ -32,8 +33,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     user?.activeRole === "customer" || (user?.activeRole === "rider" && user.riderSelfRegistered)
   );
 
+  const guestWorkspace = isGuest && (!appRole || appRole === "customer");
+  const guestGate = guestWorkspace && isGuestAccountPage(pathname);
+  const guestRoute = guestGate || (guestWorkspace && canBrowseAsGuest(pathname));
+  const accountHref = isCustomer || guestWorkspace ? "/account" : isSeller ? "/seller" : "/login";
+  const accountLabel = guestWorkspace ? "Guest account" : user ? "Account" : "Sign in";
+
+  const vehicleSetupHref = pathname === "/checkout" ? "/garage?checkout=1" : "/garage";
+
   let destination: string | undefined;
-  if (authHydrated) {
+  if (authHydrated && !guestRoute) {
     if (appRole) {
       const login = roleLogin(appRole);
       const signedIn = user?.activeRole === appRole;
@@ -44,7 +53,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       } else if (!inWorkspace) {
         if (pathname !== login) destination = roleHome[appRole];
       } else if (appRole === "customer" && needsVehicle && pathname !== "/garage") {
-        destination = "/garage";
+        destination = vehicleSetupHref;
       } else if (pathname === "/seller/pending") {
         destination = "/seller";
       }
@@ -57,7 +66,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     else if (sellerRoute && pathname === "/seller/pending") destination = "/seller";
     else if (user && !authRoute && !sellerRoute && !riderRoute) {
       if (!isCustomer) destination = roleHome[user.activeRole];
-      else if (needsVehicle && pathname !== "/garage") destination = "/garage";
+      else if (needsVehicle && pathname !== "/garage") destination = vehicleSetupHref;
       else if (pathname === "/" && user.activeRole === "seller") destination = "/seller";
     }
   }
@@ -71,10 +80,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return keepAuthFormMounted ? children : <AuthLoading label="Opening PartX…"/>;
   }
   if (authRoute) return children;
-  if (!user) return <AuthLoading label="Opening PartX…"/>;
-  if (riderRoute) return <RiderShell key={user.id}>{children}</RiderShell>;
+  if (!user && !guestRoute) return <AuthLoading label="Opening PartX…"/>;
+  if (riderRoute && user) return <RiderShell key={user.id}>{children}</RiderShell>;
   if (sellerRoute) return <SellerShell>{children}</SellerShell>;
-  if (!garageReady) return <AuthLoading label="Loading your garage…"/>;
+  if (!garageReady && !guestRoute) return <AuthLoading label="Loading your garage…"/>;
   const liveUpdates = announcements.filter((announcement) => {
     const store = stores.find((item) => item.id === announcement.storeId);
     return store && sameDeliveryArea(location, store.location);
@@ -94,14 +103,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <PartSearch className={pathname === "/" ? "px-nav-search px-nav-search-home" : "px-nav-search"} placeholder={pathname === "/" ? "Search parts" : undefined}/>
         <div className="px-header-actions">
           <button className="px-icon-button" onClick={toggleTheme} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><Icon name={theme === "light" ? "moon" : "sun"}/></button>
-          <Link href={isCustomer ? "/account" : isSeller ? "/seller" : "/login"} className="px-icon-button" aria-label={user ? "Account" : "Sign in"}><Icon name="user"/></Link>
+          <Link href={accountHref} className="px-icon-button" aria-label={accountLabel}><Icon name="user"/></Link>
           <Link href="/cart" className="px-icon-button px-cart-button" aria-label={`Cart with ${cartCount} items`}><Icon name="cart" key={cartNotice?.id ?? 0} className={cartNotice?.added ? "px-cart-bump" : undefined}/>{cartCount > 0 && <span>{cartCount}</span>}</Link>
           <button className="px-menu-button" onClick={() => setOpen((value) => !value)} aria-label="Toggle menu"><Icon name={open ? "close" : "menu"}/></button>
         </div>
       </div>
     </header>
     {liveUpdates.length > 0 && <div className="px-ticker" aria-label="Local store updates"><span>LIVE UPDATES</span><div>{liveUpdates.map((announcement) => <Link className="px-ticker-item" key={announcement.id} href={`/shop?store=${encodeURIComponent(announcement.storeId)}`}>{announcement.text}</Link>)}</div></div>}
-    <main>{children}</main>
+    <main>{guestGate ? <GuestAccountGate checkout={pathname === "/checkout"}/> : children}</main>
     <CartFeedback/>
     <footer className="px-footer">
       <div className="px-container px-footer-grid">
@@ -112,8 +121,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="px-container px-footer-bottom">© 2026 PartX · Built with Codex</div>
     </footer>
     <nav className="px-mobile-nav" aria-label="Mobile navigation">
-      {[["/", "home", "Home"], ["/shop", "grid", "Shop"], ["/cart", "cart", "Cart"], ["/orders", "orders", "Orders"], [isCustomer ? "/account" : isSeller ? "/seller" : "/login", "user", user ? "Account" : "Sign in"]].map(([href, icon, label]) => <Link key={href} className={active(href) ? "active" : ""} href={href}><span><Icon name={icon} key={href === "/cart" ? cartNotice?.id ?? 0 : icon} className={href === "/cart" && cartNotice?.added ? "px-cart-bump" : undefined}/>{href === "/cart" && cartCount > 0 && <em>{cartCount}</em>}</span>{label}</Link>)}
+      {[["/", "home", "Home"], ["/shop", "grid", "Shop"], ["/cart", "cart", "Cart"], ["/orders", "orders", "Orders"], [accountHref, "user", guestWorkspace ? "Guest" : accountLabel]].map(([href, icon, label]) => <Link key={href} className={active(href) ? "active" : ""} href={href}><span><Icon name={icon} key={href === "/cart" ? cartNotice?.id ?? 0 : icon} className={href === "/cart" && cartNotice?.added ? "px-cart-bump" : undefined}/>{href === "/cart" && cartCount > 0 && <em>{cartCount}</em>}</span>{label}</Link>)}
     </nav>
+  </div>;
+}
+
+function GuestAccountGate({ checkout }: { checkout: boolean }) {
+  return <div className="px-page px-container">
+    <div className="px-empty px-guest-gate">
+      <Icon name={checkout ? "cart" : "user"}/>
+      <div>
+        <h1>{checkout ? "Sign in to check out" : "You’re browsing as a guest"}</h1>
+        <p>{checkout
+          ? "Sign in or create a customer account to place your order. The parts in your guest cart will carry over."
+          : "Sign in or create a customer account to save vehicles and addresses, view orders and manage support tickets."}</p>
+      </div>
+      <div className="px-guest-actions">
+        <Link href={checkout ? "/login/customer?checkout=1" : "/login/customer?signin=1"} className="px-btn px-btn-red">
+          Sign in or create account<Icon name="arrow"/>
+        </Link>
+        <Link href={checkout ? "/cart" : "/shop"} className="px-btn px-btn-outline">{checkout ? "Back to cart" : "Keep shopping"}</Link>
+      </div>
+    </div>
   </div>;
 }
 

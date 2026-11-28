@@ -735,3 +735,16 @@ html[data-native="true"] .px-auth-loading { min-height: 100dvh; padding-top: env
 .px-android-update > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .px-android-update .px-btn { min-height: 42px; }
 .px-android-update p[role="alert"] { margin: 8px 0 0; }
+
+.px-auth-guest {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 14px;
+  margin: 16px 0;
+  border-bottom: 1px solid var(--px-line);
+  text-align: center;
+}
+
+.px-auth-guest small { color: var(--px-muted); font-size: 12px; }
+.px-guest-gate { gap: 16px; min-height: 310px; padding-inline: clamp(16px, 4vw, 48px); }
+.px-guest-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }

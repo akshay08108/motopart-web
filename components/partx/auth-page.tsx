@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { appRole, roleHome, roleLogin } from "@/lib/app-role";
 import type { UserRole } from "@/lib/types";
 import { usePartX } from "./app-provider";
@@ -39,9 +39,16 @@ function RoleChoice({ role, title, description }: { role: UserRole; title: strin
   return <Link className={`px-role-choice px-role-${role}`} href={`/login/${role}`}><span className="px-role-icon"><Icon name={role === "customer" ? "user" : "store"}/></span><h2>{title}</h2><p>{description}</p><span className="px-role-cta">Continue as {role}<Icon name="arrow"/></span></Link>;
 }
 
-export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; signupFirst?: boolean }) {
+export function CustomerAuthPage() {
+  const params = useSearchParams();
+  const checkout = params.get("checkout") === "1";
+  const signupFirst = !checkout && params.get("signin") !== "1";
+  return <RoleAuthPage role="customer" signupFirst={signupFirst} checkout={checkout}/>;
+}
+
+export function RoleAuthPage({ role, signupFirst = false, checkout = false }: { role: UserRole; signupFirst?: boolean; checkout?: boolean }) {
   const router = useRouter();
-  const { signIn, register, resetPassword, user, authHydrated, emailVerified, requestEmailVerification, refreshEmailVerification, signOut } = usePartX();
+  const { signIn, register, resetPassword, user, authHydrated, emailVerified, requestEmailVerification, refreshEmailVerification, signOut, continueAsGuest, isGuest } = usePartX();
   const [mode, setMode] = useState<AuthMode>(signupFirst ? "register" : "signin");
   const [showPassword, setShowPassword] = useState(false);
   const [identifier, setIdentifier] = useState("");
@@ -56,8 +63,8 @@ export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; si
 
   useEffect(() => {
     if (!authHydrated || !user || user.activeRole !== role || awaitingVerification) return;
-    router.replace(roleHome[role]);
-  }, [authHydrated, awaitingVerification, role, router, user]);
+    router.replace(role === "customer" && checkout ? "/checkout" : roleHome[role]);
+  }, [authHydrated, awaitingVerification, checkout, role, router, user]);
 
   const complete = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -142,6 +149,16 @@ export function RoleAuthPage({ role, signupFirst = false }: { role: UserRole; si
           <Link className="px-btn px-btn-outline px-auth-seller-link" href={roleLogin("seller")}><Icon name="store"/>Seller sign in</Link>
         )}
         <div className="px-auth-heading"><span>PARTX {copy.heading.toUpperCase()}</span><h2>{mode === "reset" ? "Reset your password" : mode === "signin" ? (role === "seller" ? "Seller sign in" : "Welcome back") : role === "seller" ? "Create your seller account" : role === "rider" ? "Create your rider account" : "Create your customer account"}</h2><p>{mode === "reset" ? "Enter the email you use for PartX." : mode === "signin" ? copy.signInDescription : copy.registerDescription}</p></div>
+        {role === "customer" && !user && mode !== "reset" && (!appRole || appRole === "customer") && (
+          <div className="px-auth-guest">
+            <button type="button" className="px-btn px-btn-outline" disabled={busy || !authHydrated} onClick={() => {
+              if (continueAsGuest()) router.replace(isGuest && checkout ? "/cart" : "/");
+            }}>
+              {isGuest && checkout ? "Back to guest cart" : "Continue as guest"}<Icon name="arrow"/>
+            </button>
+            <small>Browse and add parts to your cart. Sign in when you’re ready to order.</small>
+          </div>
+        )}
         {sellerSignup && <p className="px-auth-mode-switch px-auth-existing-seller">
           <span>Already have a seller account?</span>
           <button className="px-btn px-btn-outline" type="button" disabled={busy} onClick={() => changeMode("signin")}>

@@ -12,7 +12,7 @@ import { Icon } from "./icons";
 import styles from "./home-page.module.css";
 
 export function HomeVehicleFinder() {
-  const { vehicles, activeVehicleId, setActiveVehicleId, addVehicle, garageReady, catalog } = usePartX();
+  const { vehicles, activeVehicleId, setActiveVehicleId, addVehicle, garageReady, catalog, isGuest } = usePartX();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -38,7 +38,7 @@ export function HomeVehicleFinder() {
       <div className={styles.finderEyebrow}><Icon name="car"/><span>YOUR PARTX GARAGE</span><Link href="/garage">Manage</Link></div>
       <h2 id="home-vehicle-heading">{vehicle ? "Your car. Your parts." : "Find your fit."}</h2>
       <p className={styles.finderIntro}>{vehicle ? "A shortcut to the parts linked to your vehicle." : "Start with your model. Make every search more useful."}</p>
-      {vehicle ? <>
+      {isGuest ? <Link href="/garage?add=vehicle" className={styles.finderAction}>Sign in to save a vehicle<Icon name="car"/></Link> : vehicle ? <>
         <div className={styles.selectedCar}>
           <span className={styles.selectedCarIcon}><Icon name="car"/></span>
           <div><small>SHOPPING FOR</small><strong>{vehicleName(vehicle)}</strong><span>{vehicleDetails(vehicle) || "Add year, fuel and variant in My garage"}</span></div>

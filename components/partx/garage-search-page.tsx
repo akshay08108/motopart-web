@@ -18,6 +18,7 @@ import type { AppLocation } from "@/lib/types";
 export function GarageSearchPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const afterVehicleSetup = searchParams.get("checkout") === "1" ? "/checkout" : "/";
   const { vehicles, garageReady, activeVehicleId, setActiveVehicleId, addVehicle, removeVehicle, location, garages, addGarage, needsVehicle, skipVehicleSetup } = usePartX();
   const addVehicleButton = useRef<HTMLButtonElement>(null);
   const confirmRemoveButton = useRef<HTMLButtonElement>(null);
@@ -54,7 +55,7 @@ export function GarageSearchPage() {
       if (vehicle) await addVehicle(vehicle);
       else await skipVehicleSetup();
       resetVehicleDialog();
-      if (needsVehicle) router.replace("/");
+      if (needsVehicle) router.replace(afterVehicleSetup);
     } catch {
       setSaveError("Could not save your vehicle settings. Try again.");
     } finally {
@@ -138,7 +139,7 @@ export function GarageSearchPage() {
           await setActiveVehicleId(id);
           if (needsVehicle) await skipVehicleSetup();
           resetVehicleDialog();
-          if (needsVehicle) router.replace("/");
+          if (needsVehicle) router.replace(afterVehicleSetup);
         } catch { setSaveError("Could not select this vehicle. Try again."); }
         finally { setSaving(false); }
       }}/> : null}
