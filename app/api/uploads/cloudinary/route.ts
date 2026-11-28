@@ -20,12 +20,16 @@ export async function POST(request: Request) {
   try {
     const session = await requireSeller(request);
     const body = await readJson(request);
-    const productId = typeof body.productId === "string" ? body.productId.trim() : "";
-    if (!productIdPattern.test(productId)) return error(request, "A valid product ID is required.", 400);
+    const isStorePhoto = body.kind === "store";
+    const targetId = isStorePhoto ? body.storeId : body.productId;
+    if (typeof targetId !== "string" || !productIdPattern.test(targetId)) {
+      return error(request, isStorePhoto ? "A valid store ID is required." : "A valid product ID is required.", 400);
+    }
+    if (isStorePhoto) await requireStoreOwner(session, targetId);
 
     const config = cloudinaryConfig();
     const timestamp = Math.floor(Date.now() / 1000);
-    const publicId = `partx/products/${session.uid}/${productId}/primary-${crypto.randomUUID()}`;
+    const publicId = `partx/${isStorePhoto ? "stores" : "products"}/${session.uid}/${targetId}/${isStorePhoto ? "photo" : "primary"}-${crypto.randomUUID()}`;
     const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET?.trim();
     const parameters: Record<string, string | number> = {
       public_id: publicId,
@@ -49,16 +53,26 @@ export async function DELETE(request: Request) {
     const session = await requireSeller(request);
     const body = await readJson(request);
     const publicId = typeof body.publicId === "string" ? body.publicId.trim() : "";
-    if (!publicId.startsWith(`partx/products/${session.uid}/`)) return error(request, "This image does not belong to your store.", 403);
+    if (body.kind === "store") {
+      const storeId = typeof body.storeId === "string" ? body.storeId : "";
+      const prefix = `partx/stores/${session.uid}/${storeId}/photo-`;
+      if (!productIdPattern.test(storeId) || !publicId.startsWith(prefix) || !/^[0-9a-f-]{36}$/.test(publicId.slice(prefix.length))) {
+        return error(request, "This image does not belong to your store.", 403);
+      }
+      await requireStoreOwner(session, storeId);
+    } else if (!publicId.startsWith(`partx/products/${session.uid}/`)) {
+      return error(request, "This image does not belong to your store.", 403);
+    }
 
     const config = cloudinaryConfig();
     const timestamp = Math.floor(Date.now() / 1000);
-    const parameters = { public_id: publicId, timestamp };
+    const parameters = { public_id: publicId, timestamp, ...(body.kind === "store" ? { invalidate: "true" } : {}) };
     const form = new FormData();
     form.set("public_id", publicId);
     form.set("timestamp", String(timestamp));
     form.set("api_key", config.apiKey);
     form.set("signature", signCloudinary(parameters, config.apiSecret));
+    if (parameters.invalidate) form.set("invalidate", parameters.invalidate);
 
     const response = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(config.cloudName)}/image/destroy`, {
       method: "POST",
@@ -94,14 +108,27 @@ async function requireSeller(request: Request) {
   const profile = await profileResponse.json() as FirestoreDocument;
   const roles = profile.fields?.roles?.arrayValue?.values?.map((role) => role.stringValue).filter(Boolean) ?? [];
   if (!profileResponse.ok || !roles.includes("seller")) {
-    throw new UploadRouteError("Only PartX seller accounts can upload product images.", 403);
+    throw new UploadRouteError("Only PartX seller accounts can manage store and product images.", 403);
   }
-  return { uid };
+  return { uid, token };
+}
+
+async function requireStoreOwner(session: { uid: string; token: string }, storeId: string) {
+  const response = await fetch(`https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/stores/${encodeURIComponent(storeId)}`, {
+    headers: { Authorization: `Bearer ${session.token}` },
+    cache: "no-store",
+  });
+  const store = await response.json() as FirestoreDocument;
+  if (!response.ok || store.fields?.ownerId?.stringValue !== session.uid) {
+    throw new UploadRouteError("Only the store owner can manage this photo.", 403);
+  }
 }
 
 async function readJson(request: Request): Promise<Record<string, unknown>> {
   try {
-    return await request.json() as Record<string, unknown>;
+    const body: unknown = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid JSON object");
+    return body as Record<string, unknown>;
   } catch {
     throw new UploadRouteError("The upload request is invalid.", 400);
   }
@@ -112,7 +139,7 @@ function cloudinaryConfig() {
   const apiKey = process.env.CLOUDINARY_API_KEY?.trim();
   const apiSecret = process.env.CLOUDINARY_API_SECRET?.trim();
   if (!cloudName || !apiKey || !apiSecret) {
-    throw new UploadRouteError("Product image storage is not configured. Add the Cloudinary environment variables in Vercel and redeploy.", 503);
+    throw new UploadRouteError("Image storage is currently unavailable. Please try again later.", 503);
   }
   return { cloudName, apiKey, apiSecret };
 }

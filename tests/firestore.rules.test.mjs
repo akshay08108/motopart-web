@@ -450,3 +450,58 @@ test("only the customer can review the delivered order once", async () => {
   const otherCustomer = environment.authenticatedContext("customer-2", { email_verified: true }).firestore();
   await assertFails(setDoc(doc(otherCustomer, "ratings", "ORDER-TICKET-1"), { ...rating, customerId: "customer-2" }));
 });
+
+test("profile and vehicle photos are private, role-scoped, size-limited, and removable", async () => {
+  const owner = environment.authenticatedContext("customer-1").firestore();
+  const otherCustomer = environment.authenticatedContext("customer-2").firestore();
+  const seller = environment.authenticatedContext("seller-1").firestore();
+  const guest = environment.unauthenticatedContext().firestore();
+  const profile = (db) => doc(db, "users", "customer-1", "photos", "profile");
+  const vehicle = (db) => doc(db, "users", "customer-1", "photos", "vehicle-abc");
+  const data = { dataUrl: "data:image/jpeg;base64," + "AAAB".repeat(35_000), updatedAt: serverTimestamp() };
+  await assertSucceeds(setDoc(profile(owner), data));
+  await assertSucceeds(setDoc(vehicle(owner), data));
+  await assertSucceeds(getDoc(profile(owner)));
+  await assertFails(getDoc(profile(guest)));
+  await assertFails(getDoc(vehicle(otherCustomer)));
+  await assertFails(setDoc(vehicle(otherCustomer), data));
+  await assertFails(getDoc(profile(seller)));
+  await assertFails(setDoc(doc(seller, "users", "seller-1", "photos", "profile"), data));
+  await assertFails(setDoc(vehicle(owner), { ...data, dataUrl: "data:image/svg+xml;base64,AAAB" }));
+  await assertFails(setDoc(vehicle(owner), { ...data, dataUrl: "data:image/jpeg;base64," + "AAAB".repeat(40_000) }));
+  await assertSucceeds(deleteDoc(vehicle(owner)));
+});
+
+test("only a rider can manage their own rider profile photo, including while awaiting activation", async () => {
+  const uid = "photo-rider";
+  await environment.withSecurityRulesDisabled(async (context) => {
+    const database = context.firestore();
+    await setDoc(doc(database, "users", uid), { roles: ["rider"], activeRole: "rider", riderSelfRegistered: true });
+    await setDoc(doc(database, "riders", uid), { active: false, activationPending: true });
+  });
+  const rider = environment.authenticatedContext(uid, { email_verified: true }).firestore();
+  const customer = environment.authenticatedContext("customer-1").firestore();
+  const profile = (db) => doc(db, "users", uid, "photos", "profile");
+  const data = { dataUrl: "data:image/jpeg;base64,AAAB", updatedAt: serverTimestamp() };
+  await assertSucceeds(setDoc(profile(rider), data));
+  await assertSucceeds(getDoc(profile(rider)));
+  await assertFails(getDoc(profile(customer)));
+  await assertFails(setDoc(doc(rider, "users", uid, "photos", "vehicle-abc"), data));
+});
+
+test("only the store owner can publish or remove a photo scoped to that store", async () => {
+  const owner = environment.authenticatedContext("seller-1").firestore();
+  const other = environment.authenticatedContext("seller-2").firestore();
+  const guest = environment.unauthenticatedContext().firestore();
+  const store = (db) => doc(db, "stores", "store-1b");
+  const photoPublicId = "partx/stores/seller-1/store-1b/photo-12345678-abcd-1234-abcd-123456789abc";
+  const photoUrl = `https://res.cloudinary.com/partx/image/upload/f_auto,q_auto,c_limit,w_640/v1234/${photoPublicId}.jpg`;
+  const change = { photoUrl, photoPublicId, updatedAt: serverTimestamp() };
+  await assertSucceeds(updateDoc(store(owner), change));
+  await assertSucceeds(getDoc(store(guest)));
+  await assertFails(updateDoc(store(other), change));
+  await assertFails(updateDoc(store(owner), { ...change, photoUrl: "https://example.com/image.jpg" }));
+  await assertFails(updateDoc(doc(owner, "stores", "store-1"), change));
+  await assertFails(updateDoc(store(owner), { ...change, ownerId: "seller-2" }));
+  await assertSucceeds(updateDoc(store(owner), { photoUrl: "", photoPublicId: "", updatedAt: serverTimestamp() }));
+});

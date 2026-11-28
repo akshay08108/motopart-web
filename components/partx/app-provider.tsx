@@ -1,8 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { browserLocalPersistence, browserSessionPersistence, setPersistence, createUserWithEmailAndPassword, deleteUser, onAuthStateChanged, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, signOut as firebaseSignOut, updateProfile } from "firebase/auth";
-import { arrayUnion, collection, doc, getDoc, getDocsFromServer, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
+import { GoogleAuthProvider, browserLocalPersistence, browserSessionPersistence, setPersistence, createUserWithEmailAndPassword, deleteUser, onAuthStateChanged, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, signInWithPopup, signOut as firebaseSignOut, updateProfile, type User } from "firebase/auth";
+import { arrayUnion, collection, doc, getDoc, getDocFromServer, getDocsFromServer, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where } from "firebase/firestore";
 import type { AppLocation, CartLine, CustomerUser, Garage, LiveAnnouncement, Order, OrderStage, PartnerStore, PaymentMethod, PaymentOrderStatus, Product, SellerPaymentStatus, SellerProduct, StorePaymentSettings, UserRole, Vehicle } from "@/lib/types";
 import { getDemoCatalog } from "@/lib/demo-data";
 import { firebaseAuth, firestore } from "@/lib/firebase";
@@ -50,6 +50,13 @@ export type PartXOrder = Order & {
 
 export type CartSellerSelection = { storeId: string; storeName: string; price: number };
 export type RegisterInput = { name: string; email: string; mobile: string; password: string; role: UserRole; storeName?: string };
+
+type GoogleSignInResult =
+  | { kind: "ok" }
+  | { kind: "setup"; uid: string; email: string; name: string }
+  | { kind: "error"; message: string };
+
+type ProfileDetails = Pick<RegisterInput, "name" | "mobile" | "role" | "storeName">;
 
 type AppContextValue = {
   cartNotice: { id: number; productName: string; message: string; added: boolean; expiresAt: number } | null;
@@ -100,6 +107,8 @@ type AppContextValue = {
   requestEmailVerification: () => Promise<void>;
   refreshEmailVerification: () => Promise<boolean>;
   signIn: (identifier: string, password: string, role: UserRole, remember: boolean) => Promise<"ok" | "credentials" | "role" | "network" | "retry">;
+  signInWithGoogle: (role: UserRole) => Promise<GoogleSignInResult>;
+  completeGoogleProfile: (uid: string, input: ProfileDetails) => Promise<void>;
   register: (input: RegisterInput) => Promise<boolean>;
   resetPassword: (email: string) => Promise<boolean>;
   notificationPermission: NotificationPermission | "unsupported";
@@ -794,64 +803,53 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
         return "retry";
       }
     },
+    signInWithGoogle: async (role) => {
+      let authUser: User | undefined;
+      try {
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: "select_account" });
+        authUser = (await signInWithPopup(firebaseAuth, provider)).user;
+        if (!authUser.email || !authUser.emailVerified) {
+          throw new Error("Choose a Google account with a verified email address.");
+        }
+        const snapshot = await getDocFromServer(doc(firestore, "users", authUser.uid));
+        if (!snapshot.exists()) return { kind: "setup", uid: authUser.uid, email: authUser.email, name: authUser.displayName ?? "" };
+        const profile = parseFirebaseUser(authUser.uid, authUser.email, snapshot.data());
+        if (profile?.activeRole !== role || !profile.roles.includes(role)) {
+          throw new Error(`This Google account is linked to a different PartX role. Use the email you registered as a ${role}.`);
+        }
+        recordPartXSignIn(authUser);
+        return { kind: "ok" };
+      } catch (reason) {
+        if (authUser && firebaseAuth.currentUser?.uid === authUser.uid) {
+          await firebaseSignOut(firebaseAuth).catch(() => undefined);
+        }
+        return { kind: "error", message: googleSignInError(reason) };
+      }
+    },
+    completeGoogleProfile: async (uid, input) => {
+      const authUser = firebaseAuth.currentUser;
+      if (authUser?.uid !== uid || !authUser.emailVerified || !authUser.providerData.some(({ providerId }) => providerId === "google.com")) {
+        throw new Error("Your Google session expired. Cancel and sign in again.");
+      }
+      if (!/^\+?[1-9]\d{9,14}$/.test(cleanPhone(input.mobile))) {
+        throw new Error("Enter a valid mobile number, including the country code if needed.");
+      }
+      await saveNewProfile(authUser, input);
+      recordPartXSignIn(authUser);
+    },
     register: async (input) => {
       if (!input.name.trim() || !input.email.trim() || !input.mobile.trim() || input.password.length < 6) return false;
-      const name = input.name.trim();
-      const mobile = input.role === "rider" ? input.mobile.replace(/[\s()-]/g, "") : input.mobile.trim();
-      if (input.role === "rider" && (name.length > 120 || !/^\+?[1-9]\d{9,14}$/.test(mobile))) return false;
+      if (input.role === "rider" && (input.name.trim().length > 120 || !/^\+?[1-9]\d{9,14}$/.test(cleanPhone(input.mobile)))) return false;
       let credential;
       try {
         await setPersistence(firebaseAuth, browserLocalPersistence);
         credential = await createUserWithEmailAndPassword(firebaseAuth, input.email.trim().toLowerCase(), input.password);
-        await updateProfile(credential.user, { displayName: name });
-        const storeId = input.role === "seller" ? `store-${credential.user.uid}` : undefined;
-        const profile: CustomerUser = {
-          id: credential.user.uid,
-          name,
-          email: credential.user.email ?? input.email.trim().toLowerCase(),
-          mobile,
-          roles: [input.role],
-          activeRole: input.role,
-          ...(input.role === "rider" ? { riderSelfRegistered: true } : {}),
-          ...(input.role === "seller" ? { sellerStatus: "approved" as const, storeIds: [storeId!], storeName: input.storeName?.trim() } : {}),
-        };
-        const profileData = {
-          name: profile.name,
-          email: profile.email,
-          mobile: profile.mobile,
-          roles: profile.roles,
-          activeRole: profile.activeRole,
-          ...(profile.riderSelfRegistered ? { riderSelfRegistered: true } : {}),
-          ...(profile.sellerStatus ? { sellerStatus: profile.sellerStatus } : {}),
-          ...(profile.storeIds ? { storeIds: profile.storeIds } : {}),
-          ...(profile.storeName ? { storeName: profile.storeName } : {}),
-        };
-        const batch = writeBatch(firestore);
-        batch.set(doc(firestore, "users", credential.user.uid), { ...profileData, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-        if (input.role === "customer") batch.set(doc(firestore, "users", credential.user.uid, "preferences", "garage"), { ...emptyGarage, needsVehicle: true });
-        if (storeId) batch.set(doc(firestore, "stores", storeId), { ownerId: credential.user.uid, name: input.storeName?.trim(), status: "approved", rating: 0, ratingCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-        if (input.role === "rider") {
-          batch.set(doc(firestore, "riders", credential.user.uid), {
-            name,
-            phone: mobile,
-            active: false,
-            online: false,
-            activationPending: true,
-            activeDeliveryId: null,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        }
-        await batch.commit();
+        await updateProfile(credential.user, { displayName: input.name.trim() });
+        await saveNewProfile(credential.user, input);
         if (input.role === "customer" || input.role === "rider") {
           void sendEmailVerification(credential.user).catch(() => undefined);
         }
-        if (input.role === "customer") {
-          writeBrowserStorage("local", "partx-device-role", "customer");
-          setCustomerDevice(true);
-        }
-        setUser(profile);
-        writeBrowserStorage("local", AUTH_PROFILE_CACHE_KEY, JSON.stringify(profile));
         return true;
       } catch {
         if (credential?.user) await deleteUser(credential.user).catch(() => undefined);
@@ -891,6 +889,7 @@ export function PartXProvider({ children }: { children: React.ReactNode }) {
 }
 
 type FirebaseStoreRecord = {
+  photoUrl?: string;
   location?: AppLocation;
   id: string;
   ownerId: string;
@@ -909,6 +908,7 @@ type FirebaseStoreRecord = {
 function toPartnerStore(store: FirebaseStoreRecord, products: SellerProduct[], existing?: PartnerStore): PartnerStore {
   return {
     id: store.id,
+    photoUrl: typeof store.photoUrl === "string" && store.photoUrl.startsWith("https://res.cloudinary.com/") ? store.photoUrl : undefined,
     sellerId: store.ownerId,
     name: store.name,
     owner: store.owner ?? existing?.owner ?? "PartX seller",
@@ -1037,6 +1037,69 @@ function isPaymentOrderStatus(value: unknown): value is PaymentOrderStatus {
 
 function isOrderStage(value: unknown): value is OrderStage {
   return value === "Confirmed" || value === "Preparing" || value === "Picked up" || value === "On the way" || value === "Delivered";
+}
+
+function cleanPhone(phone: string) {
+  return phone.replace(/[\s()-]/g, "");
+}
+
+async function saveNewProfile(authUser: User, input: ProfileDetails) {
+  const name = input.name.trim();
+  const mobile = input.role === "rider" ? cleanPhone(input.mobile) : input.mobile.trim();
+  const storeName = input.storeName?.trim();
+  const email = authUser.email;
+  if (!email || !name || !mobile || (input.role === "seller" && !storeName)) {
+    throw new Error("Fill in all the required account details.");
+  }
+
+  const uid = authUser.uid;
+  const reference = doc(firestore, "users", uid);
+  await runTransaction(firestore, async (transaction) => {
+    const current = await transaction.get(reference);
+    if (firebaseAuth.currentUser?.uid !== uid) throw new Error("Your session changed. Sign in again.");
+    if (current.exists()) {
+      if (parseFirebaseUser(uid, email, current.data())?.activeRole !== input.role) {
+        throw new Error("This account already has a different PartX role.");
+      }
+      return;
+    }
+
+    const storeId = input.role === "seller" ? `store-${uid}` : undefined;
+    const timestamps = { createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+    transaction.set(reference, {
+      name, email, mobile, roles: [input.role], activeRole: input.role, ...timestamps,
+      ...(input.role === "rider" ? { riderSelfRegistered: true } : {}),
+      ...(storeId ? { sellerStatus: "approved", storeIds: [storeId], storeName } : {}),
+    });
+    if (input.role === "customer") {
+      transaction.set(doc(firestore, "users", uid, "preferences", "garage"), { ...emptyGarage, needsVehicle: true });
+    }
+    if (storeId) {
+      transaction.set(doc(firestore, "stores", storeId), {
+        ownerId: uid, name: storeName, status: "approved", rating: 0, ratingCount: 0, ...timestamps,
+      });
+    }
+    if (input.role === "rider") {
+      transaction.set(doc(firestore, "riders", uid), {
+        name, phone: mobile, active: false, online: false, activationPending: true, activeDeliveryId: null, ...timestamps,
+      });
+    }
+  });
+}
+
+function googleSignInError(reason: unknown) {
+  const code = (reason as { code?: string } | null)?.code;
+  switch (code) {
+    case "auth/popup-closed-by-user":
+    case "auth/cancelled-popup-request": return "Google sign-in was cancelled. Try again when you’re ready.";
+    case "auth/popup-blocked": return "Allow pop-ups for PartX, then try Google sign-in again.";
+    case "auth/account-exists-with-different-credential": return "This email already uses another sign-in method. Sign in with your existing PartX account.";
+    case "auth/network-request-failed":
+    case "unavailable": return "Couldn’t connect. Check your internet connection and try again.";
+    case "auth/operation-not-allowed":
+    case "auth/unauthorized-domain": return "Google sign-in is unavailable here. You can still sign in with email and password.";
+    default: return reason instanceof Error && !code ? reason.message : "Couldn’t sign in with Google. Please try again.";
+  }
 }
 
 function parseFirebaseUser(uid: string, authEmail: string, data: Record<string, unknown>): CustomerUser | null {

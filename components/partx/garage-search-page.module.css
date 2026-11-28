@@ -233,6 +233,7 @@
 .selectVehicle small { font-size: 11px; color: var(--px-muted); }
 .selectVehicle em { position: absolute; right: 12px; top: 7px; display: flex; align-items: center; gap: 3px; font-size: 10px; color: var(--px-red); font-style: normal; }
 .selectVehicle em svg { width: 12px; height: 12px; }
+.vehiclePhotoActions { padding: 2px 14px 0; }
 .removeVehicle { display: flex; align-items: center; gap: 6px; min-height: 40px; margin-left: auto; padding: 8px 16px; border: 0; background: transparent; color: var(--px-muted); font-size: 11px; cursor: pointer; }
 .removeVehicle:hover { color: var(--px-red); }
 .removeVehicle svg { width: 14px; height: 14px; }

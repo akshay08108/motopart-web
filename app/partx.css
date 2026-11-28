@@ -748,3 +748,43 @@ html[data-native="true"] .px-auth-loading { min-height: 100dvh; padding-top: env
 .px-auth-guest small { color: var(--px-muted); font-size: 12px; }
 .px-guest-gate { gap: 16px; min-height: 310px; padding-inline: clamp(16px, 4vw, 48px); }
 .px-guest-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+
+.px-google-signin.px-btn {
+  width: 100%;
+  min-height: 46px;
+  margin: 8px 0 14px;
+  border-radius: 8px;
+  color: #1f1f1f;
+  background: #fff;
+  border-color: #747775;
+}
+.px-google-signin.px-btn:hover:not(:disabled) { background: #f2f5fa; color: #1f1f1f; }
+.px-google-signin.px-btn svg { flex: 0 0 18px; width: 18px; height: 18px; }
+.px-avatar, .px-store-mark { overflow: hidden; flex-shrink: 0; }
+.px-account-hero > div { min-width: 0; }
+.px-account-hero h1, .px-account-hero p { overflow-wrap: anywhere; }
+.px-store-banner {
+  display: grid;
+  place-items: center;
+  width: min(100%, 560px);
+  height: clamp(140px, 26vw, 280px);
+  margin-bottom: 16px;
+  overflow: hidden;
+  border: 1px solid var(--px-line);
+  border-radius: 12px;
+  background: var(--px-card);
+}
+.px-store-banner img { object-fit: contain; }
+
+.sx-store-photo { display: grid; gap: 10px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--px-line); }
+.sx-store-photo h2, .sx-store-photo p { margin: 0; }
+.sx-store-photo-preview {
+  display: grid;
+  place-items: center;
+  width: min(100%, 256px);
+  height: 144px;
+  overflow: hidden;
+  border: 1px solid var(--px-line);
+  border-radius: 9px;
+  background: var(--px-surface);
+}

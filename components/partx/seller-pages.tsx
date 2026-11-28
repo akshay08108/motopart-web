@@ -10,6 +10,8 @@ import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import { sellerOrderHref } from "@/lib/navigation";
 import { useSeller } from "./seller-provider";
+import { saveStorePhoto } from "@/lib/cloudinary-client";
+import { PhotoControls, UploadedPhoto } from "./photo-controls";
 import { StoreLocationEditor } from "./store-location-editor";
 import { SellerAfterSales, SellerRideLookup } from "./after-sales";
 import { SellerDispatch } from "./seller-dispatch";
@@ -220,6 +222,9 @@ export function SellerSettingsPage() {
   const [savingAnnouncement, setSavingAnnouncement] = useState(false);
   const { user, stores } = usePartX();
   const currentStore = stores.find((store) => user?.storeIds?.includes(store.id));
+  const [photoStoreId, setPhotoStoreId] = useState("");
+  const ownedStores = stores.filter((store) => store.sellerId === user?.id && Boolean(user?.id));
+  const photoStore = ownedStores.find((store) => store.id === photoStoreId) ?? ownedStores[0];
   const razorpay = useRazorpayAvailability(currentStore?.id, user?.id);
   const { paymentSettings, announcements, savePaymentSettings, addAnnouncement, setAnnouncementActive, removeAnnouncement } = useSeller();
   const defaults: StorePaymentSettings = paymentSettings ?? { upiId: "", upiDisplayName: user?.storeName ?? "", upiEnabled: false, codEnabled: true };
@@ -257,6 +262,16 @@ export function SellerSettingsPage() {
         <PanelHead title="Store profile"/><div className="sx-form-grid"><label>Store name<input defaultValue={user?.storeName ?? "Your store"}/></label><label>Seller owner<input defaultValue={user?.name ?? "Store owner"}/></label><label>Phone<input defaultValue={user?.mobile ?? ""}/></label><label>GSTIN<input placeholder="Add GSTIN"/></label><label>Business hours<input defaultValue="9:00 AM – 9:00 PM"/></label><label>Delivery radius<input defaultValue="8 km"/></label></div><label className="sx-check"><input type="checkbox" defaultChecked/>Receive new-order and urgent-ticket browser alerts</label><button className="sx-primary" type="submit">{profileSaved?"Settings saved":"Save store settings"}</button><p>Your seller account can add products and receive orders immediately.</p>
       </form>
         {currentStore ? <StoreLocationEditor key={currentStore.id} storeId={currentStore.id} initialLocation={currentStore.location}/> : null}
+        {user && photoStore && <section className="sx-store-photo">
+          <h2>Store photo</h2>
+          <p>This photo appears in Shop by store and on your store page.</p>
+          {ownedStores.length > 1 && <label>Store<select value={photoStore.id} onChange={(event) => setPhotoStoreId(event.target.value)}>
+            {ownedStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
+          </select></label>}
+          <div className="sx-store-photo-preview"><UploadedPhoto url={photoStore.photoUrl} alt={photoStore.name} fallback={<Icon name="store"/>}/></div>
+          <PhotoControls key={photoStore.id} label="store photo" hasPhoto={Boolean(photoStore.photoUrl)}
+            save={(image) => saveStorePhoto(user.id, photoStore.id, image)}/>
+        </section>}
       </section>
       <form className="sx-panel sx-settings sx-payment-settings" key={`${defaults.upiId}-${defaults.upiEnabled}-${defaults.codEnabled}`} onSubmit={(event) => void savePayments(event)}>
         <PanelHead title="Payment settings"/>{razorpay?.enabled && <p><b>Razorpay Test Mode enabled.</b> {razorpay.route ? "Linked seller account configured for test transfers." : "Test checkout is available. Route is required to test seller transfers."}</p>}<p>Customers pay your store directly. PartX currently charges 0% commission and does not hold the payment.</p><label>UPI ID<input name="upiId" defaultValue={defaults.upiId} placeholder="store@bank" autoComplete="off"/></label><label>UPI account / display name<input name="upiDisplayName" defaultValue={defaults.upiDisplayName} placeholder="Name customers see in their UPI app"/></label><label className="sx-check"><input name="upiEnabled" type="checkbox" defaultChecked={defaults.upiEnabled}/>Enable direct UPI payments</label><label className="sx-check"><input name="codEnabled" type="checkbox" defaultChecked={defaults.codEnabled}/>Enable cash on delivery</label>{paymentError ? <p className="sx-form-error" role="alert">{paymentError}</p> : null}<button className="sx-primary" type="submit" disabled={savingPayment}>{savingPayment ? "Saving…" : paymentSaved ? "Payment settings saved" : "Save payment settings"}</button><small>Use a verified business/merchant UPI ID. Personal VPAs may be flagged or declined by payment apps. PartX never asks for or stores your UPI PIN.</small>

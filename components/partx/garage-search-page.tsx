@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Garage, Vehicle } from "@/lib/types";
 import { vehicleDetails, vehicleName } from "@/lib/vehicle-display";
+import { savePrivatePhoto, usePrivatePhoto } from "@/lib/account-photos";
+import { PhotoControls } from "./photo-controls";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import styles from "./garage-search-page.module.css";
@@ -19,7 +21,7 @@ export function GarageSearchPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const afterVehicleSetup = searchParams.get("checkout") === "1" ? "/checkout" : "/";
-  const { vehicles, garageReady, activeVehicleId, setActiveVehicleId, addVehicle, removeVehicle, location, garages, addGarage, needsVehicle, skipVehicleSetup } = usePartX();
+  const { user, vehicles, garageReady, activeVehicleId, setActiveVehicleId, addVehicle, removeVehicle, location, garages, addGarage, needsVehicle, skipVehicleSetup } = usePartX();
   const addVehicleButton = useRef<HTMLButtonElement>(null);
   const confirmRemoveButton = useRef<HTMLButtonElement>(null);
   const removeOrigin = useRef("");
@@ -41,6 +43,7 @@ export function GarageSearchPage() {
     }
   }, [confirmRemoveId]);
   const activeVehicle = useMemo(() => vehicles.find((vehicle) => vehicle.id === activeVehicleId), [activeVehicleId, vehicles]);
+  const activePhoto = usePrivatePhoto(activeVehicle ? user?.id : undefined, activeVehicle?.id);
 
   const resetVehicleDialog = () => {
     setVehicleOpen(false);
@@ -94,8 +97,8 @@ export function GarageSearchPage() {
     </div>
 
     {activeVehicle ? <section className={styles.activeHero}>
-      <div className={styles.activeImage}><VehiclePhoto vehicle={activeVehicle} showCaption={false}/></div>
-      <div><span>ACTIVE VEHICLE</span><h2>{vehicleName(activeVehicle)}</h2><p>{vehicleDetails(activeVehicle)}</p>{vehiclePhoto(activeVehicle) && <small className={styles.photoNote}>Model reference photo · year, trim and colour may differ</small>}{activeVehicle.registration ? <small>{activeVehicle.registration}</small> : null}</div>
+      <div className={styles.activeImage}><VehiclePhoto vehicle={activeVehicle} showCaption={false} personalPhoto={activePhoto}/></div>
+      <div><span>ACTIVE VEHICLE</span><h2>{vehicleName(activeVehicle)}</h2><p>{vehicleDetails(activeVehicle)}</p>{!activePhoto && vehiclePhoto(activeVehicle) && <small className={styles.photoNote}>Model reference photo · year, trim and colour may differ</small>}{activeVehicle.registration ? <small>{activeVehicle.registration}</small> : null}</div>
       <Link className="px-btn px-btn-dark" href="/shop">Shop compatible parts <Icon name="arrow"/></Link>
     </section> : null}
 
@@ -106,9 +109,12 @@ export function GarageSearchPage() {
         {vehicleNotice && <p className={styles.vehicleNotice} role="status">{vehicleNotice}</p>}
         <div className={styles.vehicleList}>{vehicles.map((vehicle) => <article className={`${styles.vehicleCard} ${activeVehicleId === vehicle.id ? styles.activeCard : ""}`} key={vehicle.id}>
           <button type="button" className={styles.selectVehicle} aria-pressed={activeVehicleId === vehicle.id} disabled={Boolean(removingId)} onClick={() => void setActiveVehicleId(vehicle.id).catch(() => setSaveError("Could not change your active vehicle. Try again."))}>
-            <VehiclePhoto vehicle={vehicle} compact/><span><b>{vehicleName(vehicle)}</b><small>{vehicleDetails(vehicle)}</small>{vehicle.registration && <small>{vehicle.registration}</small>}</span>
+            <GarageVehiclePhoto vehicle={vehicle} uid={user?.id}/><span><b>{vehicleName(vehicle)}</b><small>{vehicleDetails(vehicle)}</small>{vehicle.registration && <small>{vehicle.registration}</small>}</span>
             {activeVehicleId === vehicle.id ? <em><Icon name="check"/>Active</em> : null}
           </button>
+          {user && /^[A-Za-z0-9_-]{1,128}$/.test(vehicle.id) && <div className={styles.vehiclePhotoActions}>
+            <GaragePhotoControls uid={user.id} vehicle={vehicle} disabled={Boolean(removingId)}/>
+          </div>}
           {confirmRemoveId === vehicle.id ? <div className={styles.removeConfirm}>
             <p>Remove {vehicleName(vehicle)} from your garage?</p><small>You can add it again. Your orders and cart will stay saved.</small>
             <div><button ref={confirmRemoveButton} type="button" disabled={Boolean(removingId)} onClick={async () => {
@@ -147,6 +153,17 @@ export function GarageSearchPage() {
     {garageOpen ? <SimpleModal title="Add a trusted garage" close={() => setGarageOpen(false)}><form className="px-form" onSubmit={(event) => void saveGarage(event)}><label>Garage name<input name="name" required/></label><label>Phone<input name="phone" required/></label><label>Services<input name="services" placeholder="Installation, diagnostics" required/></label><LocationPicker value={garageLocation} onSelect={setGarageLocation} label="Garage address"/>{saveError && <p role="alert">{saveError}</p>}<button className="px-btn px-btn-red" type="submit" disabled={saving}>{saving ? "Saving…" : "Save garage"}</button></form></SimpleModal> : null}
     {locationOpen ? <DeliveryLocationPicker close={() => setLocationOpen(false)}/> : null}
   </div>;
+}
+
+function GarageVehiclePhoto({ vehicle, uid }: { vehicle: Vehicle; uid?: string }) {
+  const personalPhoto = usePrivatePhoto(uid, vehicle.id);
+  return <VehiclePhoto vehicle={vehicle} compact personalPhoto={personalPhoto}/>;
+}
+
+function GaragePhotoControls({ uid, vehicle, disabled }: { uid: string; vehicle: Vehicle; disabled: boolean }) {
+  const photo = usePrivatePhoto(uid, vehicle.id);
+  return <PhotoControls label={`${vehicle.model} photo`} hasPhoto={Boolean(photo)} disabled={disabled}
+    save={(image) => savePrivatePhoto(uid, image, vehicle.id)}/>;
 }
 
 function SimpleModal({ title, close, children }: { title: string; close: () => void; children: React.ReactNode }) {

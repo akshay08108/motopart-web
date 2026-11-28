@@ -1,5 +1,7 @@
-import { firebaseAuth } from "@/lib/firebase";
 import { apiUrl } from "@/lib/api-url";
+import { doc, runTransaction, serverTimestamp } from "firebase/firestore";
+import { firebaseAuth, firestore } from "@/lib/firebase";
+import { preparePhoto } from "@/lib/account-photos";
 
 type SignedUpload = {
   cloudName: string;
@@ -26,11 +28,19 @@ export async function uploadProductImageToCloudinary(
   image: File,
   onProgress?: (progress: number) => void,
 ): Promise<UploadedProductImage> {
+  return uploadCloudinaryImage({ productId }, image, onProgress);
+}
+
+async function uploadCloudinaryImage(
+  target: { productId: string } | { kind: "store"; storeId: string },
+  image: Blob | string,
+  onProgress?: (progress: number) => void,
+): Promise<UploadedProductImage> {
   const token = await sellerToken();
   const signedResponse = await fetch(apiUrl("/api/uploads/cloudinary"), {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ productId }),
+    body: JSON.stringify(target),
   });
   const signedBody = await signedResponse.json() as SignedUpload & { error?: string };
   if (!signedResponse.ok) throw new Error(signedBody.error ?? "PartX could not prepare the image upload.");
@@ -50,19 +60,52 @@ export async function uploadProductImageToCloudinary(
   );
   if (!result.secure_url || !result.public_id) throw new Error(result.error?.message ?? "Cloudinary did not return an image URL.");
   return {
-    imageUrl: optimizeCloudinaryUrl(result.secure_url),
+    imageUrl: optimizeCloudinaryUrl(result.secure_url, "kind" in target ? 640 : 1600),
     imagePublicId: result.public_id,
   };
 }
 
 export async function deleteCloudinaryProductImage(publicId: string) {
+  return deleteCloudinaryImage({ publicId });
+}
+
+async function deleteCloudinaryImage(target: { publicId: string; kind?: "store"; storeId?: string }) {
   const token = await sellerToken();
   const response = await fetch(apiUrl("/api/uploads/cloudinary"), {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ publicId }),
+    body: JSON.stringify(target),
   });
   if (!response.ok) throw new Error("The old image could not be removed.");
+}
+
+export async function saveStorePhoto(uid: string, storeId: string, image: File | null) {
+  if (firebaseAuth.currentUser?.uid !== uid) throw new Error("Sign in again to update your store photo.");
+  const dataUrl = image ? await preparePhoto(image, 1280, 700_000) : "";
+  if (firebaseAuth.currentUser?.uid !== uid) throw new Error("Your session changed. Sign in again and retry.");
+  const target = { kind: "store" as const, storeId };
+  const uploaded = dataUrl ? await uploadCloudinaryImage(target, dataUrl) : null;
+
+  let previousId: string | undefined;
+  try {
+    previousId = await runTransaction(firestore, async (transaction) => {
+      const reference = doc(firestore, "stores", storeId);
+      const store = (await transaction.get(reference)).data();
+      if (store?.ownerId !== uid || firebaseAuth.currentUser?.uid !== uid) {
+        throw new Error("Only the store owner can update this photo.");
+      }
+      transaction.update(reference, {
+        photoUrl: uploaded?.imageUrl ?? "",
+        photoPublicId: uploaded?.imagePublicId ?? "",
+        updatedAt: serverTimestamp(),
+      });
+      return typeof store.photoPublicId === "string" ? store.photoPublicId : undefined;
+    });
+  } catch (error) {
+    if (uploaded) void deleteCloudinaryImage({ ...target, publicId: uploaded.imagePublicId }).catch(() => undefined);
+    throw error;
+  }
+  if (previousId) void deleteCloudinaryImage({ ...target, publicId: previousId }).catch(() => undefined);
 }
 
 function sendUpload(url: string, body: FormData, onProgress?: (progress: number) => void) {
@@ -100,6 +143,6 @@ async function sellerToken() {
   return user.getIdToken();
 }
 
-function optimizeCloudinaryUrl(url: string) {
-  return url.replace("/image/upload/", "/image/upload/f_auto,q_auto,c_limit,w_1600/");
+function optimizeCloudinaryUrl(url: string, width: number) {
+  return url.replace("/image/upload/", `/image/upload/f_auto,q_auto,c_limit,w_${width}/`);
 }

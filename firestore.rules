@@ -144,6 +144,22 @@ service cloud.firestore {
           && request.resource.data.get('needsVehicle', false) is bool;
       }
 
+      match /photos/{photoId} {
+        function canManagePhoto() {
+          return ownsUser(uid) && (
+            (isCustomer() && (photoId == 'profile' || photoId.matches('^vehicle-[A-Za-z0-9_-]{1,128}$')))
+            || (photoId == 'profile' && currentUser().activeRole == 'rider' && 'rider' in currentUser().roles)
+          );
+        }
+        allow get, delete: if canManagePhoto();
+        allow create, update: if canManagePhoto()
+          && request.resource.data.keys().hasOnly(['dataUrl', 'updatedAt'])
+          && request.resource.data.dataUrl is string
+          && request.resource.data.dataUrl.size() <= 160000
+          && request.resource.data.dataUrl.matches('^data:image/jpeg;base64,[A-Za-z0-9+/]+=*$')
+          && request.resource.data.updatedAt == request.time;
+      }
+
       match /deliveryLocations/{locationId} {
         allow read, delete: if ownsUser(uid);
         allow create, update: if ownsUser(uid)
@@ -160,10 +176,30 @@ service cloud.firestore {
     }
 
     match /stores/{storeId} {
+      function validStorePhoto() {
+        let photo = request.resource.data;
+        return photo.photoUrl is string && photo.photoUrl.size() <= 500
+          && photo.photoPublicId is string && photo.photoPublicId.size() <= 260
+          && (
+            (photo.photoUrl == '' && photo.photoPublicId == '')
+            || (
+              storeId.matches('^[A-Za-z0-9_-]{1,128}$')
+              && request.auth.uid.matches('^[A-Za-z0-9_-]{1,128}$')
+              && photo.photoPublicId.matches('^partx/stores/' + request.auth.uid + '/' + storeId + '/photo-[0-9a-f-]{36}$')
+              && photo.photoUrl.matches('^https://res[.]cloudinary[.]com/[A-Za-z0-9_-]+/image/upload/f_auto,q_auto,c_limit,w_640/v[0-9]+/' + photo.photoPublicId + '[.]jpg$')
+            )
+          );
+      }
+
       allow read: if true;
+      allow update: if ownsStore(storeId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['photoUrl', 'photoPublicId', 'updatedAt'])
+        && validStorePhoto()
+        && request.resource.data.updatedAt == request.time;
       allow create: if signedIn()
         && request.resource.data.ownerId == request.auth.uid
-        && request.resource.data.status in ['approved', 'pending'];
+        && request.resource.data.status in ['approved', 'pending']
+        && !request.resource.data.keys().hasAny(['photoUrl', 'photoPublicId']);
       allow update: if isSeller()
         && resource.data.ownerId == request.auth.uid
         && request.resource.data.ownerId == resource.data.ownerId

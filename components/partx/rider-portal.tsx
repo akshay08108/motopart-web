@@ -8,6 +8,8 @@ import { createContext, useContext, useEffect, useRef, useState, type FormEvent 
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { firestore } from "@/lib/firebase";
 import { deliveryCall, deliveryDate, deliveryLabels, isActiveDelivery, navigationLink, phoneLink, rideTrackingId, useRiderJobs, type RiderDelivery } from "@/lib/rider";
+import { savePrivatePhoto, usePrivatePhoto } from "@/lib/account-photos";
+import { PhotoControls, UploadedPhoto } from "./photo-controls";
 import { usePartX } from "./app-provider";
 import { Icon } from "./icons";
 import { DeliveryMap } from "./delivery-map";
@@ -73,7 +75,7 @@ export function RiderShell({ children }: { children: React.ReactNode }) {
       {!connected ? <p className="rx-error" role="alert">You are offline. Reconnect before updating a delivery. Location sharing is paused.</p> : null}
       {error || actionError ? <p className="rx-error" role="alert">{error || actionError}</p> : null}
       {notice ? <div className="rx-notice" role="status"><Icon name="bell"/>{notice}<button type="button" className="rx-link" onClick={() => setNotice("")}>Dismiss</button></div> : null}
-      {!loaded ? <div className="rx-empty">Loading your rider workspace…</div> : !profile?.active ? <div className="rx-empty"><Icon name="user"/><h1>{profile?.activationPending ? "Your rider account is pending activation" : "Your rider access is not active"}</h1><p>{profile?.activationPending ? "PartX operations will review your account. You can go online and receive deliveries once they activate it." : "Contact PartX operations to activate your account."}</p></div> : <>
+      {!loaded ? <div className="rx-empty">Loading your rider workspace…</div> : !profile?.active ? <><div className="rx-empty"><Icon name="user"/><h1>{profile?.activationPending ? "Your rider account is pending activation" : "Your rider access is not active"}</h1><p>{profile?.activationPending ? "PartX operations will review your account. You can go online and receive deliveries once they activate it." : "Contact PartX operations to activate your account."}</p></div>{pathname === "/rider/profile" && profile ? children : null}</> : <>
         {active ? <div className="rx-reservation-note"><p>You have an unfinished delivery: <b>{active.orderId}</b>. Complete it or arrange its return with the store before accepting a new pickup.</p>{pathname !== "/rider" ? <Link href="/rider">Open delivery</Link> : null}</div> : null}
         {active?.state === "PICKED_UP" ? <RiderLocationSharing key={active.id} delivery={active}/> : null}
         {children}
@@ -229,5 +231,6 @@ export function RiderEarningsPage() {
 
 export function RiderProfilePage() {
   const { user, signOut } = usePartX(); const { profile } = useRider();
-  return <><div className="rx-page-title"><span>PARTX RIDER</span><h1>Your profile</h1><p>Your rider details are managed by PartX operations.</p></div><section className="rx-card rx-profile"><div className="rx-avatar">{user?.name.slice(0, 1)}</div><h2>{profile?.name || user?.name}</h2><dl><div><dt>Email</dt><dd>{user?.email}</dd></div><div><dt>Phone</dt><dd>{profile?.phone || user?.mobile || "Not provided"}</dd></div><div><dt>Rider ID</dt><dd>{user?.id}</dd></div><div><dt>Account</dt><dd>{profile?.active ? "Active" : "Access paused"}</dd></div></dl><p>For changes to your contact details or delivery support, contact PartX operations through your assigned seller.</p><button type="button" className="rx-secondary" onClick={() => void signOut()}>Sign out</button></section></>;
+  const profilePhoto = usePrivatePhoto(user?.id);
+  return <><div className="rx-page-title"><span>PARTX RIDER</span><h1>Your profile</h1><p>Your rider details are managed by PartX operations.</p></div><section className="rx-card rx-profile"><div className="rx-avatar"><UploadedPhoto url={profilePhoto} fallback={user?.name.slice(0, 1)}/></div><h2>{profile?.name || user?.name}</h2>{user && <PhotoControls key={user.id} label="profile photo" hasPhoto={Boolean(profilePhoto)} save={(image) => savePrivatePhoto(user.id, image)}/>}<dl><div><dt>Email</dt><dd>{user?.email}</dd></div><div><dt>Phone</dt><dd>{profile?.phone || user?.mobile || "Not provided"}</dd></div><div><dt>Rider ID</dt><dd>{user?.id}</dd></div><div><dt>Account</dt><dd>{profile?.active ? "Active" : profile?.activationPending ? "Pending activation" : "Access paused"}</dd></div></dl><p>For changes to your contact details or delivery support, contact PartX operations through your assigned seller.</p><button type="button" className="rx-secondary" onClick={() => void signOut()}>Sign out</button></section></>;
 }

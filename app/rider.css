@@ -22,3 +22,5 @@
 .rx-map-foot{display:flex;gap:12px;align-items:center;flex-wrap:wrap;color:var(--px-muted,#667579);line-height:1.8}.rx-map-foot>span{flex:1;min-width:180px}.rx-map-foot .rx-link{min-height:44px;flex-shrink:0}
 .rx-route-credit,.rx-customer-tracking .rx-route-credit{font-size:10px;padding:0 18px 10px;margin:0;color:var(--px-muted,#667579)}.rx-route-credit a{color:inherit;text-decoration:underline}
 .rx-map-card>.rx-notice{margin:0 14px 14px}.rx-map{isolation:isolate}
+
+.rx-avatar { overflow: hidden; }

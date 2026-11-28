@@ -130,6 +130,7 @@ export type StoreListing = {
 
 export type PartnerStore = {
   id: string;
+  photoUrl?: string;
   sellerId?: string;
   name: string;
   owner: string;

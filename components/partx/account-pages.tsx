@@ -7,6 +7,8 @@ import { FormEvent, useState } from "react";
 import type { FulfilmentMode, PartnerStore, PaymentMethod } from "@/lib/types";
 import { QRCodeSVG } from "qrcode.react";
 import { createAndroidUpiIntent, createIosUpiLink, createUpiUri, isValidUpiId, isValidUtr } from "@/lib/upi-payments";
+import { savePrivatePhoto, usePrivatePhoto } from "@/lib/account-photos";
+import { PhotoControls, UploadedPhoto } from "./photo-controls";
 import { usePartX, type PartXOrder } from "./app-provider";
 import { Icon } from "./icons";
 import { useSeller } from "./seller-provider";
@@ -263,9 +265,11 @@ export function OffersPage() {
 export function AccountPage() {
   const router = useRouter();
   const { location, vehicles, orders, user, signOut, notificationPermission, notificationsEnabled, notificationError, enableNotifications } = usePartX();
+  const profilePhoto = usePrivatePhoto(user?.id);
   const initials = user?.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase() ?? "PX";
   const links = [["/garage", "garage", "My garage", `${vehicles.length} vehicles · ${location.label}`], ["/orders", "orders", "My orders", `${orders.length} orders`], ["/offers", "offer", "Offers", "Delivery savings"], ["/support", "headset", "Help & support", "Issues, returns and contact"]];
-  return <div className="px-page px-container"><div className="px-account-hero"><div className="px-avatar">{initials}</div><div><span>PARTX CUSTOMER</span><h1>{user?.name}</h1><p>{user?.email} · {user?.mobile}</p>{notificationError ? <small className="px-notification-error" role="alert">{notificationError}</small> : null}</div><div className="px-account-actions">{notificationPermission !== "unsupported" ? <button className={notificationsEnabled ? "px-btn px-btn-dark" : "px-btn px-btn-red"} onClick={() => void enableNotifications()}><Icon name="bell"/>{notificationsEnabled ? "Notifications enabled" : "Enable notifications"}</button> : null}<button className="px-btn px-btn-outline" onClick={() => { void signOut().then(() => router.replace("/login/customer")); }}><Icon name="logout"/>Sign out</button></div></div><DeliveryLocationButton className="px-account-location"/><div className="px-account-links">{links.map(([href, icon, title, subtitle]) => <Link href={href} key={href}><span className="px-square-icon"><Icon name={icon}/></span><div><b>{title}</b><span>{subtitle}</span></div><Icon name="chevron"/></Link>)}</div></div>;
+  return <div className="px-page px-container"><div className="px-account-hero"><div className="px-avatar"><UploadedPhoto url={profilePhoto} fallback={initials}/></div><div><span>PARTX CUSTOMER</span><h1>{user?.name}</h1><p>{[user?.email, user?.mobile].filter(Boolean).join(" · ")}</p>{user && <PhotoControls key={user.id} label="profile photo" hasPhoto={Boolean(profilePhoto)} save={(image) => savePrivatePhoto(user.id, image)}/>}
+    {notificationError ? <small className="px-notification-error" role="alert">{notificationError}</small> : null}</div><div className="px-account-actions">{notificationPermission !== "unsupported" ? <button className={notificationsEnabled ? "px-btn px-btn-dark" : "px-btn px-btn-red"} onClick={() => void enableNotifications()}><Icon name="bell"/>{notificationsEnabled ? "Notifications enabled" : "Enable notifications"}</button> : null}<button className="px-btn px-btn-outline" onClick={() => { void signOut().then(() => router.replace("/login/customer")); }}><Icon name="logout"/>Sign out</button></div></div><DeliveryLocationButton className="px-account-location"/><div className="px-account-links">{links.map(([href, icon, title, subtitle]) => <Link href={href} key={href}><span className="px-square-icon"><Icon name={icon}/></span><div><b>{title}</b><span>{subtitle}</span></div><Icon name="chevron"/></Link>)}</div></div>;
 }
 
 export function SupportPage() {

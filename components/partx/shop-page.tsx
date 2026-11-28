@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { UploadedPhoto } from "./photo-controls";
 import Link from "next/link";
 
 import { useSearchParams } from "next/navigation";
@@ -94,6 +95,7 @@ function ShopResults() {
 
   return <div className="px-page px-container">
     <div className="px-page-title"><span>PARTX MARKETPLACE</span><h1>{storeId ? selectedStore?.name ?? "Store catalog" : view === "parts" ? "Shop parts" : "Shop by store"}</h1><p>{storeId ? selectedStore?.location.address : view === "parts" ? vehicle ? `Shopping for your ${vehicleName(vehicle)}.` : "Find parts and compare PartX stores." : "Browse PartX stores and shop directly from their live catalog."}</p></div>
+    {selectedStore?.photoUrl && <div className="px-store-banner"><UploadedPhoto url={selectedStore.photoUrl} alt={`${selectedStore.name} storefront`} fallback={<Icon name="store"/>}/></div>}
     {storeId ? <Link href="/shop?view=stores" className="px-back-link"><Icon name="back"/>All stores</Link> : <div className="px-shop-view-switch" role="tablist" aria-label="Shop view">
       <button role="tab" aria-selected={view === "parts"} className={view === "parts" ? "active" : ""} onClick={() => { setView("parts"); setQuery(""); }}>Shop parts</button>
       <button role="tab" aria-selected={view === "stores"} className={view === "stores" ? "active" : ""} onClick={() => { setView("stores"); setQuery(""); }}>Shop by store</button>
@@ -157,7 +159,7 @@ function ShopResults() {
 function StoreCard({ store }: { store: PartnerStore }) {
   const inStock = store.listings.filter((listing) => listing.stock > 0).length;
   return <article className="px-store-card">
-    <header><span className="px-store-mark">{store.name.slice(0, 2).toUpperCase()}</span><div><em><Icon name="check"/>PartX seller</em><h2>{store.name}</h2><p><Icon name="pin"/>{store.location.address}</p></div></header>
+    <header><span className="px-store-mark"><UploadedPhoto url={store.photoUrl} fallback={store.name.slice(0, 2).toUpperCase()}/></span><div><em><Icon name="check"/>PartX seller</em><h2>{store.name}</h2><p><Icon name="pin"/>{store.location.address}</p></div></header>
     <div className="px-store-metrics"><span><b>{store.rating > 0 ? `★ ${store.rating.toFixed(1)}` : "New"}</b>{store.ratingCount ? `${store.ratingCount} ratings` : "Store rating"}</span><span><b>{store.listings.length}</b>Listed parts</span><span><b>{inStock}</b>In stock</span></div>
     <div className="px-store-hours"><Icon name="orders"/><span><b>{store.businessHours}</b>{store.deliveryRadiusKm > 0 ? `Delivery up to ${store.deliveryRadiusKm} km` : "Pickup and delivery details at checkout"}</span></div>
     <Link className="px-btn px-btn-red" href={`/shop?store=${encodeURIComponent(store.id)}`}>View store<Icon name="arrow"/></Link>
