@@ -132,11 +132,11 @@
 .auth :global(.px-link-button) { color: #ff6570; font-size: 13px; }
 .auth :global(.px-auth-submit) { min-height: 52px; margin-top: 7px; border-radius: 11px; background: #ed101c; color: #fff; font-size: 14px; }
 .auth :global(.px-auth-submit:hover) { background: #ce0d1a; }
-.auth :global(.px-auth-seller-link),
+.auth :global(.px-auth-role-link),
 .auth :global(.px-auth-existing-seller .px-btn),
 .auth :global(.px-btn-outline) { border-color: #454d5a; border-radius: 10px; color: #e3e8f0; font-size: 12px; }
-.auth :global(.px-auth-seller-link) { min-height: 40px; margin-bottom: 25px; }
-.auth :global(.px-auth-seller-link:hover) { border-color: #a15662; background: #ffffff06; }
+.auth :global(.px-auth-role-link) { min-height: 40px; margin-bottom: 25px; }
+.auth :global(.px-auth-role-link:hover) { border-color: #a15662; background: #ffffff06; }
 .auth :global(.px-auth-existing-seller) { color: #c3ccd9; }
 .auth :global(.px-auth-error) { color: #ffc2c7; background: #5f182533; border-radius: 8px; font-size: 13px; }
 .auth :global(.px-auth-notice) { color: #a9e6c5; background: #17432f55; border-radius: 8px; font-size: 13px; }
@@ -176,7 +176,7 @@
 }
 .auth:global(.px-auth-customer)[data-auth-mode="register"] :global(.px-auth-heading) { margin-bottom: 19px; }
 .auth:global(.px-auth-customer)[data-auth-mode="register"] :global(.px-auth-heading h2) { font-size: 31px; margin-block: 10px; }
-.auth:global(.px-auth-customer)[data-auth-mode="register"] :global(.px-auth-seller-link) { min-height: 36px; margin-bottom: 20px; }
+.auth:global(.px-auth-customer)[data-auth-mode="register"] :global(.px-auth-role-link) { min-height: 36px; margin-bottom: 20px; }
 .auth:global(.px-auth-customer)[data-auth-mode="register"] :global(.px-auth-form) { gap: 13px; }
 .auth:global(.px-auth-customer)[data-auth-mode="register"] :global(.px-auth-form > label) { gap: 6px; }
 .auth:global(.px-auth-customer)[data-auth-mode="register"] :global(.px-auth-form > label > div) { height: 48px; }

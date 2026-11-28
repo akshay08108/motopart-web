@@ -194,7 +194,10 @@ export function RoleAuthPage({ role, signupFirst = false, checkout = false }: { 
           </form>
         </> : <>
         {!appRole && role === "customer" && !user && (
-          <Link className="px-btn px-btn-outline px-auth-seller-link" href={roleLogin("seller")}><Icon name="store"/>Seller sign in</Link>
+          <Link className="px-btn px-btn-outline px-auth-role-link" href={roleLogin("seller")}><Icon name="store"/>Seller sign in</Link>
+        )}
+        {!appRole && role === "seller" && user?.activeRole !== "seller" && (
+          <Link className="px-btn px-btn-outline px-auth-role-link" href={`${roleLogin("customer")}?signin=1`}><Icon name="user"/>Customer sign in</Link>
         )}
         <div className="px-auth-heading"><span>PARTX {copy.heading.toUpperCase()}</span><h2>{mode === "reset" ? "Reset your password" : mode === "signin" ? (role === "seller" ? "Seller sign in" : "Welcome back") : role === "seller" ? "Create your seller account" : role === "rider" ? "Create your rider account" : "Create your customer account"}</h2><p>{mode === "reset" ? "Enter the email you use for PartX." : mode === "signin" ? copy.signInDescription : copy.registerDescription}</p></div>
         {!appRole && mode !== "reset" && <button type="button" className="px-btn px-btn-outline px-google-signin" disabled={busy || !authHydrated} onClick={() => void continueWithGoogle()}>
